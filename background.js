@@ -54,6 +54,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
+  if (message?.type === 'LINK_EXTENSION') {
+    handleLinkExtension(message.linkCode)
+      .then(sendResponse)
+      .catch(() => {
+        sendResponse({
+          success: false,
+          reason: 'link_failed',
+        })
+      })
+    return true
+  }
+
   return false
 })
 
@@ -294,4 +306,35 @@ async function saveProtectionEvent(event) {
   await chrome.storage.local.set({
     pendingProtectionEvents: events,
   })
+}
+
+async function handleLinkExtension(linkCode) {
+  // Validate linkCode format
+  if (
+    !linkCode ||
+    typeof linkCode !== 'string' ||
+    linkCode.length < 8 ||
+    linkCode.length > 32 ||
+    !/^[a-zA-Z0-9_-]+$/.test(linkCode)
+  ) {
+    return {
+      success: false,
+      reason: 'invalid_link_code',
+    }
+  }
+
+  // Simulate validation (no Firestore yet)
+  // In real implementation, validate against Firestore token
+
+  await chrome.storage.local.set({
+    userId: 'linked-test-user',
+    email: 'linked@addisline.local',
+    authStatus: 'connected',
+    linkedAt: new Date().toISOString(),
+    linkSource: 'web-link-code',
+  })
+
+  return {
+    success: true,
+  }
 }

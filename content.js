@@ -2326,3 +2326,54 @@ function sendProtectionEvent(payload) {
     log('Error sending protection event:', error)
   }
 }
+
+// Link extension from web
+const ALLOWED_LINK_ORIGINS = [
+  'https://addisline.com',
+  'https://www.addisline.com',
+  'http://localhost:5173',
+  'http://localhost:3000',
+]
+
+window.addEventListener('message', (event) => {
+  if (event.data?.type !== 'ADDISLINE_LINK_EXTENSION') {
+    return
+  }
+
+  if (!ALLOWED_LINK_ORIGINS.includes(event.origin)) {
+    log('Rejected link message from unauthorized origin:', event.origin)
+    return
+  }
+
+  const linkCode = String(event.data.linkCode || '').trim()
+
+  if (!linkCode || linkCode.length < 8 || linkCode.length > 32) {
+    log('Invalid linkCode received')
+    return
+  }
+
+  if (!hasExtensionContext()) {
+    log('Extension context not available for linking')
+    return
+  }
+
+  try {
+    chrome.runtime.sendMessage({
+      type: 'LINK_EXTENSION',
+      linkCode,
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        log('Failed to send link code:', chrome.runtime.lastError.message)
+        return
+      }
+
+      if (response?.success) {
+        log('Link code processed successfully')
+      } else {
+        log('Link code failed:', response?.reason)
+      }
+    })
+  } catch (error) {
+    log('Error sending link code:', error)
+  }
+})
