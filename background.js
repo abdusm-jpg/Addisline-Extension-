@@ -16,6 +16,22 @@ const BLOCKED_REPORT_KEYS = [
   'personalData',
 ]
 
+const CLOUD_FUNCTIONS_BASE_URL =
+  'https://us-central1-addisline-sm.cloudfunctions.net'
+
+const CONSUME_LINK_CODE_URL =
+  `${CLOUD_FUNCTIONS_BASE_URL}/consumeExtensionLinkCode`
+
+const SYNC_PROTECTION_EVENTS_URL =
+  `${CLOUD_FUNCTIONS_BASE_URL}/syncProtectionEvents`
+
+const PROTECTION_COUNTER_FIELDS = [
+  'bannersHidden',
+  'trackersReduced',
+  'vendorsDenied',
+  'legitimateInterestsDisabled',
+]
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get(
     {
@@ -229,6 +245,7 @@ async function handleProtectionEvent(payload) {
   }
 
   await saveProtectionEvent(validation.event)
+  await syncPendingProtectionEvents().catch(() => null)
 
   return {
     success: true,
@@ -308,13 +325,113 @@ async function saveProtectionEvent(event) {
   })
 }
 
+function aggregateProtectionEvents(events) {
+  return events.reduce((aggregate, event) => {
+    PROTECTION_COUNTER_FIELDS.forEach((field) => {
+      aggregate[field] += Math.max(0, Number(event[field]) || 0)
+    })
+
+    return aggregate
+  }, {
+    bannersHidden: 0,
+    trackersReduced: 0,
+    vendorsDenied: 0,
+    legitimateInterestsDisabled: 0,
+  })
+}
+
+function hasPositiveProtectionAggregate(aggregate) {
+  return PROTECTION_COUNTER_FIELDS.some(
+    (field) => aggregate[field] > 0
+  )
+}
+
+async function postJson(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok || data.success !== true) {
+    throw new Error(data.reason || 'request_failed')
+  }
+
+  return data
+}
+
+async function syncPendingProtectionEvents() {
+  const stored = await chrome.storage.local.get({
+    authStatus: 'disconnected',
+    extensionSessionToken: '',
+    pendingProtectionEvents: [],
+  })
+
+  if (
+    stored.authStatus !== 'connected' ||
+    !stored.extensionSessionToken
+  ) {
+    return {
+      success: false,
+      reason: 'extension_not_connected',
+    }
+  }
+
+  const pendingEvents = Array.isArray(stored.pendingProtectionEvents)
+    ? stored.pendingProtectionEvents
+    : []
+
+  if (pendingEvents.length === 0) {
+    return {
+      success: true,
+      syncedEventCount: 0,
+    }
+  }
+
+  const eventsToSync = pendingEvents.slice(0, 100)
+  const aggregate = aggregateProtectionEvents(eventsToSync)
+
+  if (!hasPositiveProtectionAggregate(aggregate)) {
+    return {
+      success: false,
+      reason: 'empty_aggregate_preserved',
+    }
+  }
+
+  const result = await postJson(SYNC_PROTECTION_EVENTS_URL, {
+    extensionSessionToken: stored.extensionSessionToken,
+    aggregate,
+    eventCount: eventsToSync.length,
+  })
+
+  const latest = await chrome.storage.local.get({
+    pendingProtectionEvents: [],
+  })
+
+  const latestEvents = Array.isArray(latest.pendingProtectionEvents)
+    ? latest.pendingProtectionEvents
+    : []
+
+  await chrome.storage.local.set({
+    pendingProtectionEvents: latestEvents.slice(eventsToSync.length),
+    lastProtectionSyncAt: new Date().toISOString(),
+    lastProtectionSyncError: '',
+  })
+
+  return result
+}
+
 async function handleLinkExtension(linkCode) {
   // Validate linkCode format
   if (
     !linkCode ||
     typeof linkCode !== 'string' ||
-    linkCode.length < 8 ||
-    linkCode.length > 32 ||
+    linkCode.length < 16 ||
+    linkCode.length > 24 ||
     !/^[a-zA-Z0-9_-]+$/.test(linkCode)
   ) {
     return {
@@ -323,15 +440,24 @@ async function handleLinkExtension(linkCode) {
     }
   }
 
-  // Simulate validation (no Firestore yet)
-  // In real implementation, validate against Firestore token
+  const linkResult = await postJson(CONSUME_LINK_CODE_URL, {
+    linkCode,
+  })
 
   await chrome.storage.local.set({
-    userId: 'linked-test-user',
-    email: 'linked@addisline.local',
+    userId: linkResult.userId,
+    email: '',
+    displayName: linkResult.displayName || 'Usuario',
     authStatus: 'connected',
     linkedAt: new Date().toISOString(),
     linkSource: 'web-link-code',
+    extensionSessionToken: linkResult.extensionSessionToken,
+  })
+
+  await syncPendingProtectionEvents().catch(async (error) => {
+    await chrome.storage.local.set({
+      lastProtectionSyncError: error.message || 'sync_failed',
+    })
   })
 
   return {
