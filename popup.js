@@ -118,6 +118,26 @@ const diagnosticLastError =
     'diagnosticLastError'
   )
 
+const accountStatus =
+  document.getElementById(
+    'accountStatus'
+  )
+
+const accountEmail =
+  document.getElementById(
+    'accountEmail'
+  )
+
+const loginButton =
+  document.getElementById(
+    'loginButton'
+  )
+
+const logoutButton =
+  document.getElementById(
+    'logoutButton'
+  )
+
 const issueReportsList =
   document.getElementById(
     'issueReportsList'
@@ -154,6 +174,10 @@ const DEFAULT_STATE = {
     legitimateInterestsDisabled: 0,
     protectedSites: 0,
   },
+  userId: '',
+  email: '',
+  authStatus: 'disconnected',
+  linkedAt: '',
   protectedDomains: [],
 }
 
@@ -349,6 +373,8 @@ function renderState({
   lastAction,
   lastError,
   issueReports,
+  email,
+  authStatus,
 }) {
   const storedExcludedDomains =
     Array.isArray(excludedDomains)
@@ -484,6 +510,19 @@ function renderState({
   diagnosticLastError.innerText =
     lastError || 'Sin errores'
 
+  const connected = authStatus === 'connected'
+
+  accountStatus.innerText =
+    connected
+      ? 'Conectado'
+      : 'No conectado'
+
+  accountEmail.innerText =
+    email || 'No hay cuenta vinculada'
+
+  loginButton.hidden = connected
+  logoutButton.hidden = !connected
+
   renderIssueReports(issueReports)
 }
 
@@ -602,6 +641,30 @@ protectionMode.addEventListener(
     await chrome.storage.local.set({
       protectionMode:
         protectionMode.value,
+    })
+  }
+)
+
+loginButton.addEventListener(
+  'click',
+  async () => {
+    await chrome.storage.local.set({
+      userId: 'local-test-user',
+      email: 'abdunejat43@gmail.com',
+      authStatus: 'connected',
+      linkedAt: new Date().toISOString(),
+    })
+  }
+)
+
+logoutButton.addEventListener(
+  'click',
+  async () => {
+    await chrome.storage.local.set({
+      userId: '',
+      email: '',
+      authStatus: 'disconnected',
+      linkedAt: '',
     })
   }
 )
@@ -747,7 +810,11 @@ chrome.storage.onChanged.addListener(
       changes.protectedDomains ||
       changes.lastAction ||
       changes.lastError ||
-      changes.issueReports
+      changes.issueReports ||
+      changes.authStatus ||
+      changes.email ||
+      changes.userId ||
+      changes.linkedAt
     ) {
       loadState()
     }

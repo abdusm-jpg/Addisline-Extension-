@@ -127,13 +127,34 @@ h1 {
 
 .statusPanel,
 .sitePanel,
-.diagnosticPanel {
+.diagnosticPanel,
+.accountPanel {
   margin-bottom: 14px;
   padding: 14px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.82);
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
+}
+
+.accountPanel .accountValue,
+.accountPanel .accountEmail {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.accountEmail {
+  color: #94a3b8;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.accountActions {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .statusLabel,
