@@ -18,15 +18,220 @@
 
   <body>
     <div class="container">
-      <h1>ADDISLINE SM</h1>
+      <header class="header">
+        <div
+          class="brandMark"
+          aria-hidden="true"
+        >
+          <span></span>
+        </div>
 
-      <p id="status">
-        Protección desactivada
-      </p>
+        <div class="brandCopy">
+          <h1>ADDISLINE</h1>
+          <p class="subtitle">SM Privacy</p>
+        </div>
+      </header>
 
-      <button id="toggleButton">
-        Activar protección
-      </button>
+      <section class="statusPanel">
+        <span class="statusLabel">Estado</span>
+
+        <p id="status">
+          Proteccion desactivada
+        </p>
+
+        <div class="modeControl">
+          <label for="protectionMode">
+            Modo actual
+          </label>
+
+          <select id="protectionMode">
+            <option value="soft">Suave</option>
+            <option value="normal">Normal</option>
+            <option value="strict">Estricto</option>
+          </select>
+
+          <p id="modeStatus">
+            Modo Normal
+          </p>
+        </div>
+      </section>
+
+      <section class="sitePanel">
+        <span class="sectionLabel">Sitio actual</span>
+
+        <p id="siteStatus">
+          Sitio actual no disponible
+        </p>
+
+        <p id="dnrNotice" class="siteNote"></p>
+
+        <button
+          id="siteToggleButton"
+          class="secondary"
+          type="button"
+        >
+          Desactivar en este sitio
+        </button>
+      </section>
+
+      <section class="diagnosticPanel">
+        <span class="sectionLabel">Diagnostico local</span>
+
+        <dl class="diagnosticList">
+          <div>
+            <dt>Proteccion global</dt>
+            <dd id="diagnosticGlobal">Desactivada</dd>
+          </div>
+
+          <div>
+            <dt>Sitio actual</dt>
+            <dd id="diagnosticDomain">No disponible</dd>
+          </div>
+
+          <div>
+            <dt>Estado del sitio</dt>
+            <dd id="diagnosticSiteState">No disponible</dd>
+          </div>
+
+          <div>
+            <dt>Modo actual</dt>
+            <dd id="diagnosticMode">normal</dd>
+          </div>
+
+          <div>
+            <dt>Ultima accion</dt>
+            <dd id="diagnosticLastAction">Sin datos</dd>
+          </div>
+
+          <div>
+            <dt>Ultimo error</dt>
+            <dd id="diagnosticLastError">Sin errores</dd>
+          </div>
+        </dl>
+      </section>
+
+      <div class="stats">
+        <p class="statCard">
+          <span>Banners ocultados</span>
+          <strong id="bannersHidden">0</strong>
+        </p>
+
+        <p class="statCard">
+          <span>Rastreadores reducidos</span>
+          <strong id="trackersReduced">0</strong>
+        </p>
+
+        <p class="statCard">
+          <span>Rechazos automaticos</span>
+          <strong id="autoRejects">0</strong>
+        </p>
+
+        <p class="statCard">
+          <span>Proveedores denegados</span>
+          <strong id="vendorsDenied">0</strong>
+        </p>
+
+        <p class="statCard">
+          <span>Intereses legitimos desactivados</span>
+          <strong id="legitimateInterestsDisabled">0</strong>
+        </p>
+
+        <p class="statCard">
+          <span>Sitios protegidos</span>
+          <strong id="protectedSites">0</strong>
+        </p>
+
+        <p class="statCard">
+          <span>Sitios excluidos</span>
+          <strong id="excludedDomainsCount">0</strong>
+        </p>
+      </div>
+
+      <div class="actions">
+        <button id="toggleButton">
+          Activar proteccion
+        </button>
+
+        <section class="reportPanel">
+          <label for="issueType">
+            Reportar problema en esta web
+          </label>
+
+          <select id="issueType">
+            <option value="cookies_not_rejected">
+              No rechaza cookies
+            </option>
+            <option value="page_blocked_dark">
+              Web queda bloqueada/oscura
+            </option>
+            <option value="site_disable_failed">
+              Desactivar en este sitio no funciona
+            </option>
+            <option value="ads_still_visible">
+              Anuncios siguen apareciendo
+            </option>
+            <option value="other">
+              Otro problema
+            </option>
+          </select>
+
+          <button
+            id="reportIssueButton"
+            class="secondary"
+            type="button"
+          >
+            Reportar problema
+          </button>
+
+          <p
+            id="reportStatus"
+            class="siteNote"
+          ></p>
+        </section>
+
+        <section class="reportedSitesPanel">
+          <button
+            id="reportsToggleButton"
+            class="reportsToggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="reportsDropdown"
+          >
+            REPORTADOS (0)
+          </button>
+
+          <div
+            id="reportsDropdown"
+            class="reportsDropdown"
+            hidden
+          >
+            <button
+              id="clearReportsButton"
+              class="secondary compact"
+              type="button"
+            >
+              Borrar reportes
+            </button>
+
+            <div
+              id="issueReportsList"
+              class="reportsList"
+            >
+              <p class="emptyState">
+                No hay reportes locales.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <button
+          id="resetStatsButton"
+          class="secondary muted"
+          type="button"
+        >
+          Reiniciar estadisticas
+        </button>
+      </div>
     </div>
 
     <script src="popup.js"></script>

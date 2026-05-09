@@ -2,16 +2,21 @@
   "manifest_version": 3,
   "name": "ADDISLINE SM",
   "version": "1.0",
-  "description": "Protección preventiva de privacidad web.",
+  "description": "Proteccion preventiva de privacidad web.",
   "permissions": [
-    "storage",
-    "tabs",
     "activeTab",
-    "scripting"
+    "declarativeNetRequest",
+    "storage"
   ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "addisline_basic_ads",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "background": {
     "service_worker": "background.js"
   },
@@ -20,7 +25,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
       "js": ["content.js"]
     }
   ]
