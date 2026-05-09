@@ -123,9 +123,14 @@ const accountStatus =
     'accountStatus'
   )
 
-const accountEmail =
+const accountToggleButton =
   document.getElementById(
-    'accountEmail'
+    'accountToggleButton'
+  )
+
+const accountPanel =
+  document.getElementById(
+    'accountPanel'
   )
 
 const accountForm =
@@ -153,6 +158,11 @@ const loginButton =
     'loginButton'
   )
 
+const openWebButton =
+  document.getElementById(
+    'openWebButton'
+  )
+
 const logoutButton =
   document.getElementById(
     'logoutButton'
@@ -178,6 +188,14 @@ const reportsDropdown =
     'reportsDropdown'
   )
 
+const authProtectedSections =
+  document.querySelectorAll(
+    '.statusPanel, .sitePanel, .diagnosticPanel, .stats, .actions'
+  )
+
+const DEV_SHOW_FULL_POPUP_WITHOUT_AUTH =
+  true
+
 const DEFAULT_STATE = {
   protectionEnabled: false,
   protectionMode: 'normal',
@@ -196,8 +214,10 @@ const DEFAULT_STATE = {
   },
   userId: '',
   email: '',
+  displayName: '',
   authStatus: 'disconnected',
   linkedAt: '',
+  linkSource: '',
   protectedDomains: [],
 }
 
@@ -224,6 +244,12 @@ let currentTabId =
 
 let reportsExpanded =
   false
+
+let accountPanelExpanded =
+  false
+
+const ADDISLINE_WEB_URL =
+  'https://addisline-sm.web.app'
 
 function normalizeDomain(value) {
   return (value || '')
@@ -393,7 +419,7 @@ function renderState({
   lastAction,
   lastError,
   issueReports,
-  email,
+  displayName,
   authStatus,
 }) {
   const storedExcludedDomains =
@@ -531,18 +557,25 @@ function renderState({
     lastError || 'Sin errores'
 
   const connected = authStatus === 'connected'
+  const safeDisplayName =
+    String(displayName || '').trim() ||
+    'Usuario'
+
+  setAuthProtectedSectionsVisible(connected)
 
   accountStatus.innerText =
     connected
-      ? 'Conectado'
+      ? `Conectado como ${safeDisplayName}`
       : 'No conectado'
 
-  accountEmail.innerText =
-    email || 'No hay cuenta vinculada'
-
   loginButton.hidden = connected
+  openWebButton.hidden = connected
   logoutButton.hidden = !connected
   accountForm.hidden = connected
+  accountToggleButton.classList.toggle(
+    'isConnected',
+    connected
+  )
 
   authMessage.innerText = ''
   authMessage.className = 'accountMessage'
@@ -550,6 +583,14 @@ function renderState({
   if (connected) {
     emailInput.value = ''
     passwordInput.value = ''
+  }
+
+  if (
+    DEV_SHOW_FULL_POPUP_WITHOUT_AUTH &&
+    !connected &&
+    !accountPanelExpanded
+  ) {
+    setAccountPanelExpanded(true)
   }
 
   renderIssueReports(issueReports)
@@ -577,6 +618,46 @@ async function loadState() {
     stats: syncedStats.stats || {},
   })
 }
+
+function setAccountPanelExpanded(expanded) {
+  accountPanelExpanded =
+    Boolean(expanded)
+
+  accountPanel.hidden =
+    !accountPanelExpanded
+
+  accountToggleButton.setAttribute(
+    'aria-expanded',
+    accountPanelExpanded
+      ? 'true'
+      : 'false'
+  )
+
+  accountToggleButton.classList.toggle(
+    'isOpen',
+    accountPanelExpanded
+  )
+}
+
+function setAuthProtectedSectionsVisible(isConnected) {
+  const shouldShowProtectedSections =
+    isConnected ||
+    DEV_SHOW_FULL_POPUP_WITHOUT_AUTH
+
+  authProtectedSections.forEach((section) => {
+    section.hidden =
+      !shouldShowProtectedSections
+  })
+}
+
+accountToggleButton.addEventListener(
+  'click',
+  () => {
+    setAccountPanelExpanded(
+      !accountPanelExpanded
+    )
+  }
+)
 
 toggleButton.addEventListener(
   'click',
@@ -684,6 +765,15 @@ function setAuthMessage(text, type = 'info') {
   authMessage.className = `accountMessage accountMessage--${type}`
 }
 
+function getDisplayNameFromEmail(email) {
+  const localPart =
+    String(email || '')
+      .split('@')[0]
+      .trim()
+
+  return localPart || 'Usuario'
+}
+
 loginButton.addEventListener(
   'click',
   async () => {
@@ -703,11 +793,24 @@ loginButton.addEventListener(
     await chrome.storage.local.set({
       userId: 'local-test-user',
       email,
+      displayName:
+        getDisplayNameFromEmail(email),
       authStatus: 'connected',
       linkedAt: new Date().toISOString(),
+      linkSource: 'popup',
     })
 
+    passwordInput.value = ''
     setAuthMessage('Sesión iniciada correctamente.', 'success')
+  }
+)
+
+openWebButton.addEventListener(
+  'click',
+  async () => {
+    await chrome.tabs.create({
+      url: ADDISLINE_WEB_URL,
+    })
   }
 )
 
@@ -717,10 +820,14 @@ logoutButton.addEventListener(
     await chrome.storage.local.set({
       userId: '',
       email: '',
+      displayName: '',
       authStatus: 'disconnected',
       linkedAt: '',
+      linkSource: '',
     })
 
+    emailInput.value = ''
+    passwordInput.value = ''
     setAuthMessage('Sesión cerrada.', 'info')
   }
 )
@@ -869,8 +976,10 @@ chrome.storage.onChanged.addListener(
       changes.issueReports ||
       changes.authStatus ||
       changes.email ||
+      changes.displayName ||
       changes.userId ||
-      changes.linkedAt
+      changes.linkedAt ||
+      changes.linkSource
     ) {
       loadState()
     }
