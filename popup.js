@@ -128,6 +128,26 @@ const accountEmail =
     'accountEmail'
   )
 
+const accountForm =
+  document.getElementById(
+    'accountForm'
+  )
+
+const emailInput =
+  document.getElementById(
+    'emailInput'
+  )
+
+const passwordInput =
+  document.getElementById(
+    'passwordInput'
+  )
+
+const authMessage =
+  document.getElementById(
+    'authMessage'
+  )
+
 const loginButton =
   document.getElementById(
     'loginButton'
@@ -522,6 +542,15 @@ function renderState({
 
   loginButton.hidden = connected
   logoutButton.hidden = !connected
+  accountForm.hidden = connected
+
+  authMessage.innerText = ''
+  authMessage.className = 'accountMessage'
+
+  if (connected) {
+    emailInput.value = ''
+    passwordInput.value = ''
+  }
 
   renderIssueReports(issueReports)
 }
@@ -645,15 +674,40 @@ protectionMode.addEventListener(
   }
 )
 
+function isValidEmail(value) {
+  return typeof value === 'string' &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function setAuthMessage(text, type = 'info') {
+  authMessage.innerText = text
+  authMessage.className = `accountMessage accountMessage--${type}`
+}
+
 loginButton.addEventListener(
   'click',
   async () => {
+    const email = String(emailInput.value || '').trim()
+    const password = String(passwordInput.value || '')
+
+    if (!isValidEmail(email)) {
+      setAuthMessage('Introduce un email válido.', 'error')
+      return
+    }
+
+    if (!password) {
+      setAuthMessage('La contraseña no puede estar vacía.', 'error')
+      return
+    }
+
     await chrome.storage.local.set({
       userId: 'local-test-user',
-      email: 'abdunejat43@gmail.com',
+      email,
       authStatus: 'connected',
       linkedAt: new Date().toISOString(),
     })
+
+    setAuthMessage('Sesión iniciada correctamente.', 'success')
   }
 )
 
@@ -666,6 +720,8 @@ logoutButton.addEventListener(
       authStatus: 'disconnected',
       linkedAt: '',
     })
+
+    setAuthMessage('Sesión cerrada.', 'info')
   }
 )
 

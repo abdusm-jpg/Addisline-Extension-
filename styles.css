@@ -157,6 +157,51 @@ h1 {
   margin-top: 12px;
 }
 
+.accountForm {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.accountForm label {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.accountForm input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: #111827;
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.accountForm input::placeholder {
+  color: #64748b;
+}
+
+.accountMessage {
+  margin: 0;
+  min-height: 18px;
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.accountMessage--error {
+  color: #f87171;
+}
+
+.accountMessage--success {
+  color: #34d399;
+}
+
 .statusLabel,
 .sectionLabel {
   display: block;

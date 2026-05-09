@@ -43,6 +43,26 @@
           -
         </p>
 
+        <div class="accountForm" id="accountForm">
+          <label for="emailInput">Email</label>
+          <input
+            id="emailInput"
+            type="email"
+            placeholder="usuario@ejemplo.com"
+            autocomplete="username"
+          />
+
+          <label for="passwordInput">Contraseña</label>
+          <input
+            id="passwordInput"
+            type="password"
+            placeholder="********"
+            autocomplete="current-password"
+          />
+
+          <p id="authMessage" class="accountMessage" aria-live="polite"></p>
+        </div>
+
         <div class="accountActions">
           <button id="loginButton" type="button">
             Iniciar sesión
