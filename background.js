@@ -30,20 +30,31 @@ chrome.runtime.onInstalled.addListener(() => {
 })
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== 'SYNC_ISSUE_REPORT') {
-    return false
+  if (message?.type === 'SYNC_ISSUE_REPORT') {
+    handleIssueReportSync(message.report)
+      .then(sendResponse)
+      .catch(() => {
+        sendResponse({
+          success: false,
+          reason: 'sync_failed',
+        })
+      })
+    return true
   }
 
-  handleIssueReportSync(message.report)
-    .then(sendResponse)
-    .catch(() => {
-      sendResponse({
-        success: false,
-        reason: 'sync_failed',
+  if (message?.type === 'protection_event') {
+    handleProtectionEvent(message.payload)
+      .then(sendResponse)
+      .catch(() => {
+        sendResponse({
+          success: false,
+          reason: 'event_failed',
+        })
       })
-    })
+    return true
+  }
 
-  return true
+  return false
 })
 
 async function handleIssueReportSync(report) {
@@ -193,4 +204,94 @@ function sanitizeVersion(value) {
     .trim()
     .replace(/[^0-9a-zA-Z._-]/g, '')
     .slice(0, 32)
+}
+
+async function handleProtectionEvent(payload) {
+  const validation = validateProtectionEvent(payload)
+
+  if (!validation.valid) {
+    return {
+      success: false,
+      reason: validation.reason,
+    }
+  }
+
+  await saveProtectionEvent(validation.event)
+
+  return {
+    success: true,
+  }
+}
+
+function validateProtectionEvent(payload) {
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    Array.isArray(payload)
+  ) {
+    return {
+      valid: false,
+      reason: 'invalid_payload',
+    }
+  }
+
+  const requiredFields = [
+    'bannersHidden',
+    'trackersReduced',
+    'vendorsDenied',
+    'legitimateInterestsDisabled',
+    'source',
+    'timestamp',
+  ]
+
+  for (const field of requiredFields) {
+    if (!(field in payload)) {
+      return {
+        valid: false,
+        reason: `missing_field_${field}`,
+      }
+    }
+  }
+
+  const sanitized = {
+    bannersHidden: Math.max(0, Number(payload.bannersHidden) || 0),
+    trackersReduced: Math.max(0, Number(payload.trackersReduced) || 0),
+    vendorsDenied: Math.max(0, Number(payload.vendorsDenied) || 0),
+    legitimateInterestsDisabled: Math.max(0, Number(payload.legitimateInterestsDisabled) || 0),
+    source: String(payload.source || '').slice(0, 50),
+    timestamp: sanitizeDate(payload.timestamp),
+  }
+
+  if (!sanitized.timestamp) {
+    return {
+      valid: false,
+      reason: 'invalid_timestamp',
+    }
+  }
+
+  return {
+    valid: true,
+    event: sanitized,
+  }
+}
+
+async function saveProtectionEvent(event) {
+  const stored = await chrome.storage.local.get({
+    pendingProtectionEvents: [],
+  })
+
+  const events = Array.isArray(stored.pendingProtectionEvents)
+    ? stored.pendingProtectionEvents
+    : []
+
+  // Limit to 100 events
+  if (events.length >= 100) {
+    events.shift() // Remove oldest
+  }
+
+  events.push(event)
+
+  await chrome.storage.local.set({
+    pendingProtectionEvents: events,
+  })
 }

@@ -498,6 +498,16 @@ async function incrementStat(statName, amount = 1) {
       await safeSyncStorageSet({
         [STATS_KEY]: stats,
       })
+
+      // Send protection event to background
+      sendProtectionEvent({
+        bannersHidden: statName === 'bannersHidden' ? amount : 0,
+        trackersReduced: statName === 'trackersReduced' ? amount : 0,
+        vendorsDenied: statName === 'vendorsDenied' ? amount : 0,
+        legitimateInterestsDisabled: statName === 'legitimateInterestsDisabled' ? amount : 0,
+        source: 'content',
+        timestamp: new Date().toISOString(),
+      })
     })
     .catch(() => {})
 
@@ -2291,4 +2301,28 @@ function getClassNameText(element) {
   }
 
   return ''
+}
+
+function sendProtectionEvent(payload) {
+  if (!hasExtensionContext()) return
+
+  try {
+    chrome.runtime.sendMessage({
+      type: 'protection_event',
+      payload,
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        log('Failed to send protection event:', chrome.runtime.lastError.message)
+        return
+      }
+
+      if (response?.success) {
+        log('Protection event sent successfully')
+      } else {
+        log('Protection event failed:', response?.reason)
+      }
+    })
+  } catch (error) {
+    log('Error sending protection event:', error)
+  }
 }
