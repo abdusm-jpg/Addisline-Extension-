@@ -25,6 +25,22 @@ const SCAN_DEBOUNCE_MS = 400
 const MIN_SCAN_INTERVAL_MS = 1000
 const MAX_SCAN_BURST = 8
 const SCAN_BURST_RESET_MS = 15000
+const MUTATION_SCAN_HINT_TEXTS = [
+  'cookie',
+  'cookies',
+  'consent',
+  'privacy',
+  'gdpr',
+  'cmp',
+  'banner',
+  'modal',
+  'overlay',
+  'preferenc',
+  'privacidad',
+  'cookies',
+  'consentimiento',
+  'preferencias',
+]
 
 const DEFAULT_STATS = {
   bannersHidden: 0,
@@ -2873,9 +2889,71 @@ function scanPage() {
     setLastError(error?.message || 'Error en content script')
   }
 }
-function scheduleScan() {
+function getMutationNodeText(node) {
+  if (!node) return ''
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    return normalizeMatchText(node.textContent || '')
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return ''
+  }
+
+  return normalizeMatchText(
+    [
+      node.id || '',
+      getClassNameText(node),
+      node.getAttribute?.('role') || '',
+      node.getAttribute?.('aria-label') || '',
+      node.getAttribute?.('data-testid') || '',
+      node.getAttribute?.('data-cmp') || '',
+      node.getAttribute?.('data-consent') || '',
+      node.getAttribute?.('data-cookie') || '',
+      node.textContent?.slice(0, 300) || '',
+    ].join(' ')
+  )
+}
+
+function mutationLooksCookieRelated(mutation) {
+  const targetText =
+    getMutationNodeText(mutation.target)
+
+  if (textHasAny(targetText, MUTATION_SCAN_HINT_TEXTS)) {
+    return true
+  }
+
+  for (const node of mutation.addedNodes || []) {
+    const nodeText =
+      getMutationNodeText(node)
+
+    if (textHasAny(nodeText, MUTATION_SCAN_HINT_TEXTS)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function shouldScanForMutations(mutations) {
+  if (!Array.isArray(mutations)) {
+    return true
+  }
+
+  if (mutations.length === 0) {
+    return false
+  }
+
+  return mutations.some(mutationLooksCookieRelated)
+}
+
+function scheduleScan(mutations = null) {
   if (!shouldRunOnThisSite()) {
     stopObserver()
+    return
+  }
+
+  if (!shouldScanForMutations(mutations)) {
     return
   }
 
