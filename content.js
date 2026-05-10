@@ -12,9 +12,13 @@ let lastDiagnosticError = ''
 let providerInfoModalCloseAttempts = 0
 let statsUpdateQueue = Promise.resolve()
 const providerInfoModalSignatures = new Map()
+const processedActionElements = new WeakSet()
+const bannerActionCooldowns = new Map()
+const observedShadowRoots = new WeakSet()
 
 const STATS_KEY = 'stats'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
+const BANNER_ACTION_COOLDOWN_MS = 10000
 
 const DEFAULT_STATS = {
   bannersHidden: 0,
@@ -114,12 +118,27 @@ const directSafeRejectClassSignals = [
 
 const optionalPreferenceTexts = [
   'analytics',
+  'analitica',
+  'analitica web',
   'marketing',
   'advertising',
+  'ads',
   'personalization',
+  'personalisation',
   'statistics',
+  'measurement',
+  'medicion',
+  'tracking',
+  'trackers',
+  'profiling',
+  'social media',
+  'social networks',
+  'redes sociales',
+  'sociales',
   'vendors',
+  'vendor',
   'partners',
+  'partner',
   'providers',
   'proveedores',
   'proveedores externos',
@@ -132,6 +151,8 @@ const optionalPreferenceTexts = [
   'cookiebot',
   'quantcast',
   'sourcepoint',
+  'usercentrics',
+  'quantcast choice',
   'interes legitimo',
   'intereses legitimos',
   'legitimate interest',
@@ -157,9 +178,13 @@ const vendorCounterTexts = [
   'vendors',
   'vendor',
   'partners',
+  'partner',
   'advertising partners',
   'external providers',
   'providers',
+  'provider',
+  'third party',
+  'third parties',
 ]
 
 const trackerCounterTexts = [
@@ -168,7 +193,15 @@ const trackerCounterTexts = [
   'analytics',
   'marketing',
   'statistics',
+  'measurement',
   'personalization',
+  'personalisation',
+  'tracking',
+  'trackers',
+  'profiling',
+  'social media',
+  'social networks',
+  'redes sociales',
   'sell my data',
   'share my data',
   'venta de datos',
@@ -207,6 +240,12 @@ const providerInfoModalUnsafeCloseTexts = [
 const PROVIDER_INFO_MODAL_MAX_CLOSE_ATTEMPTS = 3
 
 const preferenceSectionTexts = [
+  'purposes',
+  'purpose',
+  'categories',
+  'category',
+  'features',
+  'special features',
   'vendors',
   'vendor preferences',
   'partners',
@@ -221,6 +260,12 @@ const preferenceSectionTexts = [
   'gestionar interes legitimo',
   'gestion de interes legitimo',
   'legitimate interest management',
+  'analytics',
+  'marketing',
+  'advertising',
+  'personalization',
+  'tracking',
+  'social media',
 ]
 
 const essentialPreferenceTexts = [
@@ -258,6 +303,130 @@ const bannerKeywords = [
   'rgpd',
 ]
 
+const knownCmpKeywords = [
+  'onetrust',
+  'ot sdk',
+  'ot-sdk',
+  'didomi',
+  'cookiebot',
+  'cybotcookiebot',
+  'trustarc',
+  'truste',
+  'usercentrics',
+  'uc-center',
+  'uc banner',
+  'quantcast',
+  'qc-cmp',
+  'sourcepoint',
+  'sp message',
+]
+
+const COOKIE_INTENT_KEYWORDS = {
+  rejectAll: [
+    ...totalRejectTexts,
+    ...directSafeRejectClassSignals,
+    'reject optional',
+    'reject non essential',
+    'reject non-essential',
+    'deny optional',
+    'deny consent',
+    'rechazar opcionales',
+    'rechazar no esenciales',
+    'denegar consentimiento',
+  ],
+  acceptAll: [
+    ...unsafeAcceptTexts,
+    'accept optional',
+    'allow optional',
+    'aceptar opcionales',
+  ],
+  essentialOnly: [
+    ...necessaryOnlyTexts,
+    'strictly necessary only',
+    'use necessary cookies only',
+    'solo cookies necesarias',
+    'solo tecnicas',
+    'solo técnicas',
+    'solo obligatorias',
+  ],
+  managePreferences: [
+    ...settingsTexts,
+    'customize',
+    'customise',
+    'personalizar',
+    'set choices',
+    'my choices',
+    'mis opciones',
+  ],
+  savePreferences: [
+    ...savePreferenceTexts,
+    'save selection',
+    'save choices',
+    'guardar seleccion',
+    'guardar selección',
+    'guardar configuracion',
+    'guardar configuración',
+  ],
+  analyticsReject: [
+    'analytics',
+    'statistics',
+    'measurement',
+    'analitica',
+    'analítica',
+    'estadisticas',
+    'estadísticas',
+    'medicion',
+    'medición',
+  ],
+  marketingReject: [
+    'marketing',
+    'advertising',
+    'ads',
+    'publicidad',
+    'anuncios',
+    'advertising partners',
+  ],
+  personalizationReject: [
+    'personalization',
+    'personalisation',
+    'personalized content',
+    'personalizacion',
+    'personalización',
+    'contenido personalizado',
+  ],
+  trackingReject: [
+    'tracking',
+    'trackers',
+    'profiling',
+    'sell my data',
+    'share my data',
+    'rastreo',
+    'rastreadores',
+    'perfilado',
+    'venta de datos',
+    'compartir datos',
+  ],
+  socialReject: [
+    'social media',
+    'social networks',
+    'redes sociales',
+    'sociales',
+  ],
+}
+
+const COOKIE_ACTION_PRIORITY = [
+  'rejectAll',
+  'essentialOnly',
+  'analyticsReject',
+  'marketingReject',
+  'personalizationReject',
+  'trackingReject',
+  'socialReject',
+  'managePreferences',
+  'savePreferences',
+  'acceptAll',
+]
+
 const sensitiveAreaKeywords = [
   'login',
   'log in',
@@ -273,6 +442,22 @@ const sensitiveAreaKeywords = [
   'billing',
   'carrito',
   'cart',
+  'newsletter',
+  'subscribe',
+  'suscribete',
+  'suscríbete',
+  'age verification',
+  'verify age',
+  'mayor de edad',
+  'paywall',
+  'premium content',
+  'app download',
+  'download app',
+  'install app',
+  'promotion',
+  'promo',
+  'descuento',
+  'oferta',
 ]
 
 function log(...args) {
@@ -584,10 +769,13 @@ function getDatasetText(element) {
 function getElementActionText(element) {
   if (!element) return ''
 
-  return [
+  return normalizeMatchText([
     element.innerText,
     element.textContent,
     element.getAttribute?.('aria-label'),
+    element.getAttribute?.('aria-controls'),
+    element.getAttribute?.('aria-expanded'),
+    element.getAttribute?.('role'),
     element.getAttribute?.('title'),
     element.value,
     element.getAttribute?.('value'),
@@ -599,11 +787,7 @@ function getElementActionText(element) {
   ]
     .filter(Boolean)
     .join(' ')
-    .toLowerCase()
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[-_/|>#:]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  )
 }
 
 function getActionText(element) {
@@ -629,11 +813,41 @@ function isVisible(element) {
 
 function normalizeMatchText(value) {
   return String(value || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&nbsp;|&#160;/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function tokenizeMatchText(value) {
+  return normalizeMatchText(value)
+    .split(' ')
+    .filter(Boolean)
+}
+
+function textHasPhrase(text, phrase) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  const normalizedPhrase =
+    normalizeMatchText(phrase)
+
+  if (!normalizedText || !normalizedPhrase) {
+    return false
+  }
+
+  return new RegExp(
+    `(^|\\s)${escapeRegExp(normalizedPhrase)}(?=\\s|$)`
+  ).test(normalizedText)
+}
+
+function escapeRegExp(value) {
+  return String(value)
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function textHasAny(text, values) {
@@ -641,8 +855,43 @@ function textHasAny(text, values) {
     normalizeMatchText(text)
 
   return values.some((value) =>
-    normalizedText.includes(normalizeMatchText(value))
+    textHasPhrase(normalizedText, value)
   )
+}
+
+function querySelectorAllDeep(selector, root = document) {
+  const results = []
+  const visitedRoots = new WeakSet()
+
+  function collect(currentRoot) {
+    if (!currentRoot || visitedRoots.has(currentRoot)) {
+      return
+    }
+
+    visitedRoots.add(currentRoot)
+
+    try {
+      results.push(
+        ...Array.from(currentRoot.querySelectorAll(selector))
+      )
+    } catch {
+      return
+    }
+
+    try {
+      currentRoot.querySelectorAll('*').forEach((element) => {
+        if (element.shadowRoot) {
+          collect(element.shadowRoot)
+        }
+      })
+    } catch {
+      // Some detached roots can throw while a CMP re-renders.
+    }
+  }
+
+  collect(root)
+
+  return Array.from(new Set(results))
 }
 
 function looksLikeCookieBanner(element) {
@@ -705,6 +954,21 @@ function hasCookieAttributeSignal(element) {
   return textHasAny(signal, bannerKeywords)
 }
 
+function hasKnownCmpSignal(element) {
+  const signal = [
+    element?.id,
+    getClassNameText(element),
+    element?.getAttribute?.('aria-label'),
+    element?.getAttribute?.('data-testid'),
+    getDatasetText(element),
+    getText(element).slice(0, 900),
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return textHasAny(signal, knownCmpKeywords)
+}
+
 function isPotentialCookieContainer(element) {
   if (
     !element ||
@@ -723,7 +987,10 @@ function isPotentialCookieContainer(element) {
     return false
   }
 
-  return hasCookieBannerSignal(element)
+  return (
+    hasCookieBannerSignal(element) ||
+    hasKnownCmpSignal(element)
+  )
 }
 
 function getCookieContainer(element) {
@@ -750,7 +1017,7 @@ function getCookieContainer(element) {
 
 function findCookieBannerCandidates() {
   const rawCandidates = Array.from(
-    document.querySelectorAll(
+    querySelectorAllDeep(
       [
         '[id*="cookie" i]',
         '[class*="cookie" i]',
@@ -758,6 +1025,20 @@ function findCookieBannerCandidates() {
         '[class*="consent" i]',
         '[id*="privacy" i]',
         '[class*="privacy" i]',
+        '[id*="onetrust" i]',
+        '[class*="onetrust" i]',
+        '[id*="didomi" i]',
+        '[class*="didomi" i]',
+        '[id*="cookiebot" i]',
+        '[class*="cookiebot" i]',
+        '[id*="trustarc" i]',
+        '[class*="trustarc" i]',
+        '[id*="usercentrics" i]',
+        '[class*="usercentrics" i]',
+        '[id*="quantcast" i]',
+        '[class*="quantcast" i]',
+        '[id*="qc-cmp" i]',
+        '[class*="qc-cmp" i]',
         '[aria-label*="cookie" i]',
         '[aria-label*="consent" i]',
         '[aria-label*="privacy" i]',
@@ -958,7 +1239,7 @@ function getActionControls(container) {
   }
 
   return Array.from(
-    container.querySelectorAll(
+    querySelectorAllDeep(
       [
         'button',
         'a',
@@ -966,22 +1247,265 @@ function getActionControls(container) {
         'strong',
         'div',
         '[role="button"]',
+        '[aria-controls]',
+        '[aria-expanded]',
         '[data-action]',
         '[onclick]',
         '[tabindex]',
+        'input',
         'input[type="button"]',
         'input[type="submit"]',
       ].join(',')
+      ,
+      container
     )
   )
 }
 
-function hasUnsafeAcceptText(element) {
-  const text = getActionText(element)
+function getNearbyActionContext(element, container) {
+  const parent =
+    element?.parentElement
 
-  return unsafeAcceptTexts.some((unsafeText) =>
-    text.includes(unsafeText)
+  const closestControlGroup =
+    element?.closest?.(
+      [
+        'li',
+        'p',
+        'label',
+        'fieldset',
+        'section',
+        '[role="group"]',
+        '[class*="button" i]',
+        '[class*="action" i]',
+        '[class*="choice" i]',
+        '[class*="preference" i]',
+      ].join(',')
+    )
+
+  const cmpContext =
+    element?.closest?.(
+      [
+        '[id*="cookie" i]',
+        '[class*="cookie" i]',
+        '[id*="consent" i]',
+        '[class*="consent" i]',
+        '[id*="cmp" i]',
+        '[class*="cmp" i]',
+        '[id*="privacy" i]',
+        '[class*="privacy" i]',
+        '[role="dialog"]',
+        '[aria-modal="true"]',
+      ].join(',')
+    )
+
+  return {
+    text: normalizeMatchText(getText(element)),
+    aria: normalizeMatchText(
+      [
+        element?.getAttribute?.('aria-label'),
+        getElementReferenceText(element, 'aria-labelledby'),
+        getElementReferenceText(element, 'aria-describedby'),
+      ].join(' ')
+    ),
+    title: normalizeMatchText(element?.getAttribute?.('title')),
+    role: normalizeMatchText(element?.getAttribute?.('role')),
+    classText: normalizeMatchText(
+      [
+        element?.id,
+        getClassNameText(element),
+        element?.getAttribute?.('data-action'),
+        element?.getAttribute?.('data-testid'),
+        getDatasetText(element),
+      ].join(' ')
+    ),
+    controlState: normalizeMatchText(
+      [
+        element?.getAttribute?.('aria-controls'),
+        element?.getAttribute?.('aria-expanded'),
+        element?.getAttribute?.('type'),
+      ].join(' ')
+    ),
+    nearby: normalizeMatchText(
+      [
+        parent ? getText(parent).slice(0, 260) : '',
+        closestControlGroup ? getText(closestControlGroup).slice(0, 420) : '',
+      ].join(' ')
+    ),
+    container: normalizeMatchText(
+      [
+        container ? getText(container).slice(0, 1200) : '',
+        container ? getElementActionText(container).slice(0, 600) : '',
+        cmpContext ? getText(cmpContext).slice(0, 1000) : '',
+        cmpContext ? getElementActionText(cmpContext).slice(0, 600) : '',
+      ].join(' ')
+    ),
+  }
+}
+
+function scoreTextAgainstKeywords(text, keywords, weight) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  if (!normalizedText) return 0
+
+  const tokenSet =
+    new Set(tokenizeMatchText(normalizedText))
+
+  return keywords.reduce((score, keyword) => {
+    const normalizedKeyword =
+      normalizeMatchText(keyword)
+
+    if (!normalizedKeyword) return score
+
+    if (textHasPhrase(normalizedText, normalizedKeyword)) {
+      return score + weight
+    }
+
+    const keywordTokens =
+      tokenizeMatchText(normalizedKeyword)
+
+    if (
+      keywordTokens.length > 1 &&
+      keywordTokens.every((token) => tokenSet.has(token))
+    ) {
+      return score + Math.max(1, weight - 2)
+    }
+
+    return score
+  }, 0)
+}
+
+function getCookieIntentScore(element, container, intent) {
+  if (!element || !COOKIE_INTENT_KEYWORDS[intent]) {
+    return 0
+  }
+
+  const context =
+    getNearbyActionContext(element, container)
+
+  const keywords =
+    COOKIE_INTENT_KEYWORDS[intent]
+
+  let score = 0
+
+  score += scoreTextAgainstKeywords(context.text, keywords, 8)
+  score += scoreTextAgainstKeywords(context.aria, keywords, 7)
+  score += scoreTextAgainstKeywords(context.title, keywords, 6)
+  score += scoreTextAgainstKeywords(context.role, keywords, 2)
+  score += scoreTextAgainstKeywords(context.classText, keywords, 5)
+  score += scoreTextAgainstKeywords(context.controlState, keywords, 2)
+  score += scoreTextAgainstKeywords(context.nearby, keywords, 3)
+  score += scoreTextAgainstKeywords(context.container, keywords, 1)
+
+  if (
+    intent !== 'acceptAll' &&
+    scoreTextAgainstKeywords(
+      [
+        context.text,
+        context.aria,
+        context.title,
+        context.classText,
+      ].join(' '),
+      COOKIE_INTENT_KEYWORDS.acceptAll,
+      8
+    ) >= 8
+  ) {
+    score -= 20
+  }
+
+  return score
+}
+
+function getBestCookieIntent(element, container) {
+  const scoredIntents =
+    COOKIE_ACTION_PRIORITY
+      .map((intent) => ({
+        intent,
+        score: getCookieIntentScore(element, container, intent),
+      }))
+      .filter((result) => result.score > 0)
+
+  return scoredIntents
+    .sort((first, second) => {
+      if (second.score !== first.score) {
+        return second.score - first.score
+      }
+
+      return (
+        COOKIE_ACTION_PRIORITY.indexOf(first.intent) -
+        COOKIE_ACTION_PRIORITY.indexOf(second.intent)
+      )
+    })[0] || {
+      intent: 'none',
+      score: 0,
+    }
+}
+
+function findBestActionByIntent(container, intent, minimumScore = 8) {
+  return getActionControls(container)
+    .filter((control) =>
+      isVisible(control) &&
+      !isSensitiveActionControl(control, container)
+    )
+    .map((control) => ({
+      control,
+      score: getCookieIntentScore(control, container, intent),
+    }))
+    .filter((candidate) => candidate.score >= minimumScore)
+    .sort((first, second) => second.score - first.score)[0]?.control || null
+}
+
+function findBestActionByKeywords(container, keywords, minimumScore = 8) {
+  return getActionControls(container)
+    .filter((control) =>
+      isVisible(control) &&
+      !hasUnsafeAcceptText(control) &&
+      !isSensitiveActionControl(control, container)
+    )
+    .map((control) => ({
+      control,
+      score:
+        scoreTextAgainstKeywords(getActionText(control), keywords, 8) +
+        scoreTextAgainstKeywords(
+          getNearbyActionContext(control, container).nearby,
+          keywords,
+          3
+        ),
+    }))
+    .filter((candidate) => candidate.score >= minimumScore)
+    .sort((first, second) => second.score - first.score)[0]?.control || null
+}
+
+function isSensitiveActionControl(control, container) {
+  const context =
+    getNearbyActionContext(control, container)
+
+  const sensitiveSignal =
+    normalizeMatchText(
+      [
+        context.text,
+        context.aria,
+        context.title,
+        context.classText,
+        context.nearby,
+      ].join(' ')
+    )
+
+  if (textHasAny(sensitiveSignal, sensitiveAreaKeywords)) {
+    return true
+  }
+
+  const cmpSignal =
+    normalizeMatchText(context.container)
+
+  return (
+    !textHasAny(cmpSignal, bannerKeywords) &&
+    !textHasAny(cmpSignal, preferenceSectionTexts)
   )
+}
+
+function hasUnsafeAcceptText(element) {
+  return getCookieIntentScore(element, null, 'acceptAll') >= 8
 }
 
 function getCompactActionText(element) {
@@ -994,20 +1518,7 @@ function hasDirectSafeRejectSignal(element) {
     return false
   }
 
-  const text =
-    getActionText(element)
-
-  const compactText =
-    getCompactActionText(element)
-
-  return (
-    directSafeRejectTexts.some((safeText) =>
-      text.includes(safeText)
-    ) ||
-    directSafeRejectClassSignals.some((safeClass) =>
-      compactText.includes(safeClass)
-    )
-  )
+  return getCookieIntentScore(element, null, 'rejectAll') >= 8
 }
 
 function hasDirectSettingsSignal(element) {
@@ -1015,31 +1526,16 @@ function hasDirectSettingsSignal(element) {
     return false
   }
 
-  const text =
-    getActionText(element)
-
-  return directSettingsTexts.some((settingsText) =>
-    text.includes(settingsText)
-  )
+  return getCookieIntentScore(element, null, 'managePreferences') >= 8
 }
 
 function findActionByTexts(container, texts) {
-  return getActionControls(container)
-    .find((control) => {
-      if (!isVisible(control)) return false
-      if (hasUnsafeAcceptText(control)) return false
-
-      const text = getActionText(control)
-
-      return texts.some((candidateText) =>
-        text.includes(candidateText)
-      )
-    })
+  return findBestActionByKeywords(container, texts)
 }
 
 function getDirectClickableControls(container = document) {
   return Array.from(
-    container.querySelectorAll(
+    querySelectorAllDeep(
       [
         'button',
         'a',
@@ -1047,12 +1543,17 @@ function getDirectClickableControls(container = document) {
         'strong',
         'div',
         '[role="button"]',
+        '[aria-controls]',
+        '[aria-expanded]',
         '[data-action]',
         '[onclick]',
         '[tabindex]',
+        'input',
         'input[type="button"]',
         'input[type="submit"]',
       ].join(',')
+      ,
+      container
     )
   )
 }
@@ -1063,6 +1564,7 @@ function findDirectSafeRejectControl() {
   return getDirectClickableControls(document)
     .find((control) => {
       if (!isVisible(control)) return false
+      if (isSensitiveActionControl(control, document)) return false
       return hasDirectSafeRejectSignal(control)
     })
 }
@@ -1078,8 +1580,63 @@ function findDirectSettingsControl() {
   return getDirectClickableControls(document)
     .find((control) => {
       if (!isVisible(control)) return false
+      if (isSensitiveActionControl(control, document)) return false
       return hasDirectSettingsSignal(control)
     })
+}
+
+function getBannerActionSignature(element) {
+  const container =
+    getCookieContainer(element) ||
+    element?.closest?.(
+      [
+        '[role="dialog"]',
+        '[aria-modal="true"]',
+        '[id*="cookie" i]',
+        '[class*="cookie" i]',
+        '[id*="consent" i]',
+        '[class*="consent" i]',
+        '[id*="privacy" i]',
+        '[class*="privacy" i]',
+      ].join(',')
+    )
+
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      container ? container.id : '',
+      container ? getClassNameText(container) : '',
+      container ? getText(container).slice(0, 180) : '',
+      getActionText(element).slice(0, 120),
+    ].join(' ')
+  ).slice(0, 360)
+}
+
+function canProcessBannerAction(element) {
+  if (!element) return false
+
+  if (processedActionElements.has(element)) {
+    return false
+  }
+
+  const signature =
+    getBannerActionSignature(element)
+
+  const lastActionAt =
+    bannerActionCooldowns.get(signature) || 0
+
+  if (
+    signature &&
+    Date.now() - lastActionAt < BANNER_ACTION_COOLDOWN_MS
+  ) {
+    return false
+  }
+
+  if (signature) {
+    bannerActionCooldowns.set(signature, Date.now())
+  }
+
+  return true
 }
 
 function clickElementSafely(element) {
@@ -1087,10 +1644,13 @@ function clickElementSafely(element) {
     !shouldRunOnThisSite() ||
     !element ||
     !isVisible(element) ||
-    hasUnsafeAcceptText(element)
+    hasUnsafeAcceptText(element) ||
+    processedActionElements.has(element)
   ) {
     return false
   }
+
+  processedActionElements.add(element)
 
   element.dispatchEvent(
     new MouseEvent('mousedown', {
@@ -1152,7 +1712,7 @@ function decideCookieAction(container) {
     }
   }
 
-  const totalReject = findActionByTexts(container, totalRejectTexts)
+  const totalReject = findBestActionByIntent(container, 'rejectAll')
 
   if (totalReject) {
     return {
@@ -1161,7 +1721,7 @@ function decideCookieAction(container) {
     }
   }
 
-  const necessaryOnly = findActionByTexts(container, necessaryOnlyTexts)
+  const necessaryOnly = findBestActionByIntent(container, 'essentialOnly')
 
   if (necessaryOnly) {
     return {
@@ -1170,7 +1730,24 @@ function decideCookieAction(container) {
     }
   }
 
-  const reject = findActionByTexts(container, rejectTexts)
+  const rejectCategory =
+    [
+      'analyticsReject',
+      'marketingReject',
+      'personalizationReject',
+      'trackingReject',
+    ]
+      .map((intent) => findBestActionByIntent(container, intent, 10))
+      .find(Boolean)
+
+  if (rejectCategory) {
+    return {
+      type: 'reject',
+      element: rejectCategory,
+    }
+  }
+
+  const reject = findBestActionByKeywords(container, rejectTexts)
 
   if (reject) {
     return {
@@ -1186,12 +1763,31 @@ function decideCookieAction(container) {
     }
   }
 
-  const settings = findActionByTexts(container, settingsTexts)
+  const settings = findBestActionByIntent(container, 'managePreferences')
 
   if (settings) {
     return {
       type: 'settings',
       element: settings,
+    }
+  }
+
+  const save = findBestActionByIntent(container, 'savePreferences')
+
+  if (save) {
+    return {
+      type: 'save',
+      element: save,
+    }
+  }
+
+  const accept = findBestActionByIntent(container, 'acceptAll')
+
+  if (accept) {
+    return {
+      type: 'none',
+      element: null,
+      reason: 'accept_all_is_last_resort',
     }
   }
 
@@ -1210,7 +1806,10 @@ function executeCookieAction(action) {
     return false
   }
 
-  if (hasUnsafeAcceptText(action.element)) {
+  if (
+    hasUnsafeAcceptText(action.element) ||
+    !canProcessBannerAction(action.element)
+  ) {
     return false
   }
 
@@ -1232,6 +1831,12 @@ function executeCookieAction(action) {
     log('Configuracion de cookies abierta')
   }
 
+  if (action.type === 'save') {
+    setLastAction('preferences_saved')
+    setLastError('')
+    log('Preferencias de cookies guardadas')
+  }
+
   return true
 }
 
@@ -1247,6 +1852,8 @@ function runCookiePreferencesRetries() {
     1000,
     2000,
     3500,
+    6500,
+    9000,
   ]
 
   let completed = false
@@ -1270,25 +1877,38 @@ function runCookiePreferencesRetries() {
 
 function getToggleControls(container) {
   return Array.from(
-    container.querySelectorAll(
+    querySelectorAllDeep(
       [
         'input[type="checkbox"]',
+        'input[type="radio"]',
         '[role="checkbox"]',
         '[role="switch"]',
+        '[role="slider"]',
         '[aria-checked="true"]',
         '[aria-pressed="true"]',
         'button',
         '[aria-checked]',
         '[aria-pressed]',
+        '[data-state]',
+        '[data-checked]',
+        '[data-enabled]',
         '[data-action*="toggle" i]',
         '[data-action*="switch" i]',
         '[data-action*="vendor" i]',
         '[data-action*="partner" i]',
+        '[data-action*="purpose" i]',
+        '[data-action*="category" i]',
         '[data-action*="legitimate" i]',
         '[data-action*="interest" i]',
         '[class*="toggle" i]',
         '[class*="switch" i]',
+        '[class*="slider" i]',
+        '[class*="checkbox" i]',
+        '[class*="Switch" i]',
+        '[class*="Toggle" i]',
       ].join(',')
+      ,
+      container
     )
   )
 }
@@ -1475,7 +2095,14 @@ function isOptionalPreferenceControl(control) {
   const text = getPreferenceDecisionText(control)
 
   return (
-    textHasAny(text, optionalPreferenceTexts) &&
+    (
+      textHasAny(text, optionalPreferenceTexts) ||
+      textHasAny(text, COOKIE_INTENT_KEYWORDS.analyticsReject) ||
+      textHasAny(text, COOKIE_INTENT_KEYWORDS.marketingReject) ||
+      textHasAny(text, COOKIE_INTENT_KEYWORDS.personalizationReject) ||
+      textHasAny(text, COOKIE_INTENT_KEYWORDS.trackingReject) ||
+      textHasAny(text, COOKIE_INTENT_KEYWORDS.socialReject)
+    ) &&
     !isEssentialPreferenceControl(control)
   )
 }
@@ -1495,15 +2122,21 @@ function isExplicitToggleControl(control) {
         'input[type="checkbox"]',
         '[role="checkbox"]',
         '[role="switch"]',
+        '[role="slider"]',
         '[aria-checked]',
         '[aria-pressed]',
+        '[data-state]',
+        '[data-checked]',
+        '[data-enabled]',
         '[class*="toggle" i]',
         '[class*="switch" i]',
+        '[class*="slider" i]',
+        '[class*="checkbox" i]',
         '[data-action*="toggle" i]',
         '[data-action*="switch" i]',
       ].join(',')
     ) ||
-    textHasAny(classText, ['toggle', 'switch']) ||
+    textHasAny(classText, ['toggle', 'switch', 'slider', 'checkbox']) ||
     textHasAny(actionText, ['toggle', 'switch'])
   )
 }
@@ -1540,7 +2173,7 @@ function getDeniedPreferenceStats(control) {
 
   if (
     stats.length === 0 &&
-    textHasAny(text, optionalPreferenceTexts)
+    isOptionalPreferenceControl(control)
   ) {
     stats.push('vendorsDenied')
     stats.push('trackersReduced')
@@ -1575,7 +2208,10 @@ function isPreferenceSectionControl(control) {
   const text =
     getActionText(control)
 
-  if (!textHasAny(text, preferenceSectionTexts)) {
+  if (
+    !textHasAny(text, preferenceSectionTexts) &&
+    getCookieIntentScore(control, null, 'managePreferences') < 6
+  ) {
     return false
   }
 
@@ -1585,7 +2221,7 @@ function isPreferenceSectionControl(control) {
 
   if (
     control.matches?.(
-      'input[type="checkbox"], [role="switch"], [aria-checked], [class*="toggle" i], [class*="switch" i]'
+      'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [aria-checked], [class*="toggle" i], [class*="switch" i], [class*="slider" i]'
     )
   ) {
     return false
@@ -1599,7 +2235,7 @@ function isPreferenceSectionControl(control) {
     text.length <= 600 ||
     Boolean(
       control.matches?.(
-        'button, a, [role="button"], [data-action], [onclick], [tabindex]'
+        'button, a, [role="button"], [role="tab"], [aria-controls], [aria-expanded], [data-action], [onclick], [tabindex]'
       )
     )
   )
@@ -1622,7 +2258,10 @@ function openPreferenceSections(panel) {
     .forEach((control) => {
       if (!shouldRunOnThisSite()) return
 
-      if (clickElementSafely(control)) {
+      if (
+        canProcessBannerAction(control) &&
+        clickElementSafely(control)
+      ) {
         openedCount += 1
       }
     })
@@ -1644,13 +2283,34 @@ function isToggleEnabled(control) {
     return control.checked
   }
 
+  if (control.matches?.('input[type="radio"]')) {
+    return control.checked
+  }
+
   const ariaChecked = control.getAttribute?.('aria-checked')
   const ariaPressed = control.getAttribute?.('aria-pressed')
+  const dataState = normalizeMatchText(control.getAttribute?.('data-state'))
+  const dataChecked = normalizeMatchText(control.getAttribute?.('data-checked'))
+  const dataEnabled = normalizeMatchText(control.getAttribute?.('data-enabled'))
+  const actionText = getActionText(control)
   const classText = getClassNameText(control).toLowerCase()
 
   return (
     ariaChecked === 'true' ||
     ariaPressed === 'true' ||
+    dataState === 'checked' ||
+    dataState === 'on' ||
+    dataState === 'enabled' ||
+    dataState === 'active' ||
+    dataChecked === 'true' ||
+    dataEnabled === 'true' ||
+    textHasAny(actionText, [
+      'enabled',
+      'active',
+      'selected',
+      'on',
+      'checked',
+    ]) ||
     classText.includes('active') ||
     classText.includes('checked') ||
     classText.includes('enabled') ||
@@ -1663,21 +2323,33 @@ function isToggleEnabled(control) {
 
 function getExplicitPreferenceControls(container) {
   return Array.from(
-    container.querySelectorAll(
+    querySelectorAllDeep(
       [
         'input[type="checkbox"]',
+        'input[type="radio"]',
         '[role="checkbox"]',
         '[role="switch"]',
+        '[role="slider"]',
         '[aria-checked]',
+        '[aria-pressed]',
+        '[data-state]',
+        '[data-checked]',
+        '[data-enabled]',
         '[class*="toggle" i]',
         '[class*="switch" i]',
+        '[class*="slider" i]',
+        '[class*="checkbox" i]',
         '[data-action*="toggle" i]',
         '[data-action*="switch" i]',
         '[data-action*="vendor" i]',
         '[data-action*="partner" i]',
+        '[data-action*="purpose" i]',
+        '[data-action*="category" i]',
         '[data-action*="legitimate" i]',
         '[data-action*="interest" i]',
       ].join(',')
+      ,
+      container
     )
   )
 }
@@ -1872,10 +2544,11 @@ function findCookiePreferencesPanel() {
   const preferencePanelTexts = [
     ...bannerKeywords,
     ...preferenceSectionTexts,
+    ...knownCmpKeywords,
   ]
 
   const candidates = Array.from(
-    document.querySelectorAll(
+    querySelectorAllDeep(
       [
         '[id*="cookie" i]',
         '[class*="cookie" i]',
@@ -1897,8 +2570,23 @@ function findCookiePreferencesPanel() {
         '[class*="legitimate" i]',
         '[id*="interest" i]',
         '[class*="interest" i]',
+        '[id*="onetrust" i]',
+        '[class*="onetrust" i]',
+        '[id*="didomi" i]',
+        '[class*="didomi" i]',
+        '[id*="cookiebot" i]',
+        '[class*="cookiebot" i]',
+        '[id*="trustarc" i]',
+        '[class*="trustarc" i]',
+        '[id*="usercentrics" i]',
+        '[class*="usercentrics" i]',
+        '[id*="quantcast" i]',
+        '[class*="quantcast" i]',
+        '[id*="qc-cmp" i]',
+        '[class*="qc-cmp" i]',
         '[role="dialog"]',
         '[role="tabpanel"]',
+        '[role="tablist"]',
         '[aria-modal="true"]',
       ].join(',')
     )
@@ -1911,12 +2599,14 @@ function findCookiePreferencesPanel() {
       toggleCount: getToggleControls(element).length,
       settingsControl: findActionByTexts(element, settingsTexts),
       saveControl: findActionByTexts(element, savePreferenceTexts),
+      cmpSignal: hasKnownCmpSignal(element),
     }))
     .filter((candidate) =>
       (
         candidate.toggleCount > 0 ||
         candidate.settingsControl ||
-        candidate.saveControl
+        candidate.saveControl ||
+        candidate.cmpSignal
       ) &&
       textHasAny(
         [
@@ -1927,7 +2617,8 @@ function findCookiePreferencesPanel() {
       )
     )
     .sort((first, second) =>
-      second.toggleCount - first.toggleCount
+      (second.toggleCount + (second.cmpSignal ? 2 : 0)) -
+      (first.toggleCount + (first.cmpSignal ? 2 : 0))
     )
 
   return candidates[0]?.element || null
@@ -2000,12 +2691,16 @@ function disableOptionalPreferenceControls(panel) {
 }
 
 function saveCookiePreferences(panel) {
-  const saveControl = findActionByTexts(panel, savePreferenceTexts)
+  const saveControl =
+    findBestActionByIntent(panel, 'savePreferences') ||
+    findActionByTexts(panel, savePreferenceTexts)
 
   if (
     saveControl &&
     !hasUnsafeAcceptText(saveControl) &&
-    shouldRunOnThisSite()
+    shouldRunOnThisSite() &&
+    !isSensitiveActionControl(saveControl, panel) &&
+    canProcessBannerAction(saveControl)
   ) {
     if (!clickElementSafely(saveControl)) {
       return false
@@ -2066,7 +2761,7 @@ function handleCookiePreferences() {
       const delayedDisabledCount =
         disableOptionalPreferenceControls(updatedPanel)
 
-      if (delayedDisabledCount > 0) {
+      if (delayedDisabledCount > 0 || disabledCount > 0) {
         saveCookiePreferences(updatedPanel)
       }
     }, 350)
@@ -2121,7 +2816,11 @@ function scanPage() {
 
     const directRejectControl = findDirectSafeRejectControl()
 
-    if (clickElementSafely(directRejectControl)) {
+    if (
+      directRejectControl &&
+      canProcessBannerAction(directRejectControl) &&
+      clickElementSafely(directRejectControl)
+    ) {
       incrementStat('autoRejects')
       setLastAction('auto_reject')
       setLastError('')
@@ -2131,7 +2830,11 @@ function scanPage() {
 
     const directSettingsControl = findDirectSettingsControl()
 
-    if (clickElementSafely(directSettingsControl)) {
+    if (
+      directSettingsControl &&
+      canProcessBannerAction(directSettingsControl) &&
+      clickElementSafely(directSettingsControl)
+    ) {
       schedulePreferencesFlow()
       setLastAction('settings_opened')
       setLastError('')
@@ -2170,8 +2873,31 @@ function scheduleScan() {
   clearTimeout(debounceTimer)
 
   debounceTimer = setTimeout(() => {
+    observeOpenShadowRoots()
     scanPage()
   }, 400)
+}
+
+function observeOpenShadowRoots() {
+  if (!observer) return
+
+  querySelectorAllDeep('*').forEach((element) => {
+    const root = element.shadowRoot
+
+    if (!root || observedShadowRoots.has(root)) {
+      return
+    }
+
+    try {
+      observer.observe(root, {
+        childList: true,
+        subtree: true,
+      })
+      observedShadowRoots.add(root)
+    } catch {
+      // Some shadow roots can be detached while CMPs re-render.
+    }
+  })
 }
 
 function startObserver() {
@@ -2191,6 +2917,7 @@ function startObserver() {
     subtree: true,
   })
 
+  observeOpenShadowRoots()
   scheduleScan()
 }
 
