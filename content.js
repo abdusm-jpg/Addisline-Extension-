@@ -6,6 +6,8 @@ let excludedDomains = []
 let observer = null
 let debounceTimer = null
 let preferencesTimer = null
+let lastScanAt = 0
+let scanBurstCount = 0
 let protectedDomainRecorded = false
 let lastDiagnosticAction = ''
 let lastDiagnosticError = ''
@@ -19,6 +21,10 @@ const observedShadowRoots = new WeakSet()
 const STATS_KEY = 'stats'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
+const SCAN_DEBOUNCE_MS = 400
+const MIN_SCAN_INTERVAL_MS = 1000
+const MAX_SCAN_BURST = 8
+const SCAN_BURST_RESET_MS = 15000
 
 const DEFAULT_STATS = {
   bannersHidden: 0,
@@ -2867,19 +2873,45 @@ function scanPage() {
     setLastError(error?.message || 'Error en content script')
   }
 }
-
 function scheduleScan() {
   if (!shouldRunOnThisSite()) {
     stopObserver()
     return
   }
 
+  const now = Date.now()
+
+  if (now - lastScanAt > SCAN_BURST_RESET_MS) {
+    scanBurstCount = 0
+  }
+
+  scanBurstCount += 1
+
+  if (scanBurstCount > MAX_SCAN_BURST) {
+    clearTimeout(debounceTimer)
+
+    debounceTimer = setTimeout(() => {
+      scanBurstCount = 0
+      observeOpenShadowRoots()
+      scanPage()
+    }, SCAN_BURST_RESET_MS)
+
+    return
+  }
+
+  const delay =
+    Math.max(
+      SCAN_DEBOUNCE_MS,
+      MIN_SCAN_INTERVAL_MS - (now - lastScanAt)
+    )
+
   clearTimeout(debounceTimer)
 
   debounceTimer = setTimeout(() => {
+    lastScanAt = Date.now()
     observeOpenShadowRoots()
     scanPage()
-  }, 400)
+  }, delay)
 }
 
 function observeOpenShadowRoots() {
