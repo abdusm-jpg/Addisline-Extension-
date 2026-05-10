@@ -281,7 +281,21 @@ function validateProtectionEvent(payload) {
       }
     }
   }
+  for (const field of PROTECTION_COUNTER_FIELDS) {
+    const value = payload[field]
 
+    if (
+      typeof value !== 'number' ||
+      !Number.isInteger(value) ||
+      value < 0 ||
+      value > 500
+    ) {
+      return {
+        valid: false,
+        reason: `invalid_counter_${field}`,
+      }
+    }
+  }
   const sanitized = {
     bannersHidden: Math.max(0, Number(payload.bannersHidden) || 0),
     trackersReduced: Math.max(0, Number(payload.trackersReduced) || 0),
