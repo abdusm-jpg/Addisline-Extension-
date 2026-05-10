@@ -1651,26 +1651,30 @@ function clickElementSafely(element) {
   }
 
   processedActionElements.add(element)
+  try {
+    element.dispatchEvent(
+      new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      })
+    )
 
-  element.dispatchEvent(
-    new MouseEvent('mousedown', {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-    })
-  )
+    element.dispatchEvent(
+      new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      })
+    )
 
-  element.dispatchEvent(
-    new MouseEvent('mouseup', {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-    })
-  )
+    element.click()
 
-  element.click()
-
-  return true
+    return true
+  } catch (error) {
+    log('Safe click failed:', error)
+    return false
+  }
 }
 
 function clickElementForProviderModalClose(element) {
