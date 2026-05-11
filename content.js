@@ -452,7 +452,44 @@ const COOKIE_INTENT_KEYWORDS = {
     'redes sociales',
     'sociales',
   ],
-}
+  vendorReject: [
+    'vendors',
+    'vendor',
+    'partners',
+    'partner',
+    'providers',
+    'proveedores',
+    'proveedores externos',
+    'external providers',
+    'advertising partners',
+    'third party',
+    'third parties',
+],
+
+   legitimateInterestReject: [
+    'interes legitimo',
+    'intereses legitimos',
+    'interes legítimo',
+    'intereses legítimos',
+    'legitimate interest',
+    'legitimate interests',
+    'legitimate purposes',
+    'vendor legitimate interest',
+    'li purpose',
+    'li purposes',
+    'base legítima',
+    'finalidad legítima',
+],
+
+   strictPrivacyMode: [
+    'strict privacy',
+    'privacy strict',
+    'modo estricto',
+    'privacidad estricta',
+    'strict mode',
+    'modo de privacidad estricta',
+  ],
+  }
 
 const COOKIE_ACTION_PRIORITY = [
   'rejectAll',
@@ -891,6 +928,8 @@ function escapeRegExp(value) {
 }
 
 function textHasAny(text, values) {
+  if (!Array.isArray(values)) return false
+
   const normalizedText =
     normalizeMatchText(text)
 
