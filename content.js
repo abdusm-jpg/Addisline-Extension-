@@ -2393,6 +2393,19 @@ function isToggleEnabled(control) {
   const actionText = getActionText(control)
   const classText = getClassNameText(control).toLowerCase()
 
+  if (
+    ariaChecked === 'false' ||
+    ariaPressed === 'false' ||
+    dataState === 'unchecked' ||
+    dataState === 'off' ||
+    dataState === 'disabled' ||
+    dataState === 'inactive' ||
+    dataChecked === 'false' ||
+    dataEnabled === 'false'
+  ) {
+    return false
+  }
+
   return (
     ariaChecked === 'true' ||
     ariaPressed === 'true' ||
