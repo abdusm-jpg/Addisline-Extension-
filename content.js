@@ -343,6 +343,8 @@ const bannerKeywords = [
   'preferencias',
   'gdpr',
   'rgpd',
+  'cookies opcionales',
+  'permitir cookies opcionales',
 ]
 
 const knownCmpKeywords = [
