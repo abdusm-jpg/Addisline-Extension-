@@ -2882,7 +2882,7 @@ function handleCookiePreferences() {
       if (delayedDisabledCount > 0 || disabledCount > 0) {
         saveCookiePreferences(updatedPanel)
       }
-    }, 350)
+    }, 700)
   }
 
   if (disabledCount > 0) {
