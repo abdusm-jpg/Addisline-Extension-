@@ -192,6 +192,24 @@ const legitimateInterestCounterTexts = [
   'legitimate interests',
   'legitimate purposes',
   'vendor legitimate interest',
+  'legitimate',
+  'legitimate basis',
+  'legitimate interest basis',
+  'legitimate interest purposes',
+  'legitimate interest processing',
+  'legitimate interest consent',
+  'li purpose',
+  'li purposes',
+  'interes legítimo',
+  'intereses legítimos',
+  'base legitima',
+  'base legítima',
+  'finalidad legitima',
+  'finalidad legítima',
+  'finalidades legitimas',
+  'finalidades legítimas',
+  'tratamiento legitimo',
+  'tratamiento legítimo',
 ]
 
 const vendorCounterTexts = [
@@ -1975,8 +1993,14 @@ function getNearbyPreferenceText(control) {
     relatedText,
     label ? getText(label) : '',
     context ? getText(context) : '',
+    context ? getElementActionText(context) : '',
+    control.parentElement ? getText(control.parentElement) : '',
+    control.parentElement ? getElementActionText(control.parentElement) : '',
     control.previousElementSibling ? getText(control.previousElementSibling) : '',
+    control.previousElementSibling ? getElementActionText(control.previousElementSibling) : '',
     control.nextElementSibling ? getText(control.nextElementSibling) : '',
+    control.nextElementSibling ? getElementActionText(control.nextElementSibling) : '',
+
   ]
     .filter(Boolean)
     .join(' ')
