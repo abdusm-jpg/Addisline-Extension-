@@ -2,24 +2,11 @@
   "manifest_version": 3,
   "name": "ADDISLINE SM",
   "version": "1.0",
-  "description": "Proteccion preventiva de privacidad web.",
-  "permissions": [
-    "activeTab",
-    "declarativeNetRequest",
-    "storage"
-  ],
+  "description": "Protección preventiva de privacidad web.",
+  "permissions": ["storage"],
   "host_permissions": [
-    "https://us-central1-addisline-sm.cloudfunctions.net/*"
-  ],
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "addisline_basic_ads",
-        "enabled": true,
-        "path": "rules.json"
-      }
-    ]
-  },
+  "https://us-central1-addisline-sm.cloudfunctions.net/*"
+],
   "background": {
     "service_worker": "background.js"
   },
@@ -28,11 +15,9 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": ["content.js"]
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ]
 }
