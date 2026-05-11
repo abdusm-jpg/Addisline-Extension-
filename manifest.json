@@ -3,7 +3,10 @@
   "name": "ADDISLINE SM",
   "version": "1.0",
   "description": "Protección preventiva de privacidad web.",
-  "permissions": ["storage"],
+  "permissions": [
+    "activeTab",
+    "storage"
+],
   "host_permissions": [
   "https://us-central1-addisline-sm.cloudfunctions.net/*"
 ],
