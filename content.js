@@ -2318,6 +2318,13 @@ function isPreferenceSectionControl(control) {
   }
 
   if (
+    control.getAttribute?.('role') === 'tab' &&
+    control.getAttribute?.('aria-selected') === 'true'
+  ) {
+    return false
+  }
+
+  if (
     control.matches?.(
       'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [aria-checked], [class*="toggle" i], [class*="switch" i], [class*="slider" i]'
     )
