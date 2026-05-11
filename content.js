@@ -136,6 +136,8 @@ const directSafeRejectClassSignals = [
   'denyall',
   'rejectall',
   'declineall',
+  'twcc__decline-button',
+  'decline-button',
 ]
 
 const optionalPreferenceTexts = [
