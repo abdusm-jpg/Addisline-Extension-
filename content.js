@@ -1667,7 +1667,18 @@ function findDirectSafeRejectControl() {
   return getDirectClickableControls(document)
     .find((control) => {
       if (!isVisible(control)) return false
+      if (hasUnsafeAcceptText(control)) return false
       if (isSensitiveActionControl(control, document)) return false
+
+      const actionText = getActionText(control)
+
+      if (
+        textHasAny(actionText, rejectTexts) ||
+        textHasAny(actionText, totalRejectTexts)
+      ) {
+        return true
+      }
+
       return hasDirectSafeRejectSignal(control)
     })
 }
