@@ -1608,6 +1608,19 @@ function hasDirectSafeRejectSignal(element) {
     return false
   }
 
+  const actionText = getActionText(element)
+  const classText = getClassNameText(element)
+  const idText = element.id || ''
+
+  if (
+    textHasAny(actionText, rejectTexts) ||
+    textHasAny(actionText, totalRejectTexts) ||
+    textHasAny(classText, directSafeRejectClassSignals) ||
+    textHasAny(idText, directSafeRejectClassSignals)
+  ) {
+    return true
+  }
+
   return getCookieIntentScore(element, null, 'rejectAll') >= 8
 }
 
@@ -2843,6 +2856,10 @@ function saveCookiePreferences(panel) {
 }
 
 function handleCookiePreferences() {
+  log('handleCookiePreferences:start', {
+    shouldRun: shouldRunOnThisSite(),
+    mode: getNormalizedProtectionMode(),
+  })
   if (
     !shouldRunOnThisSite() ||
     getNormalizedProtectionMode() === 'soft'
@@ -2862,13 +2879,22 @@ function handleCookiePreferences() {
   }
 
   const panel = findCookiePreferencesPanel()
-
+log('handleCookiePreferences:panel', {
+  found: Boolean(panel),
+  text: getText(panel).slice(0, 300),
+})
   if (!panel) {
     log('Panel de preferencias no encontrado')
     return false
   }
 
   const rejectAction = decideCookieAction(panel)
+log('handleCookiePreferences:action', {
+  type: rejectAction.type,
+  text: getActionText(rejectAction.element).slice(0, 120),
+  id: rejectAction.element?.id,
+  className: getClassNameText(rejectAction.element).slice(0, 120),
+})
 
   if (
     rejectAction.type === 'reject' &&
