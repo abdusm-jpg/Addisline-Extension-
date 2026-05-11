@@ -1311,6 +1311,8 @@ function getActionControls(container) {
         ...optionalPreferenceTexts,
         ...settingsTexts,
         ...savePreferenceTexts,
+        ...rejectTexts,
+        ...totalRejectTexts,
       ]
     )
   ) {
