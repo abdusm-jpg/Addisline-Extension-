@@ -2246,12 +2246,21 @@ function getDeniedPreferenceStats(control) {
 
   const stats = []
 
-  if (textHasAny(text, vendorCounterTexts)) {
+  if (
+    textHasAny(text, vendorCounterTexts) ||
+    textHasAny(text, COOKIE_INTENT_KEYWORDS.vendorReject)
+  ) {
     stats.push('vendorsDenied')
     stats.push('trackersReduced')
   }
 
-  if (textHasAny(text, legitimateInterestCounterTexts)) {
+  if (
+    textHasAny(text, legitimateInterestCounterTexts) ||
+    textHasAny(
+      text,
+      COOKIE_INTENT_KEYWORDS.legitimateInterestReject
+    )
+  ) {
     stats.push('legitimateInterestsDisabled')
     stats.push('trackersReduced')
   }
