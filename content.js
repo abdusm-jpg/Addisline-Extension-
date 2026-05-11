@@ -399,6 +399,11 @@ const COOKIE_INTENT_KEYWORDS = {
     'set choices',
     'my choices',
     'mis opciones',
+    'personalizar cookies',
+    'configurar cookies',
+    'opciones cookies',
+    'cookie settings',
+    'privacy settings',
   ],
   savePreferences: [
     ...savePreferenceTexts,
