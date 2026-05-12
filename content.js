@@ -3763,6 +3763,86 @@ function selectBestPreview(previews) {
   })
 }
 
+// Cookie Intelligence Layer - Passive Runtime Hook
+const COOKIE_INTELLIGENCE_CACHE = new Map()
+const COOKIE_INTELLIGENCE_MAX_ENTRIES = 10
+const COOKIE_INTELLIGENCE_TTL = 120000
+
+function runPassiveCookieIntelligence(container) {
+  if (!container) return null
+
+  const key = getCookieIntelligenceContainerKey(container)
+
+  const cached = COOKIE_INTELLIGENCE_CACHE.get(key)
+  if (cached && Date.now() - cached.timestamp < COOKIE_INTELLIGENCE_TTL) {
+    return cached.pipeline
+  }
+
+  clearExpiredCookieIntelligenceCache()
+
+  try {
+    const pipeline = buildCookieIntelligencePipeline(container)
+
+    COOKIE_INTELLIGENCE_CACHE.set(key, {
+      pipeline,
+      timestamp: Date.now()
+    })
+
+    if (COOKIE_INTELLIGENCE_CACHE.size > COOKIE_INTELLIGENCE_MAX_ENTRIES) {
+      const entries = Array.from(COOKIE_INTELLIGENCE_CACHE.entries())
+      const oldestKey = entries.reduce((oldest, current) =>
+        current[1].timestamp < oldest[1].timestamp ? current : oldest
+      )[0]
+      COOKIE_INTELLIGENCE_CACHE.delete(oldestKey)
+    }
+
+    return pipeline
+  } catch (error) {
+    return null
+  }
+}
+
+function getCookieIntelligenceContainerKey(container) {
+  if (!container) return 'null'
+
+  const tagName = container.tagName ? container.tagName.toLowerCase() : ''
+  const rect = container.getBoundingClientRect()
+  const role = container.getAttribute('role') || ''
+
+  const roundedTop = Math.round(rect.top / 10) * 10
+  const roundedLeft = Math.round(rect.left / 10) * 10
+  const roundedWidth = Math.round(rect.width / 10) * 10
+  const roundedHeight = Math.round(rect.height / 10) * 10
+
+  const id = container.id || ''
+  const rawClassName = typeof container.className === 'string' ? container.className : ''
+  const classes = rawClassName.split(' ').slice(0, 2).join(' ')
+
+  const keyParts = [
+    tagName,
+    `${roundedTop},${roundedLeft}`,
+    `${roundedWidth}x${roundedHeight}`,
+    role,
+    id.slice(0, 20),
+    classes.slice(0, 20)
+  ].filter(Boolean)
+
+  return keyParts.join('_').replace(/[^a-zA-Z0-9_,]/g, '_')
+}
+
+function clearExpiredCookieIntelligenceCache() {
+  const now = Date.now()
+  const expiredKeys = []
+
+  for (const [key, data] of COOKIE_INTELLIGENCE_CACHE.entries()) {
+    if (now - data.timestamp >= COOKIE_INTELLIGENCE_TTL) {
+      expiredKeys.push(key)
+    }
+  }
+
+  expiredKeys.forEach(key => COOKIE_INTELLIGENCE_CACHE.delete(key))
+}
+
 function sendProtectionEvent(payload) {
   if (!hasExtensionContext()) return
 
