@@ -3382,6 +3382,88 @@ function classifyCookieBannerFromAnalysis(analysis) {
   return 'generic_banner'
 }
 
+// Cookie Intelligence Layer - Observation Mode
+function getCookieIntelligenceReport(container) {
+  if (!container) {
+    return {
+      analysis: null,
+      classification: 'unknown',
+      confidence: 0,
+      passiveRecommendation: 'observe_only',
+      safeToAct: false,
+      reason: 'no_container'
+    }
+  }
+
+  const analysis = analyzeCookieContainer(container)
+  const classification = classifyCookieBannerFromAnalysis(analysis)
+  const confidence = calculateIntelligenceConfidence(analysis, classification)
+  const passiveRecommendation = getPassiveRecommendation(analysis, classification, confidence)
+  const safeToAct = false
+  const reason = 'observation_mode_only'
+
+  return {
+    analysis,
+    classification,
+    confidence,
+    passiveRecommendation,
+    safeToAct,
+    reason
+  }
+}
+
+function calculateIntelligenceConfidence(analysis, classification) {
+  if (!analysis || analysis.error) return 0
+
+  let confidence = 0
+
+  if (analysis.hasKeywords) confidence += 25
+  if (analysis.hasKnownCmp) confidence += 30
+  if (analysis.hasPreferences) confidence += 20
+  if (analysis.hasToggles) confidence += 15
+
+  if (analysis.textLength > 50 && analysis.textLength < 5000) {
+    confidence += 10
+  }
+
+  if (analysis.complexity > 1 && analysis.complexity < 8) {
+    confidence += 10
+  }
+
+  const classificationConfidence = {
+    'enterprise_cmp': 90,
+    'preference_center': 80,
+    'direct_reject': 70,
+    'preference_only': 60,
+    'generic_banner': 40,
+    'unknown': 0
+  }
+
+  const baseConfidence = classificationConfidence[classification] || 0
+  return Math.min(100, Math.max(baseConfidence, confidence))
+}
+
+function getPassiveRecommendation(analysis, classification, confidence) {
+  if (confidence < 30) return 'observe_only'
+  if (confidence < 50) return 'observe_only'
+  if (confidence < 70) return 'observe_only'
+
+  switch (classification) {
+    case 'enterprise_cmp':
+      return 'candidate_enterprise_cmp'
+    case 'preference_center':
+      return 'candidate_preference_center'
+    case 'direct_reject':
+      return 'candidate_direct_reject'
+    case 'preference_only':
+      return 'candidate_preference_only'
+    case 'generic_banner':
+      return 'candidate_generic_banner'
+    default:
+      return 'observe_only'
+  }
+}
+
 function sendProtectionEvent(payload) {
   if (!hasExtensionContext()) return
 
