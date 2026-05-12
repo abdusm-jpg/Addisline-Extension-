@@ -3649,6 +3649,49 @@ function buildCookieDecisionPreview(container, actionCandidate) {
   }
 }
 
+// Cookie Intelligence Layer - Safe Candidate Extraction
+function extractSafeActionCandidates(container) {
+  if (!container) return []
+
+  const candidates = []
+  const allControls = getActionControls(container)
+
+  for (const control of allControls) {
+    if (!isVisible(control)) continue
+    if (control.disabled) continue
+
+    const tagName = control.tagName ? control.tagName.toLowerCase() : ''
+    const role = control.getAttribute('role') || ''
+    const type = control.getAttribute('type') || ''
+    const text = getText(control)
+    const contextText = getContextTextForCandidate(control)
+
+    if (!text || text.length < 1) continue
+
+    candidates.push({
+      text,
+      contextText,
+      tagName,
+      role,
+      type,
+      visible: isVisible(control),
+      disabled: Boolean(control.disabled)
+    })
+  }
+
+  return candidates
+}
+
+function getContextTextForCandidate(element) {
+  try {
+    const context = getNearbyActionContext(element)
+    const contextText = context.text || ''
+    return String(contextText).slice(0, 300)
+  } catch (error) {
+    return ''
+  }
+}
+
 function sendProtectionEvent(payload) {
   if (!hasExtensionContext()) return
 
