@@ -3464,6 +3464,128 @@ function getPassiveRecommendation(analysis, classification, confidence) {
   }
 }
 
+// Cookie Intelligence Layer - Decision Validation
+function validateCookieDecision(report, actionCandidate) {
+  if (!report || !actionCandidate) {
+    return {
+      safeToAct: false,
+      allowed: false,
+      confidence: 0,
+      requiredConfidence: 0,
+      reasons: ['invalid_input'],
+      blockers: ['missing_report_or_candidate']
+    }
+  }
+
+  const confidence = report.confidence || 0
+  const classification = report.classification || 'unknown'
+  const requiredConfidence = getMinimumConfidenceForClassification(classification)
+  const unsafeSignals = detectUnsafeActionSignals(actionCandidate.text || '', actionCandidate.contextText || '')
+
+  let reasons = []
+  let blockers = []
+
+  if (confidence < requiredConfidence) {
+    reasons.push('insufficient_confidence')
+    blockers.push('confidence_below_threshold')
+  }
+
+  if (report.safeToAct !== false) {
+    reasons.push('unsafe_report_state')
+    blockers.push('report_not_safe')
+  }
+
+  if (report.reason !== 'observation_mode_only') {
+    reasons.push('invalid_report_reason')
+    blockers.push('report_not_observation_mode')
+  }
+
+  if (classification === 'unknown') {
+    reasons.push('unknown_classification')
+    blockers.push('classification_unknown')
+  }
+
+  if (unsafeSignals.hasUnsafeAccept) {
+    reasons.push('unsafe_accept_detected')
+    blockers.push('accept_action_blocked')
+  }
+
+  if (unsafeSignals.hasSensitiveAction) {
+    reasons.push('sensitive_action_detected')
+    blockers.push('sensitive_action_blocked')
+  }
+
+  if (unsafeSignals.hasNonCookieContext) {
+    reasons.push('non_cookie_context_detected')
+    blockers.push('non_cookie_context_blocked')
+  }
+
+  const safeToAct = false
+  const allowed = false
+
+  return {
+    safeToAct,
+    allowed,
+    confidence,
+    requiredConfidence,
+    reasons,
+    blockers
+  }
+}
+
+function getMinimumConfidenceForClassification(classification) {
+  const confidenceRequirements = {
+    'enterprise_cmp': 85,
+    'preference_center': 75,
+    'direct_reject': 70,
+    'preference_only': 70,
+    'generic_banner': 90,
+    'unknown': 100
+  }
+
+  return confidenceRequirements[classification] || 0
+}
+
+function detectUnsafeActionSignals(actionText, contextText) {
+  const normalizedAction = (actionText || '').toLowerCase()
+  const normalizedContext = (contextText || '').toLowerCase()
+
+  const unsafeAcceptPatterns = [
+    'accept all', 'aceptar todo', 'i agree', 'estoy de acuerdo',
+    'accept recommended', 'aceptar recomendado', 'allow all'
+  ]
+
+  const sensitiveActionPatterns = [
+    'login', 'signin', 'register', 'create account', 'sign up',
+    'submit', 'send', 'continue', 'next', 'proceed'
+  ]
+
+  const nonCookieContextPatterns = [
+    'payment', 'billing', 'credit card', 'checkout', 'purchase',
+    'buy now', 'order', 'invoice', 'cart', 'shopping',
+    'password', 'email', 'phone', 'personal information',
+    'newsletter', 'subscribe', 'follow', 'share'
+  ]
+
+  const hasUnsafeAccept = unsafeAcceptPatterns.some(pattern =>
+    normalizedAction.includes(pattern) || normalizedContext.includes(pattern)
+  )
+
+  const hasSensitiveAction = sensitiveActionPatterns.some(pattern =>
+    normalizedAction.includes(pattern) || normalizedContext.includes(pattern)
+  )
+
+  const hasNonCookieContext = nonCookieContextPatterns.some(pattern =>
+    normalizedAction.includes(pattern) || normalizedContext.includes(pattern)
+  )
+
+  return {
+    hasUnsafeAccept,
+    hasSensitiveAction,
+    hasNonCookieContext
+  }
+}
+
 function sendProtectionEvent(payload) {
   if (!hasExtensionContext()) return
 
