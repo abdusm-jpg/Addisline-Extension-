@@ -3692,6 +3692,77 @@ function getContextTextForCandidate(element) {
   }
 }
 
+// Cookie Intelligence Layer - Passive Pipeline
+function buildCookieIntelligencePipeline(container) {
+  if (!container) {
+    return {
+      report: null,
+      candidates: [],
+      previews: [],
+      bestPreview: null,
+      safeToAct: false,
+      allowed: false,
+      reason: 'no_container'
+    }
+  }
+
+  const report = getCookieIntelligenceReport(container)
+  const candidates = extractSafeActionCandidates(container).slice(0, 5)
+  const previews = []
+
+  for (const candidate of candidates) {
+    const preview = buildCookieDecisionPreview(container, candidate)
+    previews.push(preview)
+  }
+
+  const bestPreview = selectBestPreview(previews)
+
+  return {
+    report,
+    candidates,
+    previews,
+    bestPreview,
+    safeToAct: false,
+    allowed: false,
+    reason: 'pipeline_complete'
+  }
+}
+
+function selectBestPreview(previews) {
+  if (!previews || previews.length === 0) return null
+
+  const priorityOrder = {
+    'candidate_direct_reject': 1,
+    'candidate_preferences': 2,
+    'candidate_observe_only': 3,
+    'blocked': 4
+  }
+
+  return previews.reduce((best, current) => {
+    if (!best) return current
+    if (!current) return best
+
+    const bestDecisionType = best.decisionType || 'blocked'
+    const currentDecisionType = current.decisionType || 'blocked'
+    const bestPriority = priorityOrder[bestDecisionType] || 999
+    const currentPriority = priorityOrder[currentDecisionType] || 999
+
+    if (currentPriority < bestPriority) {
+      return current
+    }
+
+    if (currentPriority === bestPriority) {
+      const bestConfidence = (best.validation && best.validation.confidence) || 0
+      const currentConfidence = (current.validation && current.validation.confidence) || 0
+      if (currentConfidence > bestConfidence) {
+        return current
+      }
+    }
+
+    return best
+  })
+}
+
 function sendProtectionEvent(payload) {
   if (!hasExtensionContext()) return
 
