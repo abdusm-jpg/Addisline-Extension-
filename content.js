@@ -3586,6 +3586,69 @@ function detectUnsafeActionSignals(actionText, contextText) {
   }
 }
 
+// Cookie Intelligence Layer - Controlled Decision Engine
+function buildCookieDecisionPreview(container, actionCandidate) {
+  if (!container || !actionCandidate) {
+    return {
+      report: null,
+      validation: null,
+      decisionType: 'blocked',
+      candidateAction: null,
+      safeToAct: false,
+      allowed: false,
+      reason: 'invalid_input'
+    }
+  }
+
+  const report = getCookieIntelligenceReport(container)
+  const validation = validateCookieDecision(report, actionCandidate)
+
+  let decisionType = 'blocked'
+  let reason = 'default_blocked'
+
+  if (validation.blockers && validation.blockers.length === 0) {
+    if (validation.confidence >= validation.requiredConfidence) {
+      if (report.classification === 'direct_reject' ||
+          report.passiveRecommendation === 'candidate_direct_reject') {
+        decisionType = 'candidate_direct_reject'
+        reason = 'candidate_reject_identified'
+      } else if (report.classification === 'preference_center' ||
+                 report.passiveRecommendation === 'candidate_preference_center') {
+        decisionType = 'candidate_preferences'
+        reason = 'candidate_preferences_identified'
+      } else if (report.classification === 'preference_only' ||
+                 report.passiveRecommendation === 'candidate_preference_only') {
+        decisionType = 'candidate_preferences'
+        reason = 'candidate_preferences_identified'
+      } else if (report.classification === 'enterprise_cmp' ||
+                 report.classification === 'generic_banner') {
+        decisionType = 'candidate_observe_only'
+        reason = 'classification_requires_more_analysis'
+      } else {
+        decisionType = 'candidate_observe_only'
+        reason = 'observe_only_recommended'
+      }
+    } else {
+      decisionType = 'candidate_observe_only'
+      reason = 'insufficient_confidence'
+    }
+  } else {
+    reason = validation.blockers && validation.blockers.length > 0
+      ? validation.blockers[0]
+      : 'validation_failed'
+  }
+
+  return {
+    report,
+    validation,
+    decisionType,
+    candidateAction: actionCandidate,
+    safeToAct: false,
+    allowed: false,
+    reason
+  }
+}
+
 function sendProtectionEvent(payload) {
   if (!hasExtensionContext()) return
 
