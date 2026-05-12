@@ -843,7 +843,13 @@ function recordProtectedSite() {
 }
 
 function getText(element) {
-  return (element.innerText || element.textContent || '').toLowerCase().trim()
+  if (!element) return ''
+
+  return String(
+    element.innerText ||
+    element.textContent ||
+    ''
+  ).toLowerCase().trim()
 }
 
 function getDatasetText(element) {
