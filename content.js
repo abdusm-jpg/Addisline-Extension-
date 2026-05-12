@@ -3290,6 +3290,98 @@ function getClassNameText(element) {
   return ''
 }
 
+// Cookie Intelligence Layer - First Phase
+function calculateTextComplexity(text) {
+  if (!text) return 0
+  return Math.min(text.length / 100, 10)
+}
+
+function detectBannerPosition(container) {
+  if (!container) return 'unknown'
+
+  const rect = container.getBoundingClientRect()
+  const viewportHeight = window.innerHeight
+
+  const topRatio = rect.top / viewportHeight
+
+  if (topRatio > 0.8) return 'bottom'
+  if (topRatio < 0.2) return 'top'
+
+  return 'center'
+}
+
+function detectConsentLanguageFromText(text) {
+  if (!text || text.length < 3) return 'unknown'
+
+  const spanishPatterns = [
+    'rechazar', 'aceptar', 'cookies', 'privacidad',
+    'preferencias', 'personalizar', 'opciones'
+  ]
+
+  const englishPatterns = [
+    'reject', 'accept', 'cookies', 'privacy',
+    'preferences', 'customize', 'options'
+  ]
+
+  const normalizedText = text.toLowerCase()
+
+  const spanishScore = spanishPatterns.filter(pattern =>
+    normalizedText.includes(pattern)
+  ).length
+
+  const englishScore = englishPatterns.filter(pattern =>
+    normalizedText.includes(pattern)
+  ).length
+
+  if (spanishScore > englishScore) return 'spanish'
+  if (englishScore > spanishScore) return 'english'
+
+  return 'mixed'
+}
+
+function analyzeCookieContainer(container) {
+  if (!container) return { error: 'no_container' }
+
+  const text = getText(container)
+  const actionText = getElementActionText(container)
+
+  return {
+    textSample: text.slice(0, 500),
+    textLength: text.length,
+    hasKeywords: textHasAny(text, bannerKeywords),
+    hasKnownCmp: textHasAny(actionText, knownCmpKeywords),
+    hasPreferences: textHasAny(text, preferenceSectionTexts),
+    hasToggles: getToggleControls(container).length > 0,
+    complexity: calculateTextComplexity(text),
+    language: detectConsentLanguageFromText(text),
+    position: detectBannerPosition(container)
+  }
+}
+
+function classifyCookieBannerFromAnalysis(analysis) {
+  if (!analysis || typeof analysis !== 'object') return 'unknown'
+
+  if (analysis.hasKnownCmp && textHasAny(analysis.textSample || '', ['onetrust', 'didomi'])) {
+    return 'enterprise_cmp'
+  }
+
+  if (analysis.hasToggles && analysis.hasPreferences) {
+    return 'preference_center'
+  }
+
+  const containerText = analysis.textSample || ''
+
+  if (textHasAny(containerText, ['rechazar', 'reject', 'decline'])) {
+    return 'direct_reject'
+  }
+
+  if (textHasAny(containerText, ['customize', 'personalizar', 'opciones'])) {
+    return 'preference_only'
+  }
+
+  return 'generic_banner'
+}
+
 function sendProtectionEvent(payload) {
   if (!hasExtensionContext()) return
 
