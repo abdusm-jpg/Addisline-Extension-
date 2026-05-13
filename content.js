@@ -2975,6 +2975,7 @@ function scanPage() {
     }
 
     const candidates = findCookieBannerCandidates()
+    runPassiveCookieIntelligenceForCandidates(candidates)
 
     for (const candidate of candidates) {
       if (!isPotentialCookieContainer(candidate)) continue
@@ -3800,6 +3801,20 @@ function runPassiveCookieIntelligence(container) {
   } catch (error) {
     return null
   }
+}
+
+function runPassiveCookieIntelligenceForCandidates(candidates) {
+  try {
+    const visibleCandidates = candidates
+      .filter(candidate => isVisible(candidate))
+      .slice(0, 2)
+
+    for (const container of visibleCandidates) {
+      try {
+        runPassiveCookieIntelligence(container)
+      } catch (error) {}
+    }
+  } catch (error) {}
 }
 
 function getCookieIntelligenceContainerKey(container) {
