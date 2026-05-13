@@ -3817,6 +3817,51 @@ function runPassiveCookieIntelligenceForCandidates(candidates) {
   } catch (error) {}
 }
 
+const COOKIE_OBSERVATION_MEMORY = new Map()
+const COOKIE_OBSERVATION_MEMORY_MAX_ENTRIES = 20
+
+function getDomainObservation(domain) {
+  if (!domain) return null
+  return COOKIE_OBSERVATION_MEMORY.get(domain) || null
+}
+
+function buildTechnicalObservation(pipeline) {
+  if (!pipeline) return null
+
+  return {
+    classification: pipeline.report?.classification || 'unknown',
+    passiveRecommendation: pipeline.report?.passiveRecommendation || 'unknown',
+    confidence: pipeline.report?.confidence || 0,
+    bestDecisionType: pipeline.bestPreview?.decisionType || 'unknown',
+    reason: pipeline.bestPreview?.reason || null,
+    candidatesExisted: pipeline.candidates?.length > 0,
+    preferencesDetected: pipeline.report?.analysis?.hasPreferences || false,
+    togglesDetected: pipeline.report?.analysis?.hasToggles || false,
+    observedAt: Date.now()
+  }
+}
+
+function trimObservationMemory() {
+  while (COOKIE_OBSERVATION_MEMORY.size > COOKIE_OBSERVATION_MEMORY_MAX_ENTRIES) {
+    const entries = Array.from(COOKIE_OBSERVATION_MEMORY.entries())
+    const oldestKey = entries.reduce((oldest, current) =>
+      current[1].observedAt < oldest[1].observedAt ? current : oldest
+    )[0]
+    COOKIE_OBSERVATION_MEMORY.delete(oldestKey)
+  }
+}
+
+function recordDomainObservation(domain, pipeline) {
+  if (!domain) return
+  try {
+    const observation = buildTechnicalObservation(pipeline)
+    if (observation) {
+      COOKIE_OBSERVATION_MEMORY.set(domain, observation)
+      trimObservationMemory()
+    }
+  } catch (error) {}
+}
+
 function getCookieIntelligenceContainerKey(container) {
   if (!container) return 'null'
 
