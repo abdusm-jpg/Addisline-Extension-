@@ -4022,6 +4022,7 @@ function buildCookieIntelligencePipeline(container) {
       candidates: [],
       previews: [],
       bestPreview: null,
+      preferenceReport: null,
       safeToAct: false,
       allowed: false,
       reason: 'no_container'
@@ -4029,6 +4030,10 @@ function buildCookieIntelligencePipeline(container) {
   }
 
   const report = getCookieIntelligenceReport(container)
+  const preferencePanel = findCookiePreferencesPanel()
+  const preferenceReport = preferencePanel
+    ? buildPreferenceIntelligenceReport(preferencePanel)
+    : null
   const candidates = extractSafeActionCandidates(container).slice(0, 5)
   const previews = []
 
@@ -4044,6 +4049,7 @@ function buildCookieIntelligencePipeline(container) {
     candidates,
     previews,
     bestPreview,
+    preferenceReport,
     safeToAct: false,
     allowed: false,
     reason: 'pipeline_complete'
