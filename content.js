@@ -3842,6 +3842,52 @@ function buildTechnicalObservation(pipeline) {
   }
 }
 
+function getConfidenceTrend(previousConfidence, nextConfidence) {
+  if (typeof previousConfidence !== 'number' || typeof nextConfidence !== 'number') {
+    return 'unknown'
+  }
+
+  if (nextConfidence > previousConfidence) return 'up'
+  if (nextConfidence < previousConfidence) return 'down'
+  return 'stable'
+}
+
+function mergeDomainObservation(previousObservation, nextObservation) {
+  if (!nextObservation) return previousObservation || null
+
+  if (!previousObservation) {
+    return {
+      ...nextObservation,
+      seenCount: 1,
+      stableCount: 0,
+      changedCount: 0,
+      lastClassification: nextObservation.classification,
+      lastBestDecisionType: nextObservation.bestDecisionType,
+      confidenceTrend: 'unknown'
+    }
+  }
+
+  const previousClassification =
+    previousObservation.lastClassification || previousObservation.classification || 'unknown'
+  const previousBestDecisionType =
+    previousObservation.lastBestDecisionType || previousObservation.bestDecisionType || 'unknown'
+  const nextClassification = nextObservation.classification || 'unknown'
+  const nextBestDecisionType = nextObservation.bestDecisionType || 'unknown'
+  const isStable =
+    previousClassification === nextClassification &&
+    previousBestDecisionType === nextBestDecisionType
+
+  return {
+    ...nextObservation,
+    seenCount: (previousObservation.seenCount || 1) + 1,
+    stableCount: (previousObservation.stableCount || 0) + (isStable ? 1 : 0),
+    changedCount: (previousObservation.changedCount || 0) + (isStable ? 0 : 1),
+    lastClassification: nextClassification,
+    lastBestDecisionType: nextBestDecisionType,
+    confidenceTrend: getConfidenceTrend(previousObservation.confidence, nextObservation.confidence)
+  }
+}
+
 
 function trimObservationMemory() {
   try {
@@ -3871,8 +3917,10 @@ function trimObservationMemory() {
 function recordDomainObservation(domain, pipeline) {
   if (!domain) return
   try {
-    const observation = buildTechnicalObservation(pipeline)
-    if (observation) {
+    const nextObservation = buildTechnicalObservation(pipeline)
+    if (nextObservation) {
+      const previousObservation = getDomainObservation(domain)
+      const observation = mergeDomainObservation(previousObservation, nextObservation)
       COOKIE_OBSERVATION_MEMORY.set(domain, observation)
       trimObservationMemory()
     }
