@@ -3542,6 +3542,83 @@ function analyzePreferenceToggles(panel) {
   })
 }
 
+function identifySafeToggleCandidates(panel) {
+  const result = {
+    safeCandidates: [],
+    riskyCandidates: [],
+    unknownCandidates: []
+  }
+
+  if (!panel) return result
+
+  getToggleControls(panel).forEach((control) => {
+    const state = getToggleState(control)
+    const context = classifyToggleContext(control)
+    const nearbyText = normalizeMatchText([
+      getText(control),
+      getElementActionText(control),
+      getPreferenceDecisionText(control)
+    ].join(' '))
+
+    const hasVendorText = detectVendorSection(nearbyText)
+    const hasLegitimateInterestText = detectLegitimateInterestSection(nearbyText)
+
+    let confidence = 0
+    let reason = 'unknown_toggle_candidate'
+
+    if (context === 'required') {
+      confidence = 0
+      reason = 'required_toggle_never_safe'
+    } else if (context === 'optional' && state === 'enabled') {
+      confidence = 75
+      reason = 'enabled_optional_toggle'
+    } else if (context === 'optional' && state === 'unknown') {
+      confidence = 45
+      reason = 'optional_toggle_unknown_state'
+    } else if (context === 'optional') {
+      confidence = 35
+      reason = 'optional_toggle_not_enabled'
+    } else if (state === 'unknown') {
+      confidence = 20
+      reason = 'unknown_context_unknown_state'
+    } else {
+      confidence = 25
+      reason = 'unknown_context_toggle'
+    }
+
+    if (hasVendorText) {
+      confidence -= 15
+      reason = `${reason}_vendor_context`
+    }
+
+    if (hasLegitimateInterestText) {
+      confidence -= 15
+      reason = `${reason}_legitimate_interest_context`
+    }
+
+    confidence = Math.min(100, Math.max(0, confidence))
+
+    const candidate = {
+      state,
+      context,
+      reason,
+      confidence
+    }
+
+    if (context === 'required') {
+      result.riskyCandidates.push(candidate)
+    } else if (context === 'optional' && state === 'enabled' && confidence >= 60) {
+      result.safeCandidates.push(candidate)
+    } else if (confidence <= 25) {
+      result.riskyCandidates.push(candidate)
+    } else {
+      result.unknownCandidates.push(candidate)
+    }
+  })
+
+  return result
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
