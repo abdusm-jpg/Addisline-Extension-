@@ -3359,6 +3359,91 @@ function analyzeCookieContainer(container) {
   }
 }
 
+function detectPreferenceCategories(text) {
+  const normalizedText = normalizeMatchText(text)
+  const categories = []
+
+  if (textHasAny(normalizedText, ['analytics', 'analitica', 'statistics', 'measurement', 'medicion'])) {
+    categories.push('analytics')
+  }
+
+  if (textHasAny(normalizedText, ['marketing', 'advertising', 'ads', 'personalization', 'personalisation', 'profiling'])) {
+    categories.push('marketing')
+  }
+
+  if (textHasAny(normalizedText, ['social media', 'social networks', 'redes sociales', 'sociales'])) {
+    categories.push('social')
+  }
+
+  return categories
+}
+
+function detectVendorSection(text) {
+  const vendorKeywords = [
+    'vendors',
+    'vendor',
+    'providers',
+    'provider',
+    'partners',
+    'partner',
+    'third parties',
+    'terceros',
+    'socios',
+    'proveedores'
+  ]
+
+  return textHasAny(text, vendorKeywords)
+}
+
+function detectLegitimateInterestSection(text) {
+  const legitimateInterestKeywords = [
+    'legitimate interest',
+    'legitimate interests',
+    'interes legitimo',
+    'intereses legitimos',
+    'legítimo interés',
+    'intereses legítimos'
+  ]
+
+  return textHasAny(text, legitimateInterestKeywords)
+}
+
+function analyzePreferenceCenter(panel) {
+  if (!panel) {
+    return {
+      hasPreferences: false,
+      hasToggles: false,
+      toggleCount: 0,
+      categories: [],
+      hasVendors: false,
+      hasLegitimateInterests: false,
+      complexity: 0
+    }
+  }
+
+  const text = getText(panel)
+  const actionText = getElementActionText(panel)
+  const combinedText = [
+    text,
+    actionText
+  ].join(' ')
+
+  const toggles = getToggleControls(panel)
+  const categories = detectPreferenceCategories(combinedText)
+  const hasVendors = detectVendorSection(combinedText)
+  const hasLegitimateInterests = detectLegitimateInterestSection(combinedText)
+
+  return {
+    hasPreferences: textHasAny(combinedText, preferenceSectionTexts),
+    hasToggles: toggles.length > 0,
+    toggleCount: toggles.length,
+    categories,
+    hasVendors,
+    hasLegitimateInterests,
+    complexity: calculateTextComplexity(text)
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
