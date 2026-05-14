@@ -3424,6 +3424,94 @@ function detectCMPFingerprint(container) {
   }
 }
 
+function getCMPStrategyProfile(cmpReport) {
+  const cmp = cmpReport?.cmp || 'unknown'
+  const confidence = Math.min(100, Math.max(0, cmpReport?.confidence || 0))
+
+  const profiles = {
+    onetrust: {
+      profile: 'onetrust',
+      expectedFlow: 'reject_or_preferences',
+      riskLevel: 'medium',
+      recommendedStrategy: 'candidate_review_preferences',
+      supportsPreferenceCenter: true,
+      supportsLegitimateInterestFlow: true,
+      supportsVendorFlow: true
+    },
+    didomi: {
+      profile: 'didomi',
+      expectedFlow: 'preferences_first',
+      riskLevel: 'medium',
+      recommendedStrategy: 'candidate_review_preferences',
+      supportsPreferenceCenter: true,
+      supportsLegitimateInterestFlow: true,
+      supportsVendorFlow: true
+    },
+    quantcast: {
+      profile: 'quantcast',
+      expectedFlow: 'legitimate_interest_heavy',
+      riskLevel: 'high',
+      recommendedStrategy: 'candidate_legitimate_interest_review',
+      supportsPreferenceCenter: true,
+      supportsLegitimateInterestFlow: true,
+      supportsVendorFlow: true
+    },
+    cookiebot: {
+      profile: 'cookiebot',
+      expectedFlow: 'direct_reject_possible',
+      riskLevel: 'low',
+      recommendedStrategy: 'candidate_disable_optional',
+      supportsPreferenceCenter: true,
+      supportsLegitimateInterestFlow: false,
+      supportsVendorFlow: false
+    },
+    trustarc: {
+      profile: 'trustarc',
+      expectedFlow: 'layered_preferences',
+      riskLevel: 'medium',
+      recommendedStrategy: 'candidate_review_preferences',
+      supportsPreferenceCenter: true,
+      supportsLegitimateInterestFlow: false,
+      supportsVendorFlow: true
+    },
+    usercentrics: {
+      profile: 'usercentrics',
+      expectedFlow: 'preferences_first',
+      riskLevel: 'medium',
+      recommendedStrategy: 'candidate_review_preferences',
+      supportsPreferenceCenter: true,
+      supportsLegitimateInterestFlow: true,
+      supportsVendorFlow: true
+    },
+    sourcepoint: {
+      profile: 'sourcepoint',
+      expectedFlow: 'vendor_or_purpose_review',
+      riskLevel: 'medium',
+      recommendedStrategy: 'candidate_vendor_review',
+      supportsPreferenceCenter: true,
+      supportsLegitimateInterestFlow: true,
+      supportsVendorFlow: true
+    },
+    unknown: {
+      profile: 'unknown',
+      expectedFlow: 'unknown',
+      riskLevel: 'unknown',
+      recommendedStrategy: 'observe_only',
+      supportsPreferenceCenter: false,
+      supportsLegitimateInterestFlow: false,
+      supportsVendorFlow: false
+    }
+  }
+
+  const profile = profiles[cmp] || profiles.unknown
+
+  return {
+    cmp,
+    ...profile,
+    confidence
+  }
+}
+
 function analyzeCookieContainer(container) {
   if (!container) return { error: 'no_container' }
 
