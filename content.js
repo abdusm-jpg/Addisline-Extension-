@@ -3888,6 +3888,59 @@ function mergeDomainObservation(previousObservation, nextObservation) {
   }
 }
 
+function evaluateObservationStability(observation) {
+  if (!observation) {
+    return {
+      observationConsistency: 0,
+      observationStability: 'unknown',
+      adaptiveConfidence: 0
+    }
+  }
+
+  const seenCount = Math.max(0, observation.seenCount || 0)
+  const stableCount = Math.max(0, observation.stableCount || 0)
+  const changedCount = Math.max(0, observation.changedCount || 0)
+  const confidence = Math.min(100, Math.max(0, observation.confidence || 0))
+
+  const rawConsistency = seenCount > 0 ? stableCount / seenCount : 0
+  const observationConsistency = Math.min(1, Math.max(0, rawConsistency))
+
+  let observationStability = 'unknown'
+  if (seenCount < 2) {
+    observationStability = 'unknown'
+  } else if (seenCount >= 3 && observationConsistency >= 0.75) {
+    observationStability = 'high'
+  } else if (seenCount >= 2 && observationConsistency >= 0.5) {
+    observationStability = 'medium'
+  } else {
+    observationStability = 'low'
+  }
+
+  let adaptiveConfidence = confidence
+
+  if (observationConsistency >= 0.75) {
+    adaptiveConfidence += 10
+  } else if (observationConsistency < 0.5) {
+    adaptiveConfidence -= 10
+  }
+
+  if (observation.confidenceTrend === 'up') {
+    adaptiveConfidence += 5
+  } else if (observation.confidenceTrend === 'down') {
+    adaptiveConfidence -= 5
+  }
+
+  if (changedCount >= 2) {
+    adaptiveConfidence -= Math.min(20, changedCount * 5)
+  }
+
+  return {
+    observationConsistency,
+    observationStability,
+    adaptiveConfidence: Math.min(100, Math.max(0, adaptiveConfidence))
+  }
+}
+
 
 function trimObservationMemory() {
   try {
