@@ -3340,6 +3340,90 @@ function detectConsentLanguageFromText(text) {
   return 'mixed'
 }
 
+function normalizeTechnicalUrl(value) {
+  return normalizeMatchText(String(value || '').split('?')[0].split('#')[0])
+}
+
+function detectCMPFingerprint(container) {
+  const cmpFingerprints = {
+    onetrust: ['onetrust', 'ot-sdk', 'ot sdk', 'optanon', 'onetrustactivegroups'],
+    didomi: ['didomi', 'didomi-host', 'didomi-popup', 'didomi-notice'],
+    quantcast: ['quantcast', 'qc-cmp', 'quantcast choice', 'choice.cmp'],
+    cookiebot: ['cookiebot', 'cybotcookiebot', 'cookiebot.com'],
+    trustarc: ['trustarc', 'truste', 'trustarc.com'],
+    usercentrics: ['usercentrics', 'uc-center', 'uc banner', 'usercentrics.eu'],
+    sourcepoint: ['sourcepoint', 'sp message', 'sp_message', 'sourcepoint.mgr']
+  }
+
+  const result = {
+    cmp: 'unknown',
+    confidence: 0,
+    signals: []
+  }
+
+  const addSignal = (signals, signal) => {
+    if (!signals.includes(signal)) {
+      signals.push(signal)
+    }
+  }
+
+  const collectElementSignals = (element) => {
+    if (!element) return []
+
+    return [
+      element.id ? `id:${normalizeMatchText(element.id).slice(0, 80)}` : '',
+      getClassNameText(element) ? `class:${normalizeMatchText(getClassNameText(element)).slice(0, 120)}` : '',
+      element.getAttribute?.('aria-label') ? `aria:${normalizeMatchText(element.getAttribute('aria-label')).slice(0, 80)}` : '',
+      element.getAttribute?.('data-testid') ? `data-testid:${normalizeMatchText(element.getAttribute('data-testid')).slice(0, 80)}` : '',
+      getDatasetText(element) ? `dataset:${normalizeMatchText(getDatasetText(element)).slice(0, 120)}` : ''
+    ].filter(Boolean)
+  }
+
+  const technicalSignals = [
+    ...collectElementSignals(container),
+    ...Array.from(document.querySelectorAll('script[src]'))
+      .slice(0, 20)
+      .map((script) => `script:${normalizeTechnicalUrl(script.getAttribute('src')).slice(0, 160)}`),
+    ...Array.from(document.querySelectorAll('iframe[src]'))
+      .slice(0, 10)
+      .map((iframe) => `iframe:${normalizeTechnicalUrl(iframe.getAttribute('src')).slice(0, 160)}`)
+  ]
+
+  const scores = Object.entries(cmpFingerprints).map(([cmp, keywords]) => {
+    const signals = []
+
+    technicalSignals.forEach((signal) => {
+      if (textHasAny(signal, keywords)) {
+        addSignal(signals, signal)
+      }
+    })
+
+    return {
+      cmp,
+      signals,
+      score: signals.length
+    }
+  })
+
+  const best = scores.reduce((currentBest, current) =>
+    current.score > currentBest.score ? current : currentBest
+  , {
+    cmp: 'unknown',
+    signals: [],
+    score: 0
+  })
+
+  if (best.score === 0) {
+    return result
+  }
+
+  return {
+    cmp: best.cmp,
+    confidence: Math.min(100, 40 + (best.score * 20)),
+    signals: best.signals.slice(0, 8)
+  }
+}
+
 function analyzeCookieContainer(container) {
   if (!container) return { error: 'no_container' }
 
