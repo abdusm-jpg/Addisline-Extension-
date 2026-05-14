@@ -3619,6 +3619,67 @@ function identifySafeToggleCandidates(panel) {
   return result
 }
 
+function buildPreferenceIntelligenceReport(panel) {
+  const center = analyzePreferenceCenter(panel)
+  const toggles = analyzePreferenceToggles(panel)
+  const toggleCandidates = identifySafeToggleCandidates(panel)
+
+  const safeCandidateCount = toggleCandidates.safeCandidates.length
+  const riskyCandidateCount = toggleCandidates.riskyCandidates.length
+  const unknownCandidateCount = toggleCandidates.unknownCandidates.length
+
+  let riskLevel = 'unknown'
+  let recommendedPassiveStrategy = 'observe_only'
+  let reason = 'preference_intelligence_observe_only'
+
+  if (!panel) {
+    reason = 'no_preference_panel'
+  } else if (toggles.unknownCount >= 3 || unknownCandidateCount >= 3) {
+    riskLevel = 'high'
+    recommendedPassiveStrategy = 'observe_only'
+    reason = 'many_unknown_toggles'
+  } else if (toggles.requiredCandidates > 1) {
+    riskLevel = 'high'
+    recommendedPassiveStrategy = 'candidate_review_preferences'
+    reason = 'multiple_required_toggle_candidates'
+  } else if (toggles.requiredCandidates > 0) {
+    riskLevel = 'medium'
+    recommendedPassiveStrategy = 'candidate_review_preferences'
+    reason = 'required_toggle_candidates_present'
+  } else if (center.hasLegitimateInterests) {
+    riskLevel = 'medium'
+    recommendedPassiveStrategy = 'candidate_legitimate_interest_review'
+    reason = 'legitimate_interest_section_present'
+  } else if (center.hasVendors) {
+    riskLevel = 'medium'
+    recommendedPassiveStrategy = 'candidate_vendor_review'
+    reason = 'vendor_section_present'
+  } else if (safeCandidateCount > 0 && riskyCandidateCount === 0) {
+    riskLevel = 'low'
+    recommendedPassiveStrategy = 'candidate_disable_optional'
+    reason = 'safe_optional_toggle_candidates_present'
+  } else if (riskyCandidateCount > 0) {
+    riskLevel = 'medium'
+    recommendedPassiveStrategy = 'candidate_review_preferences'
+    reason = 'risky_toggle_candidates_present'
+  } else if (center.hasPreferences || toggles.toggleCount > 0) {
+    riskLevel = 'medium'
+    recommendedPassiveStrategy = 'candidate_review_preferences'
+    reason = 'preference_controls_present'
+  }
+
+  return {
+    center,
+    toggles,
+    toggleCandidates,
+    riskLevel,
+    recommendedPassiveStrategy,
+    safeToAct: false,
+    allowed: false,
+    reason
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
