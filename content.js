@@ -3862,6 +3862,99 @@ function buildPreferenceIntelligenceReport(panel) {
   }
 }
 
+function evaluateCMPReliability(cmpStrategy, preferenceReport) {
+  const riskModifiers = []
+  const cmpRiskLevel = cmpStrategy?.riskLevel || 'unknown'
+  const preferenceRiskLevel = preferenceReport?.riskLevel || 'unknown'
+  const toggles = preferenceReport?.toggles || {}
+  const toggleCandidates = preferenceReport?.toggleCandidates || {
+    safeCandidates: [],
+    riskyCandidates: [],
+    unknownCandidates: []
+  }
+
+  const safeCandidateCount = toggleCandidates.safeCandidates?.length || 0
+  const riskyCandidateCount = toggleCandidates.riskyCandidates?.length || 0
+  const unknownCandidateCount = toggleCandidates.unknownCandidates?.length || 0
+  const unknownToggleCount = toggles.unknownCount || 0
+
+  let reliability = 'unknown'
+  let automationReadiness = 'unknown'
+  let requiresReview = true
+  let confidenceAdjustment = 0
+  let reason = 'cmp_reliability_unknown'
+
+  if (cmpRiskLevel === 'high') {
+    riskModifiers.push('cmp_high_risk')
+    confidenceAdjustment -= 20
+  }
+
+  if (preferenceRiskLevel === 'high') {
+    riskModifiers.push('preference_high_risk')
+    confidenceAdjustment -= 20
+  }
+
+  if (unknownToggleCount >= 3 || unknownCandidateCount >= 3) {
+    riskModifiers.push('many_unknown_toggles')
+    confidenceAdjustment -= 25
+  }
+
+  if (toggles.requiredCandidates > 0) {
+    riskModifiers.push('required_toggle_candidates')
+    confidenceAdjustment -= 15
+  }
+
+  if (cmpStrategy?.supportsVendorFlow) {
+    riskModifiers.push('vendor_flow_supported')
+    confidenceAdjustment -= 5
+  }
+
+  if (cmpStrategy?.supportsLegitimateInterestFlow) {
+    riskModifiers.push('legitimate_interest_flow_supported')
+    confidenceAdjustment -= 10
+  }
+
+  if (safeCandidateCount > 0 && riskyCandidateCount === 0 && preferenceRiskLevel === 'low') {
+    riskModifiers.push('safe_candidates_low_preference_risk')
+    confidenceAdjustment += 15
+  }
+
+  if (unknownToggleCount >= 3 || unknownCandidateCount >= 3) {
+    reliability = 'low'
+    automationReadiness = 'blocked'
+    requiresReview = true
+    reason = 'blocked_by_unknown_toggles'
+  } else if (cmpRiskLevel === 'high' || preferenceRiskLevel === 'high') {
+    reliability = 'low'
+    automationReadiness = 'blocked'
+    requiresReview = true
+    reason = 'blocked_by_high_risk'
+  } else if (
+    cmpStrategy?.supportsVendorFlow ||
+    cmpStrategy?.supportsLegitimateInterestFlow ||
+    preferenceRiskLevel === 'medium'
+  ) {
+    reliability = 'medium'
+    automationReadiness = 'cautious'
+    requiresReview = true
+    reason = 'review_recommended_for_complex_flow'
+  } else if (safeCandidateCount > 0 && riskyCandidateCount === 0 && preferenceRiskLevel === 'low') {
+    reliability = 'high'
+    automationReadiness = 'candidate_ready'
+    requiresReview = false
+    reason = 'safe_candidates_with_low_risk'
+  }
+
+  return {
+    reliability,
+    automationReadiness,
+    requiresReview,
+    riskModifiers,
+    confidenceAdjustment: Math.min(25, Math.max(-50, confidenceAdjustment)),
+    reason
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
