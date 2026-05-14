@@ -3819,6 +3819,7 @@ function runPassiveCookieIntelligenceForCandidates(candidates) {
 
 const COOKIE_OBSERVATION_MEMORY = new Map()
 const COOKIE_OBSERVATION_MEMORY_MAX_ENTRIES = 20
+const COOKIE_OBSERVATION_MEMORY_TTL = 300000
 
 function getDomainObservation(domain) {
   if (!domain) return null
@@ -3841,14 +3842,30 @@ function buildTechnicalObservation(pipeline) {
   }
 }
 
+
 function trimObservationMemory() {
-  while (COOKIE_OBSERVATION_MEMORY.size > COOKIE_OBSERVATION_MEMORY_MAX_ENTRIES) {
-    const entries = Array.from(COOKIE_OBSERVATION_MEMORY.entries())
-    const oldestKey = entries.reduce((oldest, current) =>
-      current[1].observedAt < oldest[1].observedAt ? current : oldest
-    )[0]
-    COOKIE_OBSERVATION_MEMORY.delete(oldestKey)
-  }
+  try {
+    const now = Date.now()
+    const expiredKeys = []
+
+    for (const [key, observation] of COOKIE_OBSERVATION_MEMORY.entries()) {
+      if (now - observation.observedAt >= COOKIE_OBSERVATION_MEMORY_TTL) {
+        expiredKeys.push(key)
+      }
+    }
+
+    expiredKeys.forEach(key => COOKIE_OBSERVATION_MEMORY.delete(key))
+
+    while (COOKIE_OBSERVATION_MEMORY.size > COOKIE_OBSERVATION_MEMORY_MAX_ENTRIES) {
+      const entries = Array.from(COOKIE_OBSERVATION_MEMORY.entries())
+
+      const oldestKey = entries.reduce((oldest, current) =>
+        current[1].observedAt < oldest[1].observedAt ? current : oldest
+      )[0]
+
+      COOKIE_OBSERVATION_MEMORY.delete(oldestKey)
+    }
+  } catch (error) {}
 }
 
 function recordDomainObservation(domain, pipeline) {
