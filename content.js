@@ -4340,6 +4340,63 @@ function buildCookieIntelligencePipeline(container) {
   }
 }
 
+function buildUnifiedCookieIntelligence(pipeline) {
+  const bannerReport = pipeline?.report || null
+  const preferenceReport = pipeline?.preferenceReport || null
+  const cmp = preferenceReport?.cmp || bannerReport?.cmp || {
+    cmp: 'unknown',
+    confidence: 0,
+    signals: []
+  }
+  const cmpStrategy = preferenceReport?.cmpStrategy || getCMPStrategyProfile(cmp)
+  const reliability = evaluateCMPReliability(cmpStrategy, preferenceReport)
+  const domainObservation = getDomainObservation(window.location.hostname)
+  const observation = {
+    current: domainObservation,
+    stability: evaluateObservationStability(domainObservation)
+  }
+
+  let recommendation = 'observe_only'
+  let reason = 'unified_intelligence_observe_only'
+
+  if (reliability.automationReadiness === 'candidate_ready') {
+    recommendation = 'candidate_optional_disable_flow'
+    reason = 'reliability_candidate_ready'
+  } else if (preferenceReport?.recommendedPassiveStrategy === 'candidate_legitimate_interest_review') {
+    recommendation = 'review_legitimate_interest_flow'
+    reason = 'legitimate_interest_review_recommended'
+  } else if (preferenceReport?.recommendedPassiveStrategy === 'candidate_vendor_review') {
+    recommendation = 'review_vendor_flow'
+    reason = 'vendor_review_recommended'
+  } else if (preferenceReport) {
+    recommendation = 'review_preference_center'
+    reason = 'preference_report_available'
+  } else if (cmp.cmp !== 'unknown') {
+    recommendation = 'observe_cmp_behavior'
+    reason = 'cmp_detected_without_preference_report'
+  }
+
+  return {
+    banner: bannerReport
+      ? {
+          classification: bannerReport.classification || 'unknown',
+          confidence: bannerReport.confidence || 0,
+          passiveRecommendation: bannerReport.passiveRecommendation || 'observe_only',
+          cmp: bannerReport.cmp || cmp
+        }
+      : null,
+    preference: preferenceReport,
+    cmp,
+    cmpStrategy,
+    reliability,
+    observation,
+    recommendation,
+    safeToAct: false,
+    allowed: false,
+    reason
+  }
+}
+
 function selectBestPreview(previews) {
   if (!previews || previews.length === 0) return null
 
