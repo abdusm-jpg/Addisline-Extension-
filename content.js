@@ -3444,6 +3444,104 @@ function analyzePreferenceCenter(panel) {
   }
 }
 
+function getToggleState(control) {
+  if (!control) return 'unknown'
+
+  if (
+    control.disabled ||
+    (
+      typeof control.getAttribute === 'function' &&
+      control.getAttribute('disabled') !== null
+    ) ||
+    control.getAttribute?.('aria-disabled') === 'true'
+  ) {
+    return 'disabled'
+  }
+
+  if (
+    control.matches?.('input[type="checkbox"]') ||
+    control.matches?.('input[type="radio"]')
+  ) {
+    return control.checked ? 'enabled' : 'disabled'
+  }
+
+  const ariaChecked = normalizeMatchText(control.getAttribute?.('aria-checked'))
+  const ariaPressed = normalizeMatchText(control.getAttribute?.('aria-pressed'))
+
+  if (ariaChecked === 'true' || ariaPressed === 'true') return 'enabled'
+  if (ariaChecked === 'false' || ariaPressed === 'false') return 'disabled'
+
+  return 'unknown'
+}
+
+function classifyToggleContext(control) {
+  if (!control) return 'unknown'
+
+  const contextText = normalizeMatchText([
+    getText(control),
+    getElementActionText(control),
+    getPreferenceDecisionText(control)
+  ].join(' '))
+
+  if (textHasAny(contextText, essentialPreferenceTexts)) {
+    return 'required'
+  }
+
+  if (
+    textHasAny(contextText, optionalPreferenceTexts) ||
+    textHasAny(contextText, ['analytics', 'marketing', 'advertising', 'social media', 'tracking'])
+  ) {
+    return 'optional'
+  }
+
+  return 'unknown'
+}
+
+function analyzePreferenceToggles(panel) {
+  if (!panel) {
+    return {
+      toggleCount: 0,
+      enabledCount: 0,
+      disabledCount: 0,
+      unknownCount: 0,
+      optionalCandidates: 0,
+      requiredCandidates: 0
+    }
+  }
+
+  const toggles = getToggleControls(panel)
+
+  return toggles.reduce((summary, control) => {
+    const state = getToggleState(control)
+    const context = classifyToggleContext(control)
+
+    summary.toggleCount += 1
+
+    if (state === 'enabled') {
+      summary.enabledCount += 1
+    } else if (state === 'disabled') {
+      summary.disabledCount += 1
+    } else {
+      summary.unknownCount += 1
+    }
+
+    if (context === 'optional') {
+      summary.optionalCandidates += 1
+    } else if (context === 'required') {
+      summary.requiredCandidates += 1
+    }
+
+    return summary
+  }, {
+    toggleCount: 0,
+    enabledCount: 0,
+    disabledCount: 0,
+    unknownCount: 0,
+    optionalCandidates: 0,
+    requiredCandidates: 0
+  })
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
