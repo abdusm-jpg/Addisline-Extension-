@@ -3790,18 +3790,26 @@ function classifyCookieBannerFromAnalysis(analysis) {
 
 // Cookie Intelligence Layer - Observation Mode
 function getCookieIntelligenceReport(container) {
+  const fallbackCmp = {
+    cmp: 'unknown',
+    confidence: 0,
+    signals: []
+  }
+
   if (!container) {
     return {
       analysis: null,
       classification: 'unknown',
       confidence: 0,
       passiveRecommendation: 'observe_only',
+      cmp: fallbackCmp,
       safeToAct: false,
       reason: 'no_container'
     }
   }
 
   const analysis = analyzeCookieContainer(container)
+  const cmp = detectCMPFingerprint(container) || fallbackCmp
   const classification = classifyCookieBannerFromAnalysis(analysis)
   const confidence = calculateIntelligenceConfidence(analysis, classification)
   const passiveRecommendation = getPassiveRecommendation(analysis, classification, confidence)
@@ -3813,6 +3821,7 @@ function getCookieIntelligenceReport(container) {
     classification,
     confidence,
     passiveRecommendation,
+    cmp,
     safeToAct,
     reason
   }
