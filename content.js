@@ -3795,6 +3795,14 @@ function buildPreferenceIntelligenceReport(panel) {
   const center = analyzePreferenceCenter(panel)
   const toggles = analyzePreferenceToggles(panel)
   const toggleCandidates = identifySafeToggleCandidates(panel)
+  const cmp = panel
+    ? detectCMPFingerprint(panel)
+    : {
+        cmp: 'unknown',
+        confidence: 0,
+        signals: []
+      }
+  const cmpStrategy = getCMPStrategyProfile(cmp)
 
   const safeCandidateCount = toggleCandidates.safeCandidates.length
   const riskyCandidateCount = toggleCandidates.riskyCandidates.length
@@ -3844,6 +3852,8 @@ function buildPreferenceIntelligenceReport(panel) {
     center,
     toggles,
     toggleCandidates,
+    cmp,
+    cmpStrategy,
     riskLevel,
     recommendedPassiveStrategy,
     safeToAct: false,
