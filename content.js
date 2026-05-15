@@ -4174,7 +4174,8 @@ function buildPassiveDebugSummary(unifiedReport) {
     hostname: getCurrentHostname(),
     decision: unifiedReport?.decision || null,
     historical: unifiedReport?.historical || null,
-    patterns: unifiedReport?.patterns || null
+    patterns: unifiedReport?.patterns || null,
+    analytics: unifiedReport?.debugAnalytics || null
   }
 }
 
@@ -4185,7 +4186,8 @@ function exposeUnifiedCookieDebug(unifiedReport) {
     timestamp: Date.now(),
     unifiedReport,
     decision: unifiedReport?.decision || null,
-    summary: buildPassiveDebugSummary(unifiedReport)
+    summary: buildPassiveDebugSummary(unifiedReport),
+    analytics: unifiedReport?.debugAnalytics || null
   }
 
   console.groupCollapsed('[Addisline Debug]')
@@ -4481,6 +4483,287 @@ function buildPassivePatternClassification(unifiedReport) {
     averageScore,
     historicalRisk: historical?.historicalRisk || 'unknown',
     historicalReadiness: historical?.historicalReadiness || 'unknown'
+  }
+}
+
+function normalizeCMPFingerprint(cmpReport, cmpStrategy) {
+  const cmpName = normalizeMatchText(cmpReport?.cmp || cmpStrategy?.cmp || 'unknown')
+  const profileName = normalizeMatchText(cmpStrategy?.profile || cmpName || 'unknown')
+  const confidence = Math.min(100, Math.max(0, Number(cmpReport?.confidence) || 0))
+  const signals = uniquePassiveList(cmpReport?.signals || [])
+
+  return {
+    cmp: cmpName || 'unknown',
+    profile: profileName || 'unknown',
+    confidence,
+    riskLevel: cmpStrategy?.riskLevel || 'unknown',
+    expectedFlow: cmpStrategy?.expectedFlow || 'unknown',
+    signalCount: signals.length,
+    signals,
+    supportsPreferenceCenter: Boolean(cmpStrategy?.supportsPreferenceCenter),
+    supportsVendorFlow: Boolean(cmpStrategy?.supportsVendorFlow),
+    supportsLegitimateInterestFlow: Boolean(
+      cmpStrategy?.supportsLegitimateInterestFlow
+    )
+  }
+}
+
+function aggregatePassiveConfidence(unifiedReport) {
+  const values = [
+    unifiedReport?.banner?.confidence,
+    unifiedReport?.cmp?.confidence,
+    unifiedReport?.decision?.confidence,
+    unifiedReport?.historical?.historicalConfidence === 'high' ? 85 : null,
+    unifiedReport?.historical?.historicalConfidence === 'medium' ? 60 : null,
+    unifiedReport?.patterns?.confidence === 'high' ? 85 : null,
+    unifiedReport?.patterns?.confidence === 'medium' ? 60 : null
+  ]
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+
+  const average = values.length
+    ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+    : 0
+  const stabilityBonus =
+    unifiedReport?.historical?.consistencies?.riskConsistency === 'high' ? 8 : 0
+  const anomalyPenalty =
+    unifiedReport?.anomalies?.detected ? 12 : 0
+  const aggregate = Math.min(100, Math.max(0, average + stabilityBonus - anomalyPenalty))
+
+  return {
+    aggregate,
+    average,
+    inputs: values.length,
+    stabilityBonus,
+    anomalyPenalty,
+    level: aggregate >= 75 ? 'high' : aggregate >= 45 ? 'medium' : 'low'
+  }
+}
+
+function calculatePassiveTrend(values) {
+  if (!Array.isArray(values) || values.length < 2) {
+    return {
+      direction: 'unknown',
+      delta: 0
+    }
+  }
+
+  const first = Number(values[0]) || 0
+  const last = Number(values[values.length - 1]) || 0
+  const delta = last - first
+
+  if (delta >= 10) {
+    return {
+      direction: 'improving',
+      delta
+    }
+  }
+
+  if (delta <= -10) {
+    return {
+      direction: 'declining',
+      delta
+    }
+  }
+
+  return {
+    direction: 'stable',
+    delta
+  }
+}
+
+function buildHistoricalTrendAnalysis(unifiedReport) {
+  const observations = unifiedReport?.historical?.latestObservation
+    ? readPassiveSiteMemory()[getCurrentHostname()]?.observations || []
+    : []
+  const boundedObservations = Array.isArray(observations)
+    ? observations.slice(-5)
+    : []
+  const scores = boundedObservations.map((entry) => Number(entry?.score) || 0)
+  const confidences = boundedObservations.map((entry) => Number(entry?.confidence) || 0)
+  const scoreTrend = calculatePassiveTrend(scores)
+  const confidenceTrend = calculatePassiveTrend(confidences)
+
+  return {
+    available: boundedObservations.length > 1,
+    observations: boundedObservations.length,
+    scoreTrend,
+    confidenceTrend,
+    latestScore: scores[scores.length - 1] || 0,
+    latestConfidence: confidences[confidences.length - 1] || 0
+  }
+}
+
+function buildDomainReputationScore(unifiedReport) {
+  const historical = unifiedReport?.historical || {}
+  const patterns = unifiedReport?.patterns || {}
+  const decision = unifiedReport?.decision || {}
+  const fingerprint = unifiedReport?.fingerprint || {}
+  const signals = []
+  const penalties = []
+
+  let score = 50
+
+  if (historical.available) {
+    score += Math.min(20, Math.max(-20, (historical.averageScore || 0) - 50))
+    signals.push('historical_average_available')
+  }
+
+  if (patterns.pattern === 'stable_low_risk') {
+    score += 20
+    signals.push('stable_low_risk_pattern')
+  } else if (patterns.pattern === 'complex_cmp_flow') {
+    score -= 12
+    penalties.push('complex_cmp_flow')
+  } else if (patterns.pattern === 'unstable_behavior') {
+    score -= 18
+    penalties.push('unstable_behavior')
+  } else if (patterns.pattern === 'high_risk_behavior') {
+    score -= 24
+    penalties.push('high_risk_behavior')
+  }
+
+  if (decision.risk === 'low') {
+    score += 10
+    signals.push('current_low_risk')
+  } else if (decision.risk === 'high') {
+    score -= 20
+    penalties.push('current_high_risk')
+  }
+
+  if (fingerprint.riskLevel === 'high') {
+    score -= 20
+    penalties.push('high_risk_cmp_fingerprint')
+  }
+
+  score = Math.min(100, Math.max(0, Math.round(score)))
+
+  return {
+    score,
+    level: score >= 75 ? 'trusted_passive' : score >= 45 ? 'neutral' : 'cautious',
+    signals: uniquePassiveList(signals),
+    penalties: uniquePassiveList(penalties)
+  }
+}
+
+function buildPassiveSafetyScore(unifiedReport) {
+  const decision = unifiedReport?.decision || {}
+  const reputation = unifiedReport?.reputation || {}
+  const anomalies = unifiedReport?.anomalies || {}
+  const blockers = uniquePassiveList(decision.blockers || [])
+  const reasons = []
+
+  let score = Number(decision.score) || 0
+
+  if (decision.risk === 'high') {
+    score -= 20
+    reasons.push('decision_high_risk')
+  }
+
+  if (reputation.level === 'cautious') {
+    score -= 10
+    reasons.push('cautious_domain_reputation')
+  }
+
+  if (anomalies.detected) {
+    score -= 15
+    reasons.push('historical_anomaly_detected')
+  }
+
+  if (blockers.length > 0) {
+    score -= Math.min(20, blockers.length * 5)
+    reasons.push('decision_blockers_present')
+  }
+
+  score = Math.min(100, Math.max(0, Math.round(score)))
+
+  return {
+    score,
+    level: score >= 70 ? 'low_passive_risk' : score >= 40 ? 'review' : 'blocked',
+    reasons: uniquePassiveList(reasons),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function detectHistoricalAnomalies(unifiedReport) {
+  const historical = unifiedReport?.historical || {}
+  const decision = unifiedReport?.decision || {}
+  const anomalies = []
+  const latestScore = Number(decision.score) || 0
+  const averageScore = Number(historical.averageScore) || 0
+
+  if (!historical.available) {
+    return {
+      detected: false,
+      anomalies: [],
+      severity: 'none'
+    }
+  }
+
+  if (Math.abs(latestScore - averageScore) >= 30) {
+    anomalies.push('score_deviation_from_history')
+  }
+
+  if (
+    historical.historicalRisk &&
+    historical.historicalRisk !== 'unknown' &&
+    decision.risk &&
+    decision.risk !== historical.historicalRisk
+  ) {
+    anomalies.push('risk_changed_from_history')
+  }
+
+  if (
+    historical.historicalReadiness &&
+    historical.historicalReadiness !== 'unknown' &&
+    decision.readiness &&
+    decision.readiness !== historical.historicalReadiness
+  ) {
+    anomalies.push('readiness_changed_from_history')
+  }
+
+  const uniqueAnomalies = uniquePassiveList(anomalies)
+
+  return {
+    detected: uniqueAnomalies.length > 0,
+    anomalies: uniqueAnomalies,
+    severity: uniqueAnomalies.length >= 2 ? 'medium' : uniqueAnomalies.length === 1 ? 'low' : 'none'
+  }
+}
+
+function buildDebugAnalyticsSummary(unifiedReport) {
+  return {
+    timestamp: Date.now(),
+    hostname: getCurrentHostname(),
+    confidence: unifiedReport?.confidenceAggregation || null,
+    trend: unifiedReport?.trend || null,
+    reputation: unifiedReport?.reputation || null,
+    safety: unifiedReport?.safety || null,
+    fingerprint: unifiedReport?.fingerprint || null,
+    anomaly: unifiedReport?.anomalies || null,
+    normalized: unifiedReport?.normalized || null
+  }
+}
+
+function buildNormalizedUnifiedCookieReport(unifiedReport) {
+  return {
+    hostname: getCurrentHostname(),
+    hasBanner: Boolean(unifiedReport?.banner),
+    hasPreference: Boolean(unifiedReport?.preference),
+    cmp: unifiedReport?.fingerprint?.cmp || unifiedReport?.cmp?.cmp || 'unknown',
+    decisionRisk: unifiedReport?.decision?.risk || 'unknown',
+    decisionReadiness: unifiedReport?.decision?.readiness || 'unknown',
+    recommendation: unifiedReport?.decision?.recommendation || 'observe_only',
+    historicalAvailable: Boolean(unifiedReport?.historical?.available),
+    pattern: unifiedReport?.patterns?.pattern || 'unknown',
+    confidenceLevel: unifiedReport?.confidenceAggregation?.level || 'low',
+    reputationLevel: unifiedReport?.reputation?.level || 'neutral',
+    safetyLevel: unifiedReport?.safety?.level || 'review',
+    anomalyDetected: Boolean(unifiedReport?.anomalies?.detected),
+    safeToAct: false,
+    allowed: false
   }
 }
 
@@ -4938,6 +5221,49 @@ function buildUnifiedCookieIntelligence(pipeline) {
   enrichedReport = {
     ...enrichedReport,
     patterns: buildPassivePatternClassification(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    fingerprint: normalizeCMPFingerprint(
+      enrichedReport.cmp,
+      enrichedReport.cmpStrategy
+    )
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    trend: buildHistoricalTrendAnalysis(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    anomalies: detectHistoricalAnomalies(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    confidenceAggregation: aggregatePassiveConfidence(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    reputation: buildDomainReputationScore(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    safety: buildPassiveSafetyScore(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    normalized: buildNormalizedUnifiedCookieReport(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    debugAnalytics: buildDebugAnalyticsSummary(enrichedReport)
   }
 
   exposeUnifiedCookieDebug(enrichedReport)
