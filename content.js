@@ -3955,6 +3955,219 @@ function evaluateCMPReliability(cmpStrategy, preferenceReport) {
   }
 }
 
+function clampPassiveDecisionScore(value) {
+  return Math.min(100, Math.max(0, Math.round(value || 0)))
+}
+
+function classifyPassiveDecisionRisk(score, blockers, cmpRiskLevel, preferenceRiskLevel) {
+  if (cmpRiskLevel === 'high' || preferenceRiskLevel === 'high') return 'high'
+  if (blockers.length > 0 && score < 45) return 'high'
+  if (score >= 70) return 'low'
+  if (score >= 40) return 'medium'
+  return 'unknown'
+}
+
+function buildPassiveDecisionEngine(unifiedReport) {
+  const banner = unifiedReport?.banner || null
+  const preference = unifiedReport?.preference || null
+  const cmp = unifiedReport?.cmp || {}
+  const cmpStrategy = unifiedReport?.cmpStrategy || {}
+  const reliability = unifiedReport?.reliability || {}
+  const observation = unifiedReport?.observation || {}
+  const toggles = preference?.toggles || {}
+  const toggleCandidates = preference?.toggleCandidates || {
+    safeCandidates: [],
+    riskyCandidates: [],
+    unknownCandidates: []
+  }
+  const observationStability =
+    observation?.stability?.observationStability || 'unknown'
+  const adaptiveConfidence = observation?.stability?.adaptiveConfidence || 0
+  const cmpRiskLevel = cmpStrategy?.riskLevel || 'unknown'
+  const preferenceRiskLevel = preference?.riskLevel || 'unknown'
+  const reliabilityReadiness = reliability?.automationReadiness || 'unknown'
+  const safeCandidateCount = toggleCandidates.safeCandidates?.length || 0
+  const riskyCandidateCount = toggleCandidates.riskyCandidates?.length || 0
+  const unknownCandidateCount = toggleCandidates.unknownCandidates?.length || 0
+  const unknownToggleCount = toggles.unknownCount || 0
+  const toggleCount = toggles.toggleCount || 0
+  const unknownToggleDensity = toggleCount > 0
+    ? unknownToggleCount / toggleCount
+    : 0
+  const hasVendorFlow = Boolean(
+    cmpStrategy?.supportsVendorFlow ||
+    preference?.center?.hasVendors
+  )
+  const hasLegitimateInterestFlow = Boolean(
+    cmpStrategy?.supportsLegitimateInterestFlow ||
+    preference?.center?.hasLegitimateInterests
+  )
+  const signals = []
+  const blockers = []
+
+  let score = 35
+  let confidence = Math.max(
+    banner?.confidence || 0,
+    cmp?.confidence || 0,
+    adaptiveConfidence
+  )
+
+  if (cmpRiskLevel === 'high') {
+    score -= 35
+    confidence -= 20
+    blockers.push('cmp_high_risk')
+    signals.push('cmp_high_risk')
+  } else if (cmpRiskLevel === 'medium') {
+    score -= 12
+    signals.push('cmp_medium_risk')
+  } else if (cmpRiskLevel === 'low') {
+    score += 8
+    signals.push('cmp_low_risk')
+  }
+
+  if (preferenceRiskLevel === 'high') {
+    score -= 25
+    confidence -= 15
+    blockers.push('preference_high_risk')
+    signals.push('preference_high_risk')
+  } else if (preferenceRiskLevel === 'low') {
+    score += 10
+    signals.push('preference_low_risk')
+  }
+
+  if (reliabilityReadiness === 'candidate_ready') {
+    score += 18
+    signals.push('candidate_ready')
+  } else if (reliabilityReadiness === 'blocked') {
+    score -= 25
+    blockers.push('reliability_blocked')
+    signals.push('readiness_blocked')
+  } else if (reliabilityReadiness === 'cautious') {
+    score -= 6
+    signals.push('readiness_cautious')
+  }
+
+  if (safeCandidateCount > 0) {
+    score += Math.min(18, safeCandidateCount * 6)
+    signals.push('safe_optional_candidates')
+  }
+
+  if (riskyCandidateCount > 0) {
+    score -= Math.min(25, riskyCandidateCount * 8)
+    blockers.push('risky_toggle_candidates')
+    signals.push('risky_toggle_candidates')
+  }
+
+  if (
+    unknownToggleCount >= 3 ||
+    unknownCandidateCount >= 3 ||
+    unknownToggleDensity >= 0.4
+  ) {
+    score -= 20
+    confidence -= 10
+    blockers.push('unknown_toggle_density')
+    signals.push('unknown_toggle_density')
+  }
+
+  if (hasVendorFlow) {
+    score -= 8
+    signals.push('vendor_flow_present')
+  }
+
+  if (hasLegitimateInterestFlow) {
+    score -= 12
+    signals.push('legitimate_interest_flow_present')
+  }
+
+  if (observationStability === 'high') {
+    confidence += 12
+    score += 6
+    signals.push('stable_observation')
+  } else if (observationStability === 'medium') {
+    confidence += 6
+    signals.push('partially_stable_observation')
+  } else if (observationStability === 'low') {
+    confidence -= 12
+    score -= 10
+    blockers.push('unstable_observation')
+    signals.push('unstable_observation')
+  }
+
+  score = clampPassiveDecisionScore(score)
+  confidence = clampPassiveDecisionScore(confidence)
+
+  let stability = observationStability
+  if (
+    stability !== 'low' &&
+    (
+      unknownToggleCount >= 3 ||
+      unknownCandidateCount >= 3 ||
+      unknownToggleDensity >= 0.4
+    )
+  ) {
+    stability = 'low'
+  }
+
+  let readiness = reliabilityReadiness
+  if (
+    cmpRiskLevel === 'high' ||
+    preferenceRiskLevel === 'high' ||
+    blockers.includes('unknown_toggle_density')
+  ) {
+    readiness = 'blocked'
+  } else if (
+    readiness === 'candidate_ready' &&
+    (hasVendorFlow || hasLegitimateInterestFlow)
+  ) {
+    readiness = 'cautious'
+  }
+
+  const risk = classifyPassiveDecisionRisk(
+    score,
+    blockers,
+    cmpRiskLevel,
+    preferenceRiskLevel
+  )
+
+  let recommendation = 'observe_only'
+  let reason = 'passive_decision_observe_only'
+
+  if (cmpRiskLevel === 'high') {
+    recommendation = 'observe_cmp_behavior'
+    reason = 'cmp_high_risk_observe_only'
+  } else if (hasLegitimateInterestFlow) {
+    recommendation = 'review_legitimate_interest_flow'
+    reason = 'legitimate_interest_flow_requires_review'
+  } else if (hasVendorFlow) {
+    recommendation = 'review_vendor_flow'
+    reason = 'vendor_flow_requires_review'
+  } else if (preference) {
+    recommendation = 'review_preference_center'
+    reason = 'preference_center_requires_review'
+  } else if (readiness === 'candidate_ready') {
+    recommendation = 'candidate_optional_disable_flow'
+    reason = 'optional_disable_candidate_passive_only'
+  } else if (cmp?.cmp && cmp.cmp !== 'unknown') {
+    recommendation = 'observe_cmp_behavior'
+    reason = 'cmp_detected_passive_observation'
+  }
+
+  return {
+    score,
+    confidence,
+    risk,
+    stability,
+    readiness,
+    recommendation,
+    requiresReview: true,
+    blockers,
+    signals,
+    safeToAct: false,
+    allowed: false,
+    reason
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
