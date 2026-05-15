@@ -4168,6 +4168,21 @@ function buildPassiveDecisionEngine(unifiedReport) {
   }
 }
 
+function exposeUnifiedCookieDebug(unifiedReport) {
+  if (window.__ADDISLINE_DEBUG__ !== true) return
+
+  window.__addislineDebug = {
+    timestamp: Date.now(),
+    unifiedReport,
+    decision: unifiedReport?.decision || null
+  }
+
+  console.groupCollapsed('[Addisline Debug]')
+  console.log('Unified Report:', unifiedReport)
+  console.log('Decision:', unifiedReport?.decision || null)
+  console.groupEnd()
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
@@ -4609,10 +4624,14 @@ function buildUnifiedCookieIntelligence(pipeline) {
     reason
   }
 
-  return {
+  const enrichedReport = {
     ...unifiedReport,
     decision: buildPassiveDecisionEngine(unifiedReport)
   }
+
+  exposeUnifiedCookieDebug(enrichedReport)
+
+  return enrichedReport
 }
 
 function selectBestPreview(previews) {
