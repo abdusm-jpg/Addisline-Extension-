@@ -3955,6 +3955,51 @@ function evaluateCMPReliability(cmpStrategy, preferenceReport) {
   }
 }
 
+// Passive Cookie Intelligence - contract and shared constants
+//
+// This layer is observation-only. Helpers may read the current report and the
+// bounded passive memory cache, but must not click, mutate the DOM, retry,
+// trigger automation, update stats, or send background messages. New outputs
+// are metadata-only and must preserve the passive guard values below.
+const PASSIVE_SAFE_TO_ACT = false
+const PASSIVE_ALLOWED = false
+const PASSIVE_REQUIRES_REVIEW = true
+
+const EXPECTED_PASSIVE_REPORT_FIELDS = [
+  'decision',
+  'historical',
+  'patterns',
+  'fingerprint',
+  'trend',
+  'anomalies',
+  'confidenceAggregation',
+  'reputation',
+  'safety',
+  'normalized',
+  'debugAnalytics',
+  'behaviorProfile',
+  'trustScore',
+  'stabilityIndex',
+  'riskEvolution',
+  'consistencyValidation',
+  'fingerprintHistory',
+  'lifecycle',
+  'integrity',
+  'compacted',
+  'diagnostics',
+  'comparative',
+  'similarity',
+  'clustering',
+  'confidenceDrift',
+  'uncertainty',
+  'escalation',
+  'weighting',
+  'normalizedTrust',
+  'persistence',
+  'diagnosticsAggregate'
+]
+
+// Passive utilities
 function clampPassiveDecisionScore(value) {
   return Math.min(100, Math.max(0, Math.round(value || 0)))
 }
@@ -3967,6 +4012,7 @@ function classifyPassiveDecisionRisk(score, blockers, cmpRiskLevel, preferenceRi
   return 'unknown'
 }
 
+// Passive decision engine
 function buildPassiveDecisionEngine(unifiedReport) {
   const banner = unifiedReport?.banner || null
   const preference = unifiedReport?.preference || null
@@ -4159,11 +4205,11 @@ function buildPassiveDecisionEngine(unifiedReport) {
     stability,
     readiness,
     recommendation,
-    requiresReview: true,
+    requiresReview: PASSIVE_REQUIRES_REVIEW,
     blockers: uniquePassiveList(blockers),
     signals: uniquePassiveList(signals),
-    safeToAct: false,
-    allowed: false,
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED,
     reason
   }
 }
@@ -4180,6 +4226,7 @@ function buildPassiveDebugSummary(unifiedReport) {
   }
 }
 
+// Debug exposure
 function exposeUnifiedCookieDebug(unifiedReport) {
   if (window.__ADDISLINE_DEBUG__ !== true) return
 
@@ -4197,6 +4244,7 @@ function exposeUnifiedCookieDebug(unifiedReport) {
   console.groupEnd()
 }
 
+// Passive memory
 function getCookieIntelligenceMemoryKey() {
   return 'addisline.cookieIntelligence.memory.v1'
 }
@@ -4311,6 +4359,7 @@ function uniquePassiveList(values) {
   )]
 }
 
+// Historical intelligence
 function calculateHistoricalConsistency(values) {
   if (!Array.isArray(values) || values.length <= 1) return 'unknown'
 
@@ -4404,6 +4453,7 @@ function buildHistoricalSiteIntelligence(unifiedReport) {
   }
 }
 
+// Pattern, fingerprint, and risk analysis
 function buildPassivePatternClassification(unifiedReport) {
   const historical = unifiedReport?.historical || {}
 
@@ -4682,9 +4732,9 @@ function buildPassiveSafetyScore(unifiedReport) {
     score,
     level: score >= 70 ? 'low_passive_risk' : score >= 40 ? 'review' : 'blocked',
     reasons: uniquePassiveList(reasons),
-    safeToAct: false,
-    allowed: false,
-    requiresReview: true
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED,
+    requiresReview: PASSIVE_REQUIRES_REVIEW
   }
 }
 
@@ -4763,8 +4813,8 @@ function buildNormalizedUnifiedCookieReport(unifiedReport) {
     reputationLevel: unifiedReport?.reputation?.level || 'neutral',
     safetyLevel: unifiedReport?.safety?.level || 'review',
     anomalyDetected: Boolean(unifiedReport?.anomalies?.detected),
-    safeToAct: false,
-    allowed: false
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED
   }
 }
 
@@ -4864,9 +4914,9 @@ function buildHistoricalTrustScore(unifiedReport) {
     score,
     level: score >= 75 ? 'high' : score >= 45 ? 'medium' : 'low',
     reasons: uniquePassiveList(reasons),
-    safeToAct: false,
-    allowed: false,
-    requiresReview: true
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED,
+    requiresReview: PASSIVE_REQUIRES_REVIEW
   }
 }
 
@@ -4985,9 +5035,9 @@ function validatePassiveConsistency(unifiedReport) {
   return {
     valid: findings.length === 0,
     findings: uniquePassiveList(findings),
-    safeToAct: false,
-    allowed: false,
-    requiresReview: true
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED,
+    requiresReview: PASSIVE_REQUIRES_REVIEW
   }
 }
 
@@ -5219,9 +5269,9 @@ function buildPassiveBehavioralClustering(unifiedReport) {
     cluster,
     confidence: patterns.confidence || 'low',
     reasons: uniquePassiveList(reasons),
-    safeToAct: false,
-    allowed: false,
-    requiresReview: true
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED,
+    requiresReview: PASSIVE_REQUIRES_REVIEW
   }
 }
 
@@ -5284,9 +5334,9 @@ function buildPassiveUncertaintyScore(unifiedReport) {
     score,
     level: score >= 70 ? 'high' : score >= 40 ? 'medium' : 'low',
     reasons: uniquePassiveList(reasons),
-    safeToAct: false,
-    allowed: false,
-    requiresReview: true
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED,
+    requiresReview: PASSIVE_REQUIRES_REVIEW
   }
 }
 
@@ -5320,9 +5370,9 @@ function buildStabilityAnomalyEscalation(unifiedReport) {
     escalated: level !== 'none',
     level,
     reasons: uniquePassiveList(reasons),
-    safeToAct: false,
-    allowed: false,
-    requiresReview: true
+    safeToAct: PASSIVE_SAFE_TO_ACT,
+    allowed: PASSIVE_ALLOWED,
+    requiresReview: PASSIVE_REQUIRES_REVIEW
   }
 }
 
@@ -5454,6 +5504,7 @@ function buildDiagnosticsAggregate(unifiedReport) {
   }
 }
 
+// Diagnostics and validation
 function buildPassiveFixtureGenerator(unifiedReport) {
   return {
     generatedAt: Date.now(),
@@ -5571,39 +5622,7 @@ function validatePassiveEnrichmentDependencies(unifiedReport) {
 }
 
 function buildPassivePipelineIntegrityChecks(unifiedReport) {
-  const expectedFields = [
-    'decision',
-    'historical',
-    'patterns',
-    'fingerprint',
-    'trend',
-    'anomalies',
-    'confidenceAggregation',
-    'reputation',
-    'safety',
-    'normalized',
-    'debugAnalytics',
-    'behaviorProfile',
-    'trustScore',
-    'stabilityIndex',
-    'riskEvolution',
-    'consistencyValidation',
-    'fingerprintHistory',
-    'lifecycle',
-    'integrity',
-    'compacted',
-    'diagnostics',
-    'comparative',
-    'similarity',
-    'clustering',
-    'confidenceDrift',
-    'uncertainty',
-    'escalation',
-    'weighting',
-    'normalizedTrust',
-    'persistence',
-    'diagnosticsAggregate'
-  ]
+  const expectedFields = EXPECTED_PASSIVE_REPORT_FIELDS
   const present = expectedFields.filter((field) =>
     Object.prototype.hasOwnProperty.call(unifiedReport || {}, field)
   )
@@ -5642,11 +5661,11 @@ function buildPassiveFieldConsistencyAssertions(unifiedReport) {
     assertions.push('compacted_readiness_mismatch')
   }
 
-  if (unifiedReport?.safety?.safeToAct !== false) {
+  if (unifiedReport?.safety?.safeToAct !== PASSIVE_SAFE_TO_ACT) {
     assertions.push('safety_safe_to_act_not_false')
   }
 
-  if (unifiedReport?.trustScore?.requiresReview !== true) {
+  if (unifiedReport?.trustScore?.requiresReview !== PASSIVE_REQUIRES_REVIEW) {
     assertions.push('trust_review_not_required')
   }
 
@@ -6770,6 +6789,7 @@ function buildCookieIntelligencePipeline(container) {
   }
 }
 
+// Enrichment registry and pipeline
 function applyPassiveEnrichmentStage(report, key, builder) {
   return {
     ...report,
@@ -7077,6 +7097,7 @@ function buildPassiveEnrichmentPipeline(baseReport) {
   }, baseReport)
 }
 
+// Unified report builder
 function buildUnifiedCookieIntelligence(pipeline) {
   const bannerReport = pipeline?.report || null
   const preferenceReport = pipeline?.preferenceReport || null
