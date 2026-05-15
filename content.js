@@ -5109,6 +5109,351 @@ function buildAdvancedDebugDiagnostics(unifiedReport) {
   }
 }
 
+function buildCrossVisitComparativeIntelligence(unifiedReport) {
+  const observations = getPassiveMemoryObservations()
+  const currentDecision = unifiedReport?.decision || {}
+  const previousObservation = observations[observations.length - 1] || null
+  const currentScore = Number(currentDecision.score) || 0
+  const previousScore = Number(previousObservation?.score) || 0
+  const scoreDelta = previousObservation ? currentScore - previousScore : 0
+  const changedFields = []
+
+  if (previousObservation?.risk && previousObservation.risk !== currentDecision.risk) {
+    changedFields.push('risk')
+  }
+
+  if (
+    previousObservation?.readiness &&
+    previousObservation.readiness !== currentDecision.readiness
+  ) {
+    changedFields.push('readiness')
+  }
+
+  if (
+    previousObservation?.recommendation &&
+    previousObservation.recommendation !== currentDecision.recommendation
+  ) {
+    changedFields.push('recommendation')
+  }
+
+  return {
+    available: Boolean(previousObservation),
+    observations: observations.length,
+    previousScore,
+    currentScore,
+    scoreDelta,
+    changedFields: uniquePassiveList(changedFields),
+    direction: scoreDelta >= 10 ? 'improved' : scoreDelta <= -10 ? 'declined' : 'similar'
+  }
+}
+
+function calculatePassiveJaccardSimilarity(leftValues, rightValues) {
+  const left = uniquePassiveList(leftValues)
+  const right = uniquePassiveList(rightValues)
+  const union = uniquePassiveList([...left, ...right])
+
+  if (union.length === 0) return 0
+
+  const intersection = left.filter((value) => right.includes(value))
+  return Math.round((intersection.length / union.length) * 100)
+}
+
+function buildCMPSimilarityAnalysis(unifiedReport) {
+  const observations = getPassiveMemoryObservations()
+  const currentFingerprint = unifiedReport?.fingerprint || {}
+  const currentSignals = uniquePassiveList(currentFingerprint.signals || [])
+  const historicalSignals = uniquePassiveList(
+    observations.flatMap((entry) => Array.isArray(entry?.signals) ? entry.signals : [])
+  )
+  const signalSimilarity = calculatePassiveJaccardSimilarity(
+    currentSignals,
+    historicalSignals
+  )
+  const historicalCmps = uniquePassiveList(
+    observations.map((entry) => entry?.cmp || 'unknown')
+  )
+  const currentCmp = currentFingerprint.cmp || 'unknown'
+  const cmpMatch = currentCmp !== 'unknown' && historicalCmps.includes(currentCmp)
+
+  return {
+    available: observations.length > 0,
+    currentCmp,
+    historicalCmps,
+    cmpMatch,
+    signalSimilarity,
+    level: signalSimilarity >= 75 || cmpMatch
+      ? 'high'
+      : signalSimilarity >= 40
+        ? 'medium'
+        : 'low'
+  }
+}
+
+function buildPassiveBehavioralClustering(unifiedReport) {
+  const behavior = unifiedReport?.behaviorProfile || {}
+  const patterns = unifiedReport?.patterns || {}
+  const safety = unifiedReport?.safety || {}
+  const reputation = unifiedReport?.reputation || {}
+  const reasons = []
+
+  let cluster = 'unknown'
+
+  if (behavior.hasVendorFlow || behavior.hasLegitimateInterestFlow) {
+    cluster = 'complex_review_required'
+    reasons.push('complex_cmp_flow')
+  } else if (patterns.pattern === 'stable_low_risk' && safety.level === 'low_passive_risk') {
+    cluster = 'stable_observe_candidate'
+    reasons.push('stable_low_risk_pattern')
+  } else if (reputation.level === 'cautious' || safety.level === 'blocked') {
+    cluster = 'cautious_observe_only'
+    reasons.push('cautious_reputation_or_safety')
+  } else if (patterns.pattern === 'unstable_behavior') {
+    cluster = 'unstable_observe_only'
+    reasons.push('unstable_pattern')
+  } else {
+    cluster = 'moderate_review'
+    reasons.push('moderate_passive_profile')
+  }
+
+  return {
+    cluster,
+    confidence: patterns.confidence || 'low',
+    reasons: uniquePassiveList(reasons),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildHistoricalConfidenceDriftAnalysis(unifiedReport) {
+  const observations = getPassiveMemoryObservations()
+  const confidenceValues = observations.map((entry) => Number(entry?.confidence) || 0)
+  const currentConfidence = Number(unifiedReport?.decision?.confidence) || 0
+  const values = [...confidenceValues, currentConfidence].filter((value) => value > 0)
+  const trend = calculatePassiveTrend(values)
+  const first = values[0] || 0
+  const last = values[values.length - 1] || 0
+
+  return {
+    available: values.length > 1,
+    observations: values.length,
+    first,
+    last,
+    drift: last - first,
+    direction: trend.direction
+  }
+}
+
+function buildPassiveUncertaintyScore(unifiedReport) {
+  const decision = unifiedReport?.decision || {}
+  const anomalies = unifiedReport?.anomalies || {}
+  const similarity = unifiedReport?.similarity || {}
+  const consistency = unifiedReport?.consistencyValidation || {}
+  const reasons = []
+
+  let score = 20
+
+  if (decision.risk === 'unknown' || decision.readiness === 'unknown') {
+    score += 20
+    reasons.push('unknown_decision_state')
+  }
+
+  if ((decision.blockers || []).length > 0) {
+    score += Math.min(20, decision.blockers.length * 5)
+    reasons.push('decision_blockers_present')
+  }
+
+  if (anomalies.detected) {
+    score += anomalies.severity === 'medium' ? 20 : 10
+    reasons.push('historical_anomaly_present')
+  }
+
+  if (similarity.available && similarity.level === 'low') {
+    score += 15
+    reasons.push('low_cmp_similarity')
+  }
+
+  if (consistency.valid === false) {
+    score += 20
+    reasons.push('passive_consistency_findings')
+  }
+
+  score = Math.min(100, Math.max(0, Math.round(score)))
+
+  return {
+    score,
+    level: score >= 70 ? 'high' : score >= 40 ? 'medium' : 'low',
+    reasons: uniquePassiveList(reasons),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildStabilityAnomalyEscalation(unifiedReport) {
+  const anomalies = unifiedReport?.anomalies || {}
+  const stabilityIndex = unifiedReport?.stabilityIndex || {}
+  const uncertainty = unifiedReport?.uncertainty || {}
+  const reasons = []
+
+  let level = 'none'
+
+  if (anomalies.detected) {
+    reasons.push('historical_anomaly_detected')
+  }
+
+  if (stabilityIndex.level === 'low') {
+    reasons.push('low_stability_index')
+  }
+
+  if (uncertainty.level === 'high') {
+    reasons.push('high_uncertainty')
+  }
+
+  if (reasons.length >= 2) {
+    level = 'review'
+  } else if (reasons.length === 1) {
+    level = 'watch'
+  }
+
+  return {
+    escalated: level !== 'none',
+    level,
+    reasons: uniquePassiveList(reasons),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassiveObservationWeighting(unifiedReport) {
+  const observations = getPassiveMemoryObservations()
+  const weightedScores = observations.map((entry, index) => {
+    const weight = index + 1
+    return {
+      weight,
+      score: Number(entry?.score) || 0,
+      confidence: Number(entry?.confidence) || 0
+    }
+  })
+  const totalWeight = weightedScores.reduce((sum, entry) => sum + entry.weight, 0)
+  const weightedScore = totalWeight
+    ? Math.round(
+        weightedScores.reduce((sum, entry) => sum + (entry.score * entry.weight), 0) /
+        totalWeight
+      )
+    : 0
+  const weightedConfidence = totalWeight
+    ? Math.round(
+        weightedScores.reduce(
+          (sum, entry) => sum + (entry.confidence * entry.weight),
+          0
+        ) / totalWeight
+      )
+    : 0
+
+  return {
+    available: weightedScores.length > 0,
+    observations: weightedScores.length,
+    weightedScore,
+    weightedConfidence,
+    currentScore: unifiedReport?.decision?.score || 0,
+    currentConfidence: unifiedReport?.decision?.confidence || 0
+  }
+}
+
+function buildFingerprintTrustNormalization(unifiedReport) {
+  const fingerprint = unifiedReport?.fingerprint || {}
+  const similarity = unifiedReport?.similarity || {}
+  const fingerprintHistory = unifiedReport?.fingerprintHistory || {}
+  const reasons = []
+
+  let score = Number(fingerprint.confidence) || 0
+
+  if (similarity.cmpMatch || fingerprintHistory.previouslySeen) {
+    score += 15
+    reasons.push('fingerprint_seen_historically')
+  }
+
+  if (similarity.level === 'high') {
+    score += 10
+    reasons.push('high_signal_similarity')
+  } else if (similarity.level === 'low' && similarity.available) {
+    score -= 10
+    reasons.push('low_signal_similarity')
+  }
+
+  if (fingerprintHistory.changed) {
+    score -= 20
+    reasons.push('fingerprint_changed_from_history')
+  }
+
+  score = Math.min(100, Math.max(0, Math.round(score)))
+
+  return {
+    score,
+    level: score >= 75 ? 'high' : score >= 45 ? 'medium' : 'low',
+    reasons: uniquePassiveList(reasons)
+  }
+}
+
+function buildHistoricalPatternPersistence(unifiedReport) {
+  const observations = getPassiveMemoryObservations()
+  const currentPattern = unifiedReport?.patterns?.pattern || 'unknown'
+  const currentSignals = uniquePassiveList(unifiedReport?.patterns?.reasons || [])
+  const historicalPatterns = observations.map((entry) => {
+    if (entry?.hasVendors || entry?.hasLegitimateInterests) return 'complex_cmp_flow'
+    if (entry?.risk === 'high') return 'high_risk_behavior'
+    if (entry?.stability === 'low') return 'unstable_behavior'
+    if (entry?.score >= 70) return 'stable_low_risk'
+    return 'moderate_behavior'
+  })
+  const patternConsistency = calculateHistoricalConsistency([
+    ...historicalPatterns,
+    currentPattern
+  ])
+
+  return {
+    available: observations.length > 0,
+    currentPattern,
+    historicalPatterns: uniquePassiveList(historicalPatterns),
+    patternConsistency,
+    persisted: patternConsistency === 'high',
+    reasons: currentSignals
+  }
+}
+
+function buildDiagnosticsAggregate(unifiedReport) {
+  const checks = [
+    unifiedReport?.consistencyValidation?.valid !== false,
+    unifiedReport?.integrity?.valid !== false,
+    unifiedReport?.uncertainty?.level !== 'high',
+    unifiedReport?.escalation?.level !== 'review'
+  ]
+  const passed = checks.filter(Boolean).length
+  const total = checks.length
+
+  return {
+    timestamp: Date.now(),
+    hostname: getCurrentHostname(),
+    passed,
+    total,
+    level: passed === total ? 'clean' : passed >= 2 ? 'watch' : 'review',
+    comparative: unifiedReport?.comparative || null,
+    similarity: unifiedReport?.similarity || null,
+    clustering: unifiedReport?.clustering || null,
+    confidenceDrift: unifiedReport?.confidenceDrift || null,
+    uncertainty: unifiedReport?.uncertainty || null,
+    escalation: unifiedReport?.escalation || null,
+    weighting: unifiedReport?.weighting || null,
+    normalizedTrust: unifiedReport?.normalizedTrust || null,
+    persistence: unifiedReport?.persistence || null,
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
@@ -5626,6 +5971,66 @@ function buildPassiveEnrichmentPipeline(baseReport) {
     enrichedReport,
     'diagnostics',
     buildAdvancedDebugDiagnostics
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'comparative',
+    buildCrossVisitComparativeIntelligence
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'similarity',
+    buildCMPSimilarityAnalysis
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'clustering',
+    buildPassiveBehavioralClustering
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'confidenceDrift',
+    buildHistoricalConfidenceDriftAnalysis
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'uncertainty',
+    buildPassiveUncertaintyScore
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'escalation',
+    buildStabilityAnomalyEscalation
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'weighting',
+    buildPassiveObservationWeighting
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'normalizedTrust',
+    buildFingerprintTrustNormalization
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'persistence',
+    buildHistoricalPatternPersistence
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'diagnosticsAggregate',
+    buildDiagnosticsAggregate
   )
 
   return applyPassiveEnrichmentStage(
