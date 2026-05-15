@@ -4175,7 +4175,8 @@ function buildPassiveDebugSummary(unifiedReport) {
     decision: unifiedReport?.decision || null,
     historical: unifiedReport?.historical || null,
     patterns: unifiedReport?.patterns || null,
-    analytics: unifiedReport?.debugAnalytics || null
+    analytics: unifiedReport?.debugAnalytics || null,
+    diagnostics: unifiedReport?.diagnostics || null
   }
 }
 
@@ -4767,6 +4768,347 @@ function buildNormalizedUnifiedCookieReport(unifiedReport) {
   }
 }
 
+function getPassiveMemoryObservations(hostname = getCurrentHostname()) {
+  const memory = readPassiveSiteMemory()
+  const observations = memory?.[hostname]?.observations
+
+  return Array.isArray(observations) ? observations.slice(-5) : []
+}
+
+function buildCMPBehaviorProfile(unifiedReport) {
+  const fingerprint = unifiedReport?.fingerprint || {}
+  const historical = unifiedReport?.historical || {}
+  const patterns = unifiedReport?.patterns || {}
+  const signals = uniquePassiveList([
+    ...(fingerprint.signals || []),
+    ...(historical.repeatedSignals || [])
+  ])
+  const hasVendorFlow = Boolean(
+    fingerprint.supportsVendorFlow ||
+    signals.includes('vendor_flow_present')
+  )
+  const hasLegitimateInterestFlow = Boolean(
+    fingerprint.supportsLegitimateInterestFlow ||
+    signals.includes('legitimate_interest_flow_present')
+  )
+  const hasPreferenceCenter = Boolean(
+    fingerprint.supportsPreferenceCenter ||
+    unifiedReport?.preference?.center?.hasPreferences
+  )
+
+  let complexity = 'unknown'
+  if (hasVendorFlow || hasLegitimateInterestFlow) {
+    complexity = 'high'
+  } else if (hasPreferenceCenter || patterns.pattern === 'moderate_behavior') {
+    complexity = 'medium'
+  } else if (fingerprint.cmp && fingerprint.cmp !== 'unknown') {
+    complexity = 'low'
+  }
+
+  return {
+    available: fingerprint.cmp !== 'unknown' || historical.available === true,
+    cmp: fingerprint.cmp || 'unknown',
+    expectedFlow: fingerprint.expectedFlow || 'unknown',
+    complexity,
+    hasPreferenceCenter,
+    hasVendorFlow,
+    hasLegitimateInterestFlow,
+    passiveOnly: true,
+    signals
+  }
+}
+
+function buildHistoricalTrustScore(unifiedReport) {
+  const historical = unifiedReport?.historical || {}
+  const reputation = unifiedReport?.reputation || {}
+  const confidence = unifiedReport?.confidenceAggregation || {}
+  const anomalies = unifiedReport?.anomalies || {}
+  const reasons = []
+
+  let score = 40
+
+  if (historical.available) {
+    score += Math.min(25, Math.max(-20, (historical.averageScore || 0) - 50))
+    reasons.push('historical_average_considered')
+  }
+
+  if (historical.historicalConfidence === 'high') {
+    score += 20
+    reasons.push('high_historical_confidence')
+  } else if (historical.historicalConfidence === 'medium') {
+    score += 10
+    reasons.push('medium_historical_confidence')
+  }
+
+  if (reputation.level === 'trusted_passive') {
+    score += 15
+    reasons.push('trusted_passive_reputation')
+  } else if (reputation.level === 'cautious') {
+    score -= 15
+    reasons.push('cautious_reputation')
+  }
+
+  if (confidence.level === 'high') {
+    score += 10
+    reasons.push('high_aggregate_confidence')
+  }
+
+  if (anomalies.detected) {
+    score -= anomalies.severity === 'medium' ? 20 : 10
+    reasons.push('historical_anomaly_penalty')
+  }
+
+  score = Math.min(100, Math.max(0, Math.round(score)))
+
+  return {
+    score,
+    level: score >= 75 ? 'high' : score >= 45 ? 'medium' : 'low',
+    reasons: uniquePassiveList(reasons),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildDomainStabilityIndex(unifiedReport) {
+  const historical = unifiedReport?.historical || {}
+  const trend = unifiedReport?.trend || {}
+  const consistency = historical.consistencies || {}
+  const reasons = []
+
+  let score = 30
+
+  if (consistency.riskConsistency === 'high') {
+    score += 20
+    reasons.push('risk_consistency_high')
+  } else if (consistency.riskConsistency === 'medium') {
+    score += 10
+    reasons.push('risk_consistency_medium')
+  }
+
+  if (consistency.readinessConsistency === 'high') {
+    score += 20
+    reasons.push('readiness_consistency_high')
+  } else if (consistency.readinessConsistency === 'medium') {
+    score += 10
+    reasons.push('readiness_consistency_medium')
+  }
+
+  if (consistency.cmpConsistency === 'high') {
+    score += 15
+    reasons.push('cmp_consistency_high')
+  }
+
+  if (trend.scoreTrend?.direction === 'stable') {
+    score += 10
+    reasons.push('score_trend_stable')
+  } else if (trend.scoreTrend?.direction === 'declining') {
+    score -= 15
+    reasons.push('score_trend_declining')
+  }
+
+  if (unifiedReport?.anomalies?.detected) {
+    score -= 15
+    reasons.push('anomaly_reduces_stability')
+  }
+
+  score = Math.min(100, Math.max(0, Math.round(score)))
+
+  return {
+    score,
+    level: score >= 75 ? 'high' : score >= 45 ? 'medium' : 'low',
+    observations: historical.observations || 0,
+    reasons: uniquePassiveList(reasons)
+  }
+}
+
+function buildRiskEvolutionAnalysis(unifiedReport) {
+  const observations = getPassiveMemoryObservations()
+  const currentRisk = unifiedReport?.decision?.risk || 'unknown'
+  const risks = observations.map((entry) => entry?.risk || 'unknown')
+  const previousRisk = risks[risks.length - 1] || 'unknown'
+  const riskOrder = {
+    low: 1,
+    medium: 2,
+    high: 3,
+    unknown: 0
+  }
+  const previousValue = riskOrder[previousRisk] || 0
+  const currentValue = riskOrder[currentRisk] || 0
+
+  let direction = 'unknown'
+  if (previousValue && currentValue) {
+    if (currentValue > previousValue) {
+      direction = 'worsening'
+    } else if (currentValue < previousValue) {
+      direction = 'improving'
+    } else {
+      direction = 'stable'
+    }
+  }
+
+  return {
+    available: observations.length > 0,
+    previousRisk,
+    currentRisk,
+    direction,
+    riskHistory: uniquePassiveList([...risks, currentRisk])
+  }
+}
+
+function validatePassiveConsistency(unifiedReport) {
+  const findings = []
+  const decision = unifiedReport?.decision || {}
+  const safety = unifiedReport?.safety || {}
+  const normalized = unifiedReport?.normalized || {}
+
+  if (decision.safeToAct !== false || decision.allowed !== false) {
+    findings.push('decision_not_passive_safe')
+  }
+
+  if (safety.safeToAct !== false || safety.allowed !== false) {
+    findings.push('safety_not_passive_safe')
+  }
+
+  if (normalized.safeToAct !== false || normalized.allowed !== false) {
+    findings.push('normalized_not_passive_safe')
+  }
+
+  if (decision.requiresReview !== true) {
+    findings.push('decision_review_not_required')
+  }
+
+  if (!decision.risk || !decision.readiness || !decision.recommendation) {
+    findings.push('decision_shape_incomplete')
+  }
+
+  return {
+    valid: findings.length === 0,
+    findings: uniquePassiveList(findings),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function compareHistoricalFingerprint(unifiedReport) {
+  const observations = getPassiveMemoryObservations()
+  const currentFingerprint = unifiedReport?.fingerprint || {}
+  const historicalCmps = observations.map((entry) => entry?.cmp || 'unknown')
+  const uniqueCmps = uniquePassiveList(historicalCmps)
+  const currentCmp = currentFingerprint.cmp || 'unknown'
+  const previouslySeen = uniqueCmps.includes(currentCmp)
+  const changed = uniqueCmps.length > 0 && !previouslySeen && currentCmp !== 'unknown'
+
+  return {
+    available: observations.length > 0,
+    currentCmp,
+    historicalCmps: uniqueCmps,
+    previouslySeen,
+    changed,
+    signalCount: currentFingerprint.signalCount || 0,
+    confidence: currentFingerprint.confidence || 0
+  }
+}
+
+function buildPassiveLifecycleMetadata(unifiedReport) {
+  const timestamp = Date.now()
+  const hostname = getCurrentHostname()
+  const memory = readPassiveSiteMemory()
+  const siteMemory = memory?.[hostname] || {}
+
+  return {
+    version: 'cookie-intelligence.passive.v1',
+    timestamp,
+    hostname,
+    stage: 'passive_report_enriched',
+    visitsObserved: siteMemory.visits || 0,
+    memoryObservations: Array.isArray(siteMemory.observations)
+      ? siteMemory.observations.length
+      : 0,
+    reportFields: Object.keys(unifiedReport || {}).length,
+    passiveOnly: true
+  }
+}
+
+function validatePassiveMemoryIntegrity() {
+  const hostname = getCurrentHostname()
+  const memory = readPassiveSiteMemory()
+  const hostnames = Object.keys(memory)
+  const siteMemory = memory?.[hostname]
+  const issues = []
+
+  if (hostnames.length > 50) {
+    issues.push('memory_hostname_limit_exceeded')
+  }
+
+  hostnames.forEach((entryHostname) => {
+    const observations = memory?.[entryHostname]?.observations
+    if (Array.isArray(observations) && observations.length > 5) {
+      issues.push('memory_observation_limit_exceeded')
+    }
+  })
+
+  if (siteMemory && siteMemory.hostname && siteMemory.hostname !== hostname) {
+    issues.push('memory_hostname_mismatch')
+  }
+
+  return {
+    valid: issues.length === 0,
+    hostname,
+    hostnames: hostnames.length,
+    currentObservations: Array.isArray(siteMemory?.observations)
+      ? siteMemory.observations.length
+      : 0,
+    issues: uniquePassiveList(issues)
+  }
+}
+
+function compactPassiveArray(values, limit = 8) {
+  return uniquePassiveList(values).slice(0, limit)
+}
+
+function compactPassiveReport(unifiedReport) {
+  return {
+    hostname: getCurrentHostname(),
+    timestamp: Date.now(),
+    cmp: unifiedReport?.fingerprint?.cmp || 'unknown',
+    risk: unifiedReport?.decision?.risk || 'unknown',
+    readiness: unifiedReport?.decision?.readiness || 'unknown',
+    recommendation: unifiedReport?.decision?.recommendation || 'observe_only',
+    score: unifiedReport?.decision?.score || 0,
+    confidence: unifiedReport?.confidenceAggregation?.aggregate || 0,
+    pattern: unifiedReport?.patterns?.pattern || 'unknown',
+    trust: unifiedReport?.trustScore?.level || 'low',
+    stability: unifiedReport?.stabilityIndex?.level || 'low',
+    safety: unifiedReport?.safety?.level || 'review',
+    anomalies: compactPassiveArray(unifiedReport?.anomalies?.anomalies || []),
+    blockers: compactPassiveArray(unifiedReport?.decision?.blockers || []),
+    signals: compactPassiveArray(unifiedReport?.decision?.signals || []),
+    safeToAct: false,
+    allowed: false
+  }
+}
+
+function buildAdvancedDebugDiagnostics(unifiedReport) {
+  return {
+    timestamp: Date.now(),
+    hostname: getCurrentHostname(),
+    lifecycle: unifiedReport?.lifecycle || null,
+    integrity: unifiedReport?.integrity || null,
+    consistencyValidation: unifiedReport?.consistencyValidation || null,
+    behaviorProfile: unifiedReport?.behaviorProfile || null,
+    riskEvolution: unifiedReport?.riskEvolution || null,
+    fingerprintHistory: unifiedReport?.fingerprintHistory || null,
+    compacted: unifiedReport?.compacted || null,
+    passiveGuards: {
+      safeToAct: false,
+      allowed: false,
+      requiresReview: true
+    }
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
@@ -5259,6 +5601,61 @@ function buildUnifiedCookieIntelligence(pipeline) {
   enrichedReport = {
     ...enrichedReport,
     normalized: buildNormalizedUnifiedCookieReport(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    debugAnalytics: buildDebugAnalyticsSummary(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    behaviorProfile: buildCMPBehaviorProfile(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    trustScore: buildHistoricalTrustScore(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    stabilityIndex: buildDomainStabilityIndex(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    riskEvolution: buildRiskEvolutionAnalysis(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    consistencyValidation: validatePassiveConsistency(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    fingerprintHistory: compareHistoricalFingerprint(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    lifecycle: buildPassiveLifecycleMetadata(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    integrity: validatePassiveMemoryIntegrity()
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    compacted: compactPassiveReport(enrichedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    diagnostics: buildAdvancedDebugDiagnostics(enrichedReport)
   }
 
   enrichedReport = {
