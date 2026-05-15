@@ -17,6 +17,7 @@ const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
 const hiddenBannerCooldowns = new Map()
+const preferenceExpansionSignatures = new Map()
 const observedShadowRoots = new WeakSet()
 
 const STATS_KEY = 'stats'
@@ -28,6 +29,8 @@ const SCAN_DEBOUNCE_MS = 400
 const MIN_SCAN_INTERVAL_MS = 1000
 const MAX_SCAN_BURST = 8
 const SCAN_BURST_RESET_MS = 15000
+const PREFERENCE_EXPANSION_TTL_MS = 60000
+const MAX_PREFERENCE_TRAVERSAL_DEPTH = 3
 const MUTATION_SCAN_HINT_TEXTS = [
   'cookie',
   'cookies',
@@ -207,6 +210,11 @@ const legitimateInterestCounterTexts = [
   'legitimate interest purposes',
   'legitimate interest processing',
   'legitimate interest consent',
+  'object',
+  'object to',
+  'objection',
+  'oppose',
+  'opposition',
   'li purpose',
   'li purposes',
   'interes legítimo',
@@ -298,6 +306,9 @@ const preferenceSectionTexts = [
   'vendors',
   'vendor preferences',
   'partners',
+  'show partners',
+  'show vendors',
+  'vendor list',
   'partner preferences',
   'proveedores',
   'proveedores externos',
@@ -306,6 +317,8 @@ const preferenceSectionTexts = [
   'interes legitimo',
   'intereses legitimos',
   'legitimate interest',
+  'object',
+  'oppose',
   'gestionar interes legitimo',
   'gestion de interes legitimo',
   'legitimate interest management',
@@ -315,6 +328,56 @@ const preferenceSectionTexts = [
   'personalization',
   'tracking',
   'social media',
+]
+
+const preferenceExpansionTexts = [
+  'show purposes',
+  'manage purposes',
+  'view purposes',
+  'purpose settings',
+  'purposes',
+  'categories',
+  'show partners',
+  'show vendors',
+  'manage vendors',
+  'manage partners',
+  'vendor list',
+  'partners',
+  'vendors',
+  'providers',
+  'legitimate interest',
+  'legitimate interests',
+  'object',
+  'object to',
+  'oppose',
+  'objection',
+  'details',
+  'more options',
+  'more choices',
+  'customize',
+  'customise',
+  'expand',
+  'accordion',
+  'advanced settings',
+  'privacy options',
+]
+
+const unsafePreferenceExpansionTexts = [
+  ...unsafeAcceptTexts,
+  'continue',
+  'subscribe',
+  'sign in',
+  'log in',
+  'login',
+  'paywall',
+  'payment',
+  'checkout',
+  'go to spanish site',
+  'change region',
+  'select region',
+  'choose region',
+  'language',
+  'country',
 ]
 
 const essentialPreferenceTexts = [
@@ -2407,6 +2470,39 @@ function getAncestorContextText(control) {
   return parts.join(' ')
 }
 
+function getControlledPreferenceContextText(control) {
+  const parts = []
+  const tabPanel =
+    control.closest?.('[role="tabpanel"], [id]')
+
+  if (tabPanel?.id) {
+    try {
+      const tab =
+        document.querySelector?.(
+          `[aria-controls="${CSS.escape(tabPanel.id)}"]`
+        )
+
+      if (tab) {
+        parts.push(getText(tab))
+        parts.push(getElementActionText(tab))
+      }
+    } catch {
+      // Invalid or transient tab ids can appear while CMPs render.
+    }
+  }
+
+  const selectedTab =
+    control.closest?.('[role="dialog"], [aria-modal="true"], [class*="preference" i], [class*="consent" i]')
+      ?.querySelector?.('[role="tab"][aria-selected="true"]')
+
+  if (selectedTab) {
+    parts.push(getText(selectedTab))
+    parts.push(getElementActionText(selectedTab))
+  }
+
+  return parts.join(' ')
+}
+
 function getPreferenceDecisionText(control) {
   return [
     getNearbyPreferenceText(control),
@@ -2415,6 +2511,7 @@ function getPreferenceDecisionText(control) {
     getAssociatedLabelText(control),
     getHeadingContextText(control),
     getAncestorContextText(control),
+    getControlledPreferenceContextText(control),
   ]
     .filter(Boolean)
     .join(' ')
@@ -2521,6 +2618,18 @@ function getDeniedPreferenceStats(control) {
 
   if (
     stats.length === 0 &&
+    textHasAny(text, [
+      'purpose',
+      'purposes',
+      'category',
+      'categories',
+    ])
+  ) {
+    stats.push('trackersReduced')
+  }
+
+  if (
+    stats.length === 0 &&
     isOptionalPreferenceControl(control)
   ) {
     stats.push('trackersReduced')
@@ -2593,6 +2702,265 @@ function isPreferenceSectionControl(control) {
       )
     )
   )
+}
+
+function cleanupPreferenceExpansionSignatures() {
+  const now = Date.now()
+
+  for (const [signature, timestamp] of preferenceExpansionSignatures.entries()) {
+    if (now - timestamp > PREFERENCE_EXPANSION_TTL_MS) {
+      preferenceExpansionSignatures.delete(signature)
+    }
+  }
+}
+
+function getPreferenceExpansionSignature(control, depth) {
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      depth,
+      getActionText(control).slice(0, 160),
+      control?.getAttribute?.('aria-label'),
+      control?.getAttribute?.('role'),
+      control?.id,
+      getClassNameText(control).slice(0, 120),
+    ].join(' ')
+  ).slice(0, 420)
+}
+
+function getPreferenceExpansionControlScore(control) {
+  const text =
+    normalizeMatchText(
+      [
+        getActionText(control),
+        getNearbyActionContext(control, null).nearby,
+        getAncestorContextText(control).slice(0, 700),
+      ].join(' ')
+    )
+
+  let score = 0
+
+  if (textHasAny(text, ['purpose', 'purposes', 'category', 'categories'])) {
+    score += 50
+  }
+
+  if (textHasAny(text, ['vendor', 'vendors', 'partner', 'partners', 'provider', 'providers'])) {
+    score += 40
+  }
+
+  if (textHasAny(text, ['legitimate interest', 'object', 'oppose', 'objection'])) {
+    score += 35
+  }
+
+  if (textHasAny(text, ['details', 'more options', 'more choices', 'expand', 'customize', 'customise'])) {
+    score += 20
+  }
+
+  if (
+    control.getAttribute?.('role') === 'tab' ||
+    control.getAttribute?.('aria-controls') ||
+    control.getAttribute?.('aria-expanded') === 'false'
+  ) {
+    score += 10
+  }
+
+  return score
+}
+
+function isSafePreferenceExpansionControl(control, panel, depth) {
+  if (
+    !control ||
+    !isVisible(control) ||
+    isInsideNonCookieModal(control) ||
+    hasUnsafeAcceptText(control) ||
+    isSensitiveActionControl(control, panel)
+  ) {
+    return false
+  }
+
+  const actionText =
+    normalizeMatchText(getActionText(control))
+
+  const contextText =
+    normalizeMatchText(
+      [
+        actionText,
+        getNearbyActionContext(control, panel).nearby,
+        getAncestorContextText(control).slice(0, 700),
+      ].join(' ')
+    )
+
+  const unsafeText =
+    normalizeMatchText(
+      [
+        actionText,
+        getNearbyActionContext(control, panel).nearby,
+      ].join(' ')
+    )
+
+  if (
+    textHasAny(unsafeText, unsafePreferenceExpansionTexts) ||
+    textHasAny(actionText, savePreferenceTexts) ||
+    textHasAny(actionText, totalRejectTexts) ||
+    textHasAny(actionText, rejectTexts) ||
+    textHasAny(actionText, necessaryOnlyTexts)
+  ) {
+    return false
+  }
+
+  if (
+    control.getAttribute?.('aria-expanded') === 'true' ||
+    (
+      control.getAttribute?.('role') === 'tab' &&
+      control.getAttribute?.('aria-selected') === 'true'
+    )
+  ) {
+    return false
+  }
+
+  if (
+    control.matches?.(
+      'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [aria-checked], [class*="toggle" i], [class*="switch" i], [class*="slider" i]'
+    )
+  ) {
+    return false
+  }
+
+  const signature =
+    getPreferenceExpansionSignature(control, depth)
+
+  if (
+    signature &&
+    preferenceExpansionSignatures.has(signature)
+  ) {
+    return false
+  }
+
+  return (
+    textHasAny(contextText, preferenceExpansionTexts) ||
+    (
+      Boolean(
+        control.matches?.(
+          'button, a, [role="button"], [role="tab"], [aria-controls], [aria-expanded], [data-action], [onclick], [tabindex]'
+        )
+      ) &&
+      textHasAny(contextText, preferenceSectionTexts)
+    )
+  )
+}
+
+function getPreferenceTraversalSnapshot(panel) {
+  if (!panel) {
+    return {
+      textLength: 0,
+      toggleCount: 0,
+      expansionCount: 0,
+    }
+  }
+
+  return {
+    textLength: getText(panel).length,
+    toggleCount: getToggleControls(panel).filter(isVisible).length,
+    expansionCount: getDirectClickableControls(panel)
+      .filter((control) =>
+        isSafePreferenceExpansionControl(control, panel, 0)
+      ).length,
+  }
+}
+
+function hasPreferenceTraversalChanged(previous, next) {
+  return Boolean(
+    !previous ||
+    !next ||
+    previous.toggleCount !== next.toggleCount ||
+    previous.expansionCount !== next.expansionCount ||
+    Math.abs(previous.textLength - next.textLength) > 40
+  )
+}
+
+function traversePreferenceCenterDepth(panel, options = {}) {
+  if (
+    !shouldRunOnThisSite() ||
+    getNormalizedProtectionMode() === 'soft' ||
+    !panel
+  ) {
+    return 0
+  }
+
+  const depth = Math.max(0, options.depth || 0)
+  const maxDepth = Math.min(
+    MAX_PREFERENCE_TRAVERSAL_DEPTH,
+    Math.max(1, options.maxDepth || MAX_PREFERENCE_TRAVERSAL_DEPTH)
+  )
+
+  if (depth >= maxDepth) {
+    return 0
+  }
+
+  cleanupPreferenceExpansionSignatures()
+
+  const beforeSnapshot =
+    getPreferenceTraversalSnapshot(panel)
+
+  const controls =
+    getDirectClickableControls(panel)
+      .filter((control) =>
+        isSafePreferenceExpansionControl(control, panel, depth)
+      )
+      .map((control) => ({
+        control,
+        score: getPreferenceExpansionControlScore(control),
+      }))
+      .filter((candidate) => candidate.score > 0)
+      .sort((first, second) => second.score - first.score)
+      .slice(0, 1)
+
+  let openedCount = 0
+
+  controls.forEach(({ control }) => {
+    if (!shouldRunOnThisSite()) return
+
+    const signature =
+      getPreferenceExpansionSignature(control, depth)
+
+    if (
+      canProcessBannerAction(control) &&
+      clickElementSafely(control)
+    ) {
+      if (signature) {
+        preferenceExpansionSignatures.set(signature, Date.now())
+      }
+
+      openedCount += 1
+    }
+  })
+
+  if (openedCount > 0) {
+    setTimeout(() => {
+      const updatedPanel =
+        findCookiePreferencesPanel() || panel
+      const disabledCount =
+        disableOptionalPreferenceControls(updatedPanel)
+      const afterSnapshot =
+        getPreferenceTraversalSnapshot(updatedPanel)
+
+      if (disabledCount > 0) {
+        saveCookiePreferences(updatedPanel)
+      }
+
+      if (
+        hasPreferenceTraversalChanged(beforeSnapshot, afterSnapshot)
+      ) {
+        traversePreferenceCenterDepth(updatedPanel, {
+          ...options,
+          depth: depth + 1,
+          maxDepth,
+        })
+      }
+    }, 450)
+  }
+
+  return openedCount
 }
 
 function openPreferenceSections(panel) {
@@ -3181,7 +3549,10 @@ log('handleCookiePreferences:action', {
     return true
   }
 
-  const openedSections = openPreferenceSections(panel)
+  const openedSections =
+    traversePreferenceCenterDepth(panel, {
+      maxDepth: MAX_PREFERENCE_TRAVERSAL_DEPTH,
+    })
 
   const disabledCount =
     disableOptionalPreferenceControls(panel)
