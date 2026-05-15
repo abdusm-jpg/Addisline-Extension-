@@ -16,11 +16,14 @@ let statsUpdateQueue = Promise.resolve()
 const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
+const hiddenBannerCooldowns = new Map()
 const observedShadowRoots = new WeakSet()
 
 const STATS_KEY = 'stats'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
+const BANNER_HIDE_COOLDOWN_MS = 60000
+const MAX_BANNER_HIDE_ATTEMPTS = 1
 const SCAN_DEBOUNCE_MS = 400
 const MIN_SCAN_INTERVAL_MS = 1000
 const MAX_SCAN_BURST = 8
@@ -101,6 +104,10 @@ const settingsTexts = [
   'manage settings',
   'cookie settings',
   'privacy settings',
+  'show purposes',
+  'manage purposes',
+  'purpose settings',
+  'view purposes',
   'configurar cookies',
   'gestionar opciones',
   'gestionar preferencias',
@@ -345,6 +352,27 @@ const bannerKeywords = [
   'rgpd',
   'cookies opcionales',
   'permitir cookies opcionales',
+]
+
+const nonCookieModalTexts = [
+  'you seem to be in',
+  'you are visiting from',
+  'go to spanish site',
+  'spanish site',
+  'change region',
+  'select region',
+  'choose region',
+  'regional site',
+  'location',
+  'country',
+  'language',
+  'idioma',
+  'pais',
+  'paÃ­s',
+  'region',
+  'regiÃ³n',
+  'espaÃ±a',
+  'spain',
 ]
 
 const knownCmpKeywords = [
@@ -1012,6 +1040,67 @@ function hasCookieBannerSignal(element) {
   return textHasAny(signal, bannerKeywords)
 }
 
+function hasStrongCookieSignal(element) {
+  const signal = [
+    getText(element),
+    getElementActionText(element),
+    element?.id,
+    getClassNameText(element),
+    element?.getAttribute?.('aria-label'),
+    element?.getAttribute?.('data-testid'),
+    getDatasetText(element),
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    textHasAny(signal, [
+      'cookie',
+      'cookies',
+      'consent',
+      'gdpr',
+      'rgpd',
+      'cmp',
+    ]) ||
+    hasKnownCmpSignal(element)
+  )
+}
+
+function isLikelyNonCookieModal(element) {
+  if (!element) return false
+
+  const signal = [
+    getText(element).slice(0, 1200),
+    getElementActionText(element).slice(0, 800),
+    element.id,
+    getClassNameText(element),
+    element.getAttribute?.('aria-label'),
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    textHasAny(signal, nonCookieModalTexts) &&
+    !hasStrongCookieSignal(element)
+  )
+}
+
+function isInsideNonCookieModal(element) {
+  const modal =
+    element?.closest?.(
+      [
+        'dialog',
+        '[role="dialog"]',
+        '[aria-modal="true"]',
+        '[class*="modal" i]',
+        '[class*="popup" i]',
+        '[class*="overlay" i]',
+      ].join(',')
+    )
+
+  return Boolean(modal && isLikelyNonCookieModal(modal))
+}
+
 function isTextFragmentOrControl(element) {
   return Boolean(
     element?.matches?.(
@@ -1070,6 +1159,7 @@ function isPotentialCookieContainer(element) {
     isTextFragmentOrControl(element) ||
     element === document.body ||
     element === document.documentElement ||
+    isLikelyNonCookieModal(element) ||
     element.matches?.('form, nav, header, main, article')
   ) {
     return false
@@ -1227,6 +1317,7 @@ function isSafeToHide(element) {
   if (
     isTextFragmentOrControl(element) ||
     element.matches?.('form, nav, header, main, article') ||
+    isLikelyNonCookieModal(element) ||
     hasSensitiveInput(element) ||
     hasSensitiveContext(element) ||
     looksLikeMainContent(element)
@@ -1673,6 +1764,7 @@ function findDirectSafeRejectControl() {
   return getDirectClickableControls(document)
     .find((control) => {
       if (!isVisible(control)) return false
+      if (isInsideNonCookieModal(control)) return false
       if (hasUnsafeAcceptText(control)) return false
       if (isSensitiveActionControl(control, document)) return false
 
@@ -1700,6 +1792,7 @@ function findDirectSettingsControl() {
   return getDirectClickableControls(document)
     .find((control) => {
       if (!isVisible(control)) return false
+      if (isInsideNonCookieModal(control)) return false
       if (isSensitiveActionControl(control, document)) return false
       return hasDirectSettingsSignal(control)
     })
@@ -1730,6 +1823,52 @@ function getBannerActionSignature(element) {
       getActionText(element).slice(0, 120),
     ].join(' ')
   ).slice(0, 360)
+}
+
+function getBannerHideSignature(element) {
+  const container =
+    getCookieContainer(element) || element
+
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      container ? container.id : '',
+      container ? getClassNameText(container) : '',
+      container ? getText(container).slice(0, 220) : '',
+    ].join(' ')
+  ).slice(0, 360)
+}
+
+function canHideCookieBanner(element) {
+  const signature =
+    getBannerHideSignature(element)
+
+  if (!signature) return true
+
+  const existing =
+    hiddenBannerCooldowns.get(signature) || {
+      count: 0,
+      lastHiddenAt: 0,
+    }
+
+  const now = Date.now()
+
+  if (
+    now - existing.lastHiddenAt < BANNER_HIDE_COOLDOWN_MS &&
+    existing.count >= MAX_BANNER_HIDE_ATTEMPTS
+  ) {
+    return false
+  }
+
+  hiddenBannerCooldowns.set(signature, {
+    count:
+      now - existing.lastHiddenAt < BANNER_HIDE_COOLDOWN_MS
+        ? existing.count + 1
+        : 1,
+    lastHiddenAt: now,
+  })
+
+  return true
 }
 
 function canProcessBannerAction(element) {
@@ -3076,6 +3215,11 @@ function hideElement(element) {
   if (!shouldRunOnThisSite()) return false
   if (getNormalizedProtectionMode() === 'soft') return false
   if (!isSafeToHide(element)) return false
+  if (!canHideCookieBanner(element)) {
+    setLastAction('banner_hide_loop_blocked')
+    setLastError('')
+    return false
+  }
 
   element.dataset.addislineHidden = 'true'
   element.style.setProperty('display', 'none', 'important')
