@@ -4589,7 +4589,7 @@ function buildUnifiedCookieIntelligence(pipeline) {
     reason = 'cmp_detected_without_preference_report'
   }
 
-  return {
+  const unifiedReport = {
     banner: bannerReport
       ? {
           classification: bannerReport.classification || 'unknown',
@@ -4607,6 +4607,11 @@ function buildUnifiedCookieIntelligence(pipeline) {
     safeToAct: false,
     allowed: false,
     reason
+  }
+
+  return {
+    ...unifiedReport,
+    decision: buildPassiveDecisionEngine(unifiedReport)
   }
 }
 
