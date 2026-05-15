@@ -6,18 +6,24 @@ let excludedDomains = []
 let observer = null
 let debounceTimer = null
 let preferencesTimer = null
+let preferencesRetryTimers = []
 let lastScanAt = 0
+let lastPassiveIntelligenceAt = 0
 let scanBurstCount = 0
 let protectedDomainRecorded = false
 let lastDiagnosticAction = ''
 let lastDiagnosticError = ''
 let providerInfoModalCloseAttempts = 0
 let statsUpdateQueue = Promise.resolve()
+let activeCookieContainer = null
+let preferenceTraversalClickCount = 0
+let preferenceTraversalActive = false
 const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
 const hiddenBannerCooldowns = new Map()
 const preferenceExpansionSignatures = new Map()
+const preferenceTraversalCooldowns = new Map()
 const observedShadowRoots = new WeakSet()
 
 const STATS_KEY = 'stats'
@@ -25,12 +31,16 @@ const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
 const BANNER_HIDE_COOLDOWN_MS = 60000
 const MAX_BANNER_HIDE_ATTEMPTS = 1
-const SCAN_DEBOUNCE_MS = 400
-const MIN_SCAN_INTERVAL_MS = 1000
-const MAX_SCAN_BURST = 8
+const SCAN_DEBOUNCE_MS = 800
+const MIN_SCAN_INTERVAL_MS = 2000
+const MAX_SCAN_BURST = 5
 const SCAN_BURST_RESET_MS = 15000
 const PREFERENCE_EXPANSION_TTL_MS = 60000
 const MAX_PREFERENCE_TRAVERSAL_DEPTH = 3
+const PREFERENCE_TRAVERSAL_COOLDOWN_MS = 15000
+const PREFERENCE_TRAVERSAL_BUDGET_MS = 2500
+const MAX_PREFERENCE_TRAVERSAL_CLICKS = 4
+const PASSIVE_INTELLIGENCE_SCAN_COOLDOWN_MS = 30000
 const MUTATION_SCAN_HINT_TEXTS = [
   'cookie',
   'cookies',
@@ -39,8 +49,6 @@ const MUTATION_SCAN_HINT_TEXTS = [
   'gdpr',
   'cmp',
   'banner',
-  'modal',
-  'overlay',
   'preferenc',
   'privacidad',
   'cookies',
@@ -1263,6 +1271,14 @@ function getCookieContainer(element) {
 }
 
 function findCookieBannerCandidates() {
+  if (
+    activeCookieContainer &&
+    isVisible(activeCookieContainer) &&
+    isPotentialCookieContainer(activeCookieContainer)
+  ) {
+    return [activeCookieContainer]
+  }
+
   const rawCandidates = Array.from(
     querySelectorAllDeep(
       [
@@ -1302,7 +1318,7 @@ function findCookieBannerCandidates() {
     .map(getCookieContainer)
     .filter(Boolean)
 
-  return Array.from(new Set(containers))
+  const candidates = Array.from(new Set(containers))
     .filter((candidate) =>
       !containers.some((otherCandidate) =>
         otherCandidate !== candidate &&
@@ -1310,6 +1326,11 @@ function findCookieBannerCandidates() {
         isPotentialCookieContainer(otherCandidate)
       )
     )
+
+  activeCookieContainer =
+    candidates[0] || null
+
+  return candidates
 }
 
 function hasSensitiveInput(element) {
@@ -2238,6 +2259,8 @@ function executeCookieAction(action) {
 
 function schedulePreferencesFlow() {
   clearTimeout(preferencesTimer)
+  preferencesRetryTimers.forEach(clearTimeout)
+  preferencesRetryTimers = []
 
   runCookiePreferencesRetries()
 }
@@ -2255,7 +2278,7 @@ function runCookiePreferencesRetries() {
   let completed = false
 
   retryDelays.forEach((delay) => {
-    setTimeout(() => {
+    const retryTimer = setTimeout(() => {
       if (
         completed ||
         !shouldRunOnThisSite() ||
@@ -2268,6 +2291,8 @@ function runCookiePreferencesRetries() {
         completed = true
       }
     }, delay)
+
+    preferencesRetryTimers.push(retryTimer)
   })
 }
 
@@ -2714,6 +2739,53 @@ function cleanupPreferenceExpansionSignatures() {
   }
 }
 
+function getPreferencePanelSignature(panel) {
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      panel?.id,
+      getClassNameText(panel).slice(0, 120),
+      getText(panel).slice(0, 220),
+    ].join(' ')
+  ).slice(0, 420)
+}
+
+function canStartPreferenceTraversal(panel) {
+  if (preferenceTraversalActive) {
+    log('preference traversal skipped: active')
+    return false
+  }
+
+  if (preferenceTraversalClickCount >= MAX_PREFERENCE_TRAVERSAL_CLICKS) {
+    log('preference traversal skipped: click budget')
+    return false
+  }
+
+  const signature =
+    getPreferencePanelSignature(panel)
+
+  if (!signature) return true
+
+  const lastTraversalAt =
+    preferenceTraversalCooldowns.get(signature) || 0
+
+  if (
+    Date.now() - lastTraversalAt < PREFERENCE_TRAVERSAL_COOLDOWN_MS
+  ) {
+    log('preference traversal skipped: cooldown')
+    return false
+  }
+
+  preferenceTraversalCooldowns.set(signature, Date.now())
+  preferenceTraversalActive = true
+
+  setTimeout(() => {
+    preferenceTraversalActive = false
+  }, PREFERENCE_TRAVERSAL_BUDGET_MS + 1000)
+
+  return true
+}
+
 function getPreferenceExpansionSignature(control, depth) {
   return normalizeMatchText(
     [
@@ -2888,12 +2960,23 @@ function traversePreferenceCenterDepth(panel, options = {}) {
   }
 
   const depth = Math.max(0, options.depth || 0)
+  const startedAt = options.startedAt || Date.now()
   const maxDepth = Math.min(
     MAX_PREFERENCE_TRAVERSAL_DEPTH,
     Math.max(1, options.maxDepth || MAX_PREFERENCE_TRAVERSAL_DEPTH)
   )
 
   if (depth >= maxDepth) {
+    return 0
+  }
+
+  if (Date.now() - startedAt > PREFERENCE_TRAVERSAL_BUDGET_MS) {
+    log('preference traversal skipped: runtime budget')
+    return 0
+  }
+
+  if (preferenceTraversalClickCount >= MAX_PREFERENCE_TRAVERSAL_CLICKS) {
+    log('preference traversal skipped: click budget')
     return 0
   }
 
@@ -2924,6 +3007,7 @@ function traversePreferenceCenterDepth(panel, options = {}) {
       getPreferenceExpansionSignature(control, depth)
 
     if (
+      preferenceTraversalClickCount < MAX_PREFERENCE_TRAVERSAL_CLICKS &&
       canProcessBannerAction(control) &&
       clickElementSafely(control)
     ) {
@@ -2932,6 +3016,7 @@ function traversePreferenceCenterDepth(panel, options = {}) {
       }
 
       openedCount += 1
+      preferenceTraversalClickCount += 1
     }
   })
 
@@ -2955,6 +3040,7 @@ function traversePreferenceCenterDepth(panel, options = {}) {
           ...options,
           depth: depth + 1,
           maxDepth,
+          startedAt,
         })
       }
     }, 450)
@@ -3550,9 +3636,12 @@ log('handleCookiePreferences:action', {
   }
 
   const openedSections =
-    traversePreferenceCenterDepth(panel, {
-      maxDepth: MAX_PREFERENCE_TRAVERSAL_DEPTH,
-    })
+    canStartPreferenceTraversal(panel)
+      ? traversePreferenceCenterDepth(panel, {
+          maxDepth: MAX_PREFERENCE_TRAVERSAL_DEPTH,
+          startedAt: Date.now(),
+        })
+      : 0
 
   const disabledCount =
     disableOptionalPreferenceControls(panel)
@@ -3837,6 +3926,8 @@ function startObserver() {
 function stopObserver() {
   clearTimeout(debounceTimer)
   clearTimeout(preferencesTimer)
+  preferencesRetryTimers.forEach(clearTimeout)
+  preferencesRetryTimers = []
   debounceTimer = null
   preferencesTimer = null
 
@@ -7890,9 +7981,25 @@ function runPassiveCookieIntelligence(container) {
 
 function runPassiveCookieIntelligenceForCandidates(candidates) {
   try {
+    const now = Date.now()
+
+    if (
+      now - lastPassiveIntelligenceAt <
+      PASSIVE_INTELLIGENCE_SCAN_COOLDOWN_MS
+    ) {
+      log('passive intelligence skipped: cooldown')
+      return
+    }
+
     const visibleCandidates = candidates
       .filter(candidate => isVisible(candidate))
-      .slice(0, 2)
+      .slice(0, 1)
+
+    if (visibleCandidates.length === 0) {
+      return
+    }
+
+    lastPassiveIntelligenceAt = now
 
     for (const container of visibleCandidates) {
       try {
