@@ -5762,6 +5762,236 @@ function buildDebugValidationAggregation(unifiedReport) {
   }
 }
 
+function buildPassiveStageRegistrySnapshot(unifiedReport, registry) {
+  const stages = Array.isArray(registry) ? registry : []
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    count: stages.length,
+    keys: stages.map((stage) => stage.key),
+    stages: stages.map((stage) => ({
+      key: stage.key,
+      index: stage.index,
+      builder: stage.builder?.name || 'anonymous_builder'
+    })),
+    passiveOnly: true
+  }
+}
+
+function buildPassiveStageExecutionMetadata(unifiedReport, executionRecords) {
+  const records = Array.isArray(executionRecords) ? executionRecords : []
+  const completed = records.filter((record) => record.success === true)
+  const totalDurationMs = records.reduce(
+    (sum, record) => sum + (Number(record.durationMs) || 0),
+    0
+  )
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    totalStages: records.length,
+    completedStages: completed.length,
+    totalDurationMs,
+    records: records.slice(-60).map((record) => ({
+      key: record.key,
+      index: record.index,
+      durationMs: record.durationMs,
+      success: record.success === true
+    })),
+    passiveOnly: true
+  }
+}
+
+function buildPassivePipelineObservability(unifiedReport) {
+  const execution = unifiedReport?.stageExecution || {}
+  const registry = unifiedReport?.stageRegistry || {}
+  const validationSummary = unifiedReport?.validationSummary || {}
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    stageCount: registry.count || 0,
+    completedStages: execution.completedStages || 0,
+    totalDurationMs: execution.totalDurationMs || 0,
+    validationLevel: validationSummary.level || 'unknown',
+    diagnosticsLevel: unifiedReport?.diagnosticsAggregate?.level || 'unknown',
+    passiveOnly: true,
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassiveExecutionProfiling(unifiedReport) {
+  const records = unifiedReport?.stageExecution?.records || []
+  const durations = records.map((record) => Number(record.durationMs) || 0)
+  const total = durations.reduce((sum, value) => sum + value, 0)
+  const max = durations.length ? Math.max(...durations) : 0
+  const slowest = records.find((record) => (Number(record.durationMs) || 0) === max)
+
+  return {
+    generatedAt: Date.now(),
+    stages: records.length,
+    totalDurationMs: total,
+    averageDurationMs: durations.length ? Math.round(total / durations.length) : 0,
+    maxDurationMs: max,
+    slowestStage: slowest?.key || 'unknown',
+    passiveOnly: true
+  }
+}
+
+function buildPassiveTimingProfile(unifiedReport) {
+  const records = unifiedReport?.stageExecution?.records || []
+  const timingBuckets = {
+    instant: 0,
+    light: 0,
+    moderate: 0
+  }
+
+  records.forEach((record) => {
+    const duration = Number(record.durationMs) || 0
+    if (duration <= 1) {
+      timingBuckets.instant += 1
+    } else if (duration <= 5) {
+      timingBuckets.light += 1
+    } else {
+      timingBuckets.moderate += 1
+    }
+  })
+
+  return {
+    generatedAt: Date.now(),
+    buckets: timingBuckets,
+    totalStages: records.length,
+    totalDurationMs: unifiedReport?.stageExecution?.totalDurationMs || 0,
+    passiveOnly: true
+  }
+}
+
+function buildLazyPassiveDiagnostics(unifiedReport) {
+  const shouldExpand = Boolean(
+    unifiedReport?.validationSummary?.level === 'review' ||
+    unifiedReport?.diagnosticsAggregate?.level === 'review' ||
+    unifiedReport?.memoryPressure?.level === 'high'
+  )
+
+  return {
+    generatedAt: Date.now(),
+    expanded: shouldExpand,
+    summary: {
+      validation: unifiedReport?.validationSummary?.level || 'unknown',
+      diagnostics: unifiedReport?.diagnosticsAggregate?.level || 'unknown',
+      uncertainty: unifiedReport?.uncertainty?.level || 'unknown'
+    },
+    details: shouldExpand
+      ? {
+          missing: uniquePassiveList(unifiedReport?.missingFields?.missing || []),
+          assertions: uniquePassiveList(unifiedReport?.assertions?.assertions || []),
+          integrityIssues: uniquePassiveList(unifiedReport?.integrity?.issues || [])
+        }
+      : null,
+    passiveOnly: true
+  }
+}
+
+function buildBoundedCompactDiagnostics(unifiedReport) {
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    validationLevel: unifiedReport?.validationSummary?.level || 'unknown',
+    diagnosticsLevel: unifiedReport?.diagnosticsAggregate?.level || 'unknown',
+    stageHealth: unifiedReport?.stageHealth?.level || 'unknown',
+    memoryPressure: unifiedReport?.memoryPressure?.level || 'unknown',
+    slowestStage: unifiedReport?.profiling?.slowestStage || 'unknown',
+    findings: compactPassiveArray([
+      ...(unifiedReport?.validation?.findings || []),
+      ...(unifiedReport?.dependencies?.missing || []),
+      ...(unifiedReport?.assertions?.assertions || []),
+      ...(unifiedReport?.integrity?.issues || [])
+    ], 10),
+    passiveOnly: true,
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassiveMemoryPressureIndicators() {
+  const memory = readPassiveSiteMemory()
+  const hostnames = Object.keys(memory)
+  const currentHostname = getCurrentHostname()
+  const currentObservations = Array.isArray(memory?.[currentHostname]?.observations)
+    ? memory[currentHostname].observations.length
+    : 0
+  const totalObservations = hostnames.reduce((sum, hostname) => {
+    const observations = memory?.[hostname]?.observations
+    return sum + (Array.isArray(observations) ? observations.length : 0)
+  }, 0)
+  const hostRatio = hostnames.length / 50
+  const observationRatio = currentObservations / 5
+  const pressure = Math.max(hostRatio, observationRatio)
+
+  return {
+    generatedAt: Date.now(),
+    hostname: currentHostname,
+    hostnames: hostnames.length,
+    currentObservations,
+    totalObservations,
+    hostRatio: Math.min(1, hostRatio),
+    observationRatio: Math.min(1, observationRatio),
+    level: pressure >= 0.9 ? 'high' : pressure >= 0.6 ? 'medium' : 'low',
+    passiveOnly: true
+  }
+}
+
+function buildPassiveStageHealthTracking(unifiedReport) {
+  const records = unifiedReport?.stageExecution?.records || []
+  const missing = unifiedReport?.integrityChecks?.missing || []
+  const failedRecords = records.filter((record) => record.success !== true)
+  const slowRecords = records.filter((record) => (Number(record.durationMs) || 0) > 10)
+  const issues = [
+    ...failedRecords.map((record) => `${record.key}_stage_failed`),
+    ...slowRecords.map((record) => `${record.key}_stage_slow`),
+    ...missing.map((field) => `${field}_missing`)
+  ]
+
+  return {
+    generatedAt: Date.now(),
+    checked: records.length,
+    failed: failedRecords.length,
+    slow: slowRecords.length,
+    missing: missing.length,
+    level: issues.length === 0 ? 'healthy' : issues.length <= 3 ? 'watch' : 'review',
+    issues: uniquePassiveList(issues),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassivePipelineExecutionSummary(unifiedReport) {
+  const execution = unifiedReport?.stageExecution || {}
+  const profiling = unifiedReport?.profiling || {}
+  const health = unifiedReport?.stageHealth || {}
+  const memoryPressure = unifiedReport?.memoryPressure || {}
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    stages: execution.totalStages || 0,
+    completed: execution.completedStages || 0,
+    durationMs: execution.totalDurationMs || 0,
+    averageDurationMs: profiling.averageDurationMs || 0,
+    slowestStage: profiling.slowestStage || 'unknown',
+    health: health.level || 'unknown',
+    memoryPressure: memoryPressure.level || 'unknown',
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
@@ -6154,258 +6384,256 @@ function applyPassiveEnrichmentStage(report, key, builder) {
   }
 }
 
+function buildPassiveEnrichmentStageRegistry(context = {}) {
+  return [
+    {
+      key: 'decision',
+      builder: buildPassiveDecisionEngine
+    },
+    {
+      key: 'historical',
+      builder: buildHistoricalSiteIntelligence
+    },
+    {
+      key: 'patterns',
+      builder: buildPassivePatternClassification
+    },
+    {
+      key: 'fingerprint',
+      builder: (report) => normalizeCMPFingerprint(report.cmp, report.cmpStrategy)
+    },
+    {
+      key: 'trend',
+      builder: buildHistoricalTrendAnalysis
+    },
+    {
+      key: 'anomalies',
+      builder: detectHistoricalAnomalies
+    },
+    {
+      key: 'confidenceAggregation',
+      builder: aggregatePassiveConfidence
+    },
+    {
+      key: 'reputation',
+      builder: buildDomainReputationScore
+    },
+    {
+      key: 'safety',
+      builder: buildPassiveSafetyScore
+    },
+    {
+      key: 'normalized',
+      builder: buildNormalizedUnifiedCookieReport
+    },
+    {
+      key: 'debugAnalytics',
+      builder: buildDebugAnalyticsSummary
+    },
+    {
+      key: 'behaviorProfile',
+      builder: buildCMPBehaviorProfile
+    },
+    {
+      key: 'trustScore',
+      builder: buildHistoricalTrustScore
+    },
+    {
+      key: 'stabilityIndex',
+      builder: buildDomainStabilityIndex
+    },
+    {
+      key: 'riskEvolution',
+      builder: buildRiskEvolutionAnalysis
+    },
+    {
+      key: 'consistencyValidation',
+      builder: validatePassiveConsistency
+    },
+    {
+      key: 'fingerprintHistory',
+      builder: compareHistoricalFingerprint
+    },
+    {
+      key: 'lifecycle',
+      builder: buildPassiveLifecycleMetadata
+    },
+    {
+      key: 'integrity',
+      builder: validatePassiveMemoryIntegrity
+    },
+    {
+      key: 'compacted',
+      builder: compactPassiveReport
+    },
+    {
+      key: 'diagnostics',
+      builder: buildAdvancedDebugDiagnostics
+    },
+    {
+      key: 'comparative',
+      builder: buildCrossVisitComparativeIntelligence
+    },
+    {
+      key: 'similarity',
+      builder: buildCMPSimilarityAnalysis
+    },
+    {
+      key: 'clustering',
+      builder: buildPassiveBehavioralClustering
+    },
+    {
+      key: 'confidenceDrift',
+      builder: buildHistoricalConfidenceDriftAnalysis
+    },
+    {
+      key: 'uncertainty',
+      builder: buildPassiveUncertaintyScore
+    },
+    {
+      key: 'escalation',
+      builder: buildStabilityAnomalyEscalation
+    },
+    {
+      key: 'weighting',
+      builder: buildPassiveObservationWeighting
+    },
+    {
+      key: 'normalizedTrust',
+      builder: buildFingerprintTrustNormalization
+    },
+    {
+      key: 'persistence',
+      builder: buildHistoricalPatternPersistence
+    },
+    {
+      key: 'diagnosticsAggregate',
+      builder: buildDiagnosticsAggregate
+    },
+    {
+      key: 'fixtures',
+      builder: buildPassiveFixtureGenerator
+    },
+    {
+      key: 'validation',
+      builder: validatePassiveReportShape
+    },
+    {
+      key: 'dependencies',
+      builder: validatePassiveEnrichmentDependencies
+    },
+    {
+      key: 'integrityChecks',
+      builder: buildPassivePipelineIntegrityChecks
+    },
+    {
+      key: 'assertions',
+      builder: buildPassiveFieldConsistencyAssertions
+    },
+    {
+      key: 'missingFields',
+      builder: buildMissingFieldDiagnostics
+    },
+    {
+      key: 'schemaSnapshot',
+      builder: buildPassiveReportSchemaSnapshot
+    },
+    {
+      key: 'validationSummary',
+      builder: buildCompactValidationSummary
+    },
+    {
+      key: 'timing',
+      builder: buildPassiveEnrichmentTimingMetadata
+    },
+    {
+      key: 'validationAggregate',
+      builder: buildDebugValidationAggregation
+    },
+    {
+      key: 'stageRegistry',
+      builder: (report) => buildPassiveStageRegistrySnapshot(
+        report,
+        context.registry
+      )
+    },
+    {
+      key: 'stageExecution',
+      builder: (report) => buildPassiveStageExecutionMetadata(
+        report,
+        context.executionRecords
+      )
+    },
+    {
+      key: 'observability',
+      builder: buildPassivePipelineObservability
+    },
+    {
+      key: 'profiling',
+      builder: buildPassiveExecutionProfiling
+    },
+    {
+      key: 'timingProfile',
+      builder: buildPassiveTimingProfile
+    },
+    {
+      key: 'lazyDiagnostics',
+      builder: buildLazyPassiveDiagnostics
+    },
+    {
+      key: 'compactDiagnostics',
+      builder: buildBoundedCompactDiagnostics
+    },
+    {
+      key: 'memoryPressure',
+      builder: buildPassiveMemoryPressureIndicators
+    },
+    {
+      key: 'stageHealth',
+      builder: buildPassiveStageHealthTracking
+    },
+    {
+      key: 'executionSummary',
+      builder: buildPassivePipelineExecutionSummary
+    },
+    {
+      key: 'debugAnalytics',
+      builder: buildDebugAnalyticsSummary
+    }
+  ].map((stage, index) => ({
+    ...stage,
+    index
+  }))
+}
+
 function buildPassiveEnrichmentPipeline(baseReport) {
-  let enrichedReport = applyPassiveEnrichmentStage(
-    baseReport,
-    'decision',
-    buildPassiveDecisionEngine
-  )
+  const context = {
+    registry: null,
+    executionRecords: []
+  }
+  const registry = buildPassiveEnrichmentStageRegistry(context)
+  context.registry = registry
 
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'historical',
-    buildHistoricalSiteIntelligence
-  )
+  return registry.reduce((report, stage) => {
+    const startedAt = Date.now()
+    const nextReport = applyPassiveEnrichmentStage(
+      report,
+      stage.key,
+      stage.builder
+    )
+    const endedAt = Date.now()
 
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'patterns',
-    buildPassivePatternClassification
-  )
+    context.executionRecords.push({
+      key: stage.key,
+      index: stage.index,
+      startedAt,
+      endedAt,
+      durationMs: Math.max(0, endedAt - startedAt),
+      success: true
+    })
 
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'fingerprint',
-    (report) => normalizeCMPFingerprint(report.cmp, report.cmpStrategy)
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'trend',
-    buildHistoricalTrendAnalysis
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'anomalies',
-    detectHistoricalAnomalies
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'confidenceAggregation',
-    aggregatePassiveConfidence
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'reputation',
-    buildDomainReputationScore
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'safety',
-    buildPassiveSafetyScore
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'normalized',
-    buildNormalizedUnifiedCookieReport
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'debugAnalytics',
-    buildDebugAnalyticsSummary
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'behaviorProfile',
-    buildCMPBehaviorProfile
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'trustScore',
-    buildHistoricalTrustScore
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'stabilityIndex',
-    buildDomainStabilityIndex
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'riskEvolution',
-    buildRiskEvolutionAnalysis
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'consistencyValidation',
-    validatePassiveConsistency
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'fingerprintHistory',
-    compareHistoricalFingerprint
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'lifecycle',
-    buildPassiveLifecycleMetadata
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'integrity',
-    validatePassiveMemoryIntegrity
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'compacted',
-    compactPassiveReport
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'diagnostics',
-    buildAdvancedDebugDiagnostics
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'comparative',
-    buildCrossVisitComparativeIntelligence
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'similarity',
-    buildCMPSimilarityAnalysis
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'clustering',
-    buildPassiveBehavioralClustering
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'confidenceDrift',
-    buildHistoricalConfidenceDriftAnalysis
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'uncertainty',
-    buildPassiveUncertaintyScore
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'escalation',
-    buildStabilityAnomalyEscalation
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'weighting',
-    buildPassiveObservationWeighting
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'normalizedTrust',
-    buildFingerprintTrustNormalization
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'persistence',
-    buildHistoricalPatternPersistence
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'diagnosticsAggregate',
-    buildDiagnosticsAggregate
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'fixtures',
-    buildPassiveFixtureGenerator
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'validation',
-    validatePassiveReportShape
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'dependencies',
-    validatePassiveEnrichmentDependencies
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'integrityChecks',
-    buildPassivePipelineIntegrityChecks
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'assertions',
-    buildPassiveFieldConsistencyAssertions
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'missingFields',
-    buildMissingFieldDiagnostics
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'schemaSnapshot',
-    buildPassiveReportSchemaSnapshot
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'validationSummary',
-    buildCompactValidationSummary
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'timing',
-    buildPassiveEnrichmentTimingMetadata
-  )
-
-  enrichedReport = applyPassiveEnrichmentStage(
-    enrichedReport,
-    'validationAggregate',
-    buildDebugValidationAggregation
-  )
-
-  return applyPassiveEnrichmentStage(
-    enrichedReport,
-    'debugAnalytics',
-    buildDebugAnalyticsSummary
-  )
+    return nextReport
+  }, baseReport)
 }
 
 function buildUnifiedCookieIntelligence(pipeline) {
