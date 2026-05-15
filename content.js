@@ -4183,6 +4183,109 @@ function exposeUnifiedCookieDebug(unifiedReport) {
   console.groupEnd()
 }
 
+function getCookieIntelligenceMemoryKey() {
+  return 'addisline.cookieIntelligence.memory.v1'
+}
+
+function getCurrentHostname() {
+  return window.location?.hostname || 'unknown'
+}
+
+function buildPassiveSiteMemoryObservation(unifiedReport) {
+  return {
+    timestamp: Date.now(),
+    hostname: getCurrentHostname(),
+    cmp: unifiedReport?.cmp?.cmp || 'unknown',
+    cmpConfidence: unifiedReport?.cmp?.confidence || 0,
+    risk: unifiedReport?.decision?.risk || 'unknown',
+    readiness: unifiedReport?.decision?.readiness || 'unknown',
+    recommendation: unifiedReport?.decision?.recommendation || 'observe_only',
+    score: unifiedReport?.decision?.score || 0,
+    confidence: unifiedReport?.decision?.confidence || 0,
+    stability: unifiedReport?.decision?.stability || 'unknown',
+    blockers: unifiedReport?.decision?.blockers || [],
+    signals: unifiedReport?.decision?.signals || [],
+    hasVendors: Boolean(
+      unifiedReport?.preference?.center?.hasVendors ||
+      unifiedReport?.cmpStrategy?.supportsVendorFlow
+    ),
+    hasLegitimateInterests: Boolean(
+      unifiedReport?.preference?.center?.hasLegitimateInterests ||
+      unifiedReport?.cmpStrategy?.supportsLegitimateInterestFlow
+    )
+  }
+}
+
+function readPassiveSiteMemory() {
+  try {
+    const raw = localStorage.getItem(getCookieIntelligenceMemoryKey())
+    if (!raw) return {}
+
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writePassiveSiteMemory(memory) {
+  try {
+    localStorage.setItem(
+      getCookieIntelligenceMemoryKey(),
+      JSON.stringify(memory)
+    )
+  } catch {
+    // Ignore storage failures silently.
+  }
+}
+
+function rememberPassiveCookieObservation(unifiedReport) {
+  const hostname = getCurrentHostname()
+  if (!hostname || hostname === 'unknown') return
+
+  const observation = buildPassiveSiteMemoryObservation(unifiedReport)
+  const memory = readPassiveSiteMemory()
+  const existing = memory[hostname] || {
+    hostname,
+    visits: 0,
+    observations: []
+  }
+  const observations = Array.isArray(existing.observations)
+    ? existing.observations
+    : []
+
+  observations.push(observation)
+
+  const boundedObservations = observations.slice(-5)
+
+  memory[hostname] = {
+    hostname,
+    visits: (existing.visits || 0) + 1,
+    lastSeenAt: observation.timestamp,
+    lastDecision: {
+      risk: observation.risk,
+      readiness: observation.readiness,
+      recommendation: observation.recommendation,
+      score: observation.score,
+      confidence: observation.confidence,
+      stability: observation.stability
+    },
+    observations: boundedObservations
+  }
+
+  const hostnames = Object.keys(memory)
+  if (hostnames.length > 50) {
+    hostnames
+      .sort((a, b) => (memory[a]?.lastSeenAt || 0) - (memory[b]?.lastSeenAt || 0))
+      .slice(0, hostnames.length - 50)
+      .forEach((oldHostname) => {
+        delete memory[oldHostname]
+      })
+  }
+
+  writePassiveSiteMemory(memory)
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
@@ -4630,6 +4733,7 @@ function buildUnifiedCookieIntelligence(pipeline) {
   }
 
   exposeUnifiedCookieDebug(enrichedReport)
+  rememberPassiveCookieObservation(enrichedReport)
 
   return enrichedReport
 }
