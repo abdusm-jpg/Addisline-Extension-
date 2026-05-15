@@ -4286,6 +4286,103 @@ function rememberPassiveCookieObservation(unifiedReport) {
   writePassiveSiteMemory(memory)
 }
 
+function calculateHistoricalConsistency(values) {
+  if (!Array.isArray(values) || values.length <= 1) return 'unknown'
+
+  const uniqueValues = [...new Set(values.filter(Boolean))]
+
+  if (uniqueValues.length === 1) return 'high'
+  if (uniqueValues.length <= 2) return 'medium'
+
+  return 'low'
+}
+
+function calculateAverageScore(observations) {
+  if (!Array.isArray(observations) || observations.length === 0) return 0
+
+  const scores = observations.map((entry) => Number(entry?.score) || 0)
+
+  return Math.round(
+    scores.reduce((sum, value) => sum + value, 0) / scores.length
+  )
+}
+
+function buildHistoricalSiteIntelligence(unifiedReport) {
+  const hostname = getCurrentHostname()
+  const memory = readPassiveSiteMemory()
+  const siteMemory = memory[hostname]
+
+  if (!siteMemory || !Array.isArray(siteMemory.observations)) {
+    return {
+      available: false,
+      hostname,
+      observations: 0
+    }
+  }
+
+  const observations = siteMemory.observations.slice(-5)
+  const risks = observations.map((entry) => entry?.risk)
+  const readinessValues = observations.map((entry) => entry?.readiness)
+  const cmpValues = observations.map((entry) => entry?.cmp)
+  const stabilityValues = observations.map((entry) => entry?.stability)
+  const repeatedBlockers = [
+    ...new Set(
+      observations.flatMap((entry) =>
+        Array.isArray(entry?.blockers) ? entry.blockers : []
+      )
+    )
+  ]
+  const repeatedSignals = [
+    ...new Set(
+      observations.flatMap((entry) =>
+        Array.isArray(entry?.signals) ? entry.signals : []
+      )
+    )
+  ]
+  const riskConsistency = calculateHistoricalConsistency(risks)
+  const readinessConsistency = calculateHistoricalConsistency(readinessValues)
+  const cmpConsistency = calculateHistoricalConsistency(cmpValues)
+  const stabilityConsistency = calculateHistoricalConsistency(stabilityValues)
+  const averageScore = calculateAverageScore(observations)
+  const historicalRisk = risks[risks.length - 1] || 'unknown'
+  const historicalReadiness =
+    readinessValues[readinessValues.length - 1] || 'unknown'
+
+  let historicalConfidence = 'low'
+
+  if (
+    riskConsistency === 'high' &&
+    readinessConsistency === 'high' &&
+    cmpConsistency === 'high'
+  ) {
+    historicalConfidence = 'high'
+  } else if (
+    riskConsistency === 'medium' ||
+    readinessConsistency === 'medium'
+  ) {
+    historicalConfidence = 'medium'
+  }
+
+  return {
+    available: true,
+    hostname,
+    observations: observations.length,
+    averageScore,
+    historicalRisk,
+    historicalReadiness,
+    historicalConfidence,
+    consistencies: {
+      riskConsistency,
+      readinessConsistency,
+      cmpConsistency,
+      stabilityConsistency
+    },
+    repeatedBlockers,
+    repeatedSignals,
+    latestObservation: observations[observations.length - 1] || null
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
@@ -4727,9 +4824,14 @@ function buildUnifiedCookieIntelligence(pipeline) {
     reason
   }
 
-  const enrichedReport = {
+  let enrichedReport = {
     ...unifiedReport,
     decision: buildPassiveDecisionEngine(unifiedReport)
+  }
+
+  enrichedReport = {
+    ...enrichedReport,
+    historical: buildHistoricalSiteIntelligence(enrichedReport)
   }
 
   exposeUnifiedCookieDebug(enrichedReport)
