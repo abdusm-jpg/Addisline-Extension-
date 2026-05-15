@@ -1842,6 +1842,8 @@ function decideCookieAction(container) {
     return {
       type: 'reject',
       element: totalReject,
+      intent: 'rejectAll',
+      container,
     }
   }
 
@@ -1851,6 +1853,8 @@ function decideCookieAction(container) {
     return {
       type: 'reject',
       element: necessaryOnly,
+      intent: 'essentialOnly',
+      container,
     }
   }
 
@@ -1868,6 +1872,8 @@ function decideCookieAction(container) {
     return {
       type: 'reject',
       element: rejectCategory,
+      intent: getBestCookieIntent(rejectCategory, container).intent,
+      container,
     }
   }
 
@@ -1877,6 +1883,8 @@ function decideCookieAction(container) {
     return {
       type: 'reject',
       element: reject,
+      intent: getBestCookieIntent(reject, container).intent,
+      container,
     }
   }
 
@@ -1893,6 +1901,7 @@ function decideCookieAction(container) {
     return {
       type: 'settings',
       element: settings,
+      container,
     }
   }
 
@@ -1902,6 +1911,7 @@ function decideCookieAction(container) {
     return {
       type: 'save',
       element: save,
+      container,
     }
   }
 
@@ -1919,6 +1929,66 @@ function decideCookieAction(container) {
     type: 'none',
     element: null,
   }
+}
+
+function getCookieActionContextText(action, context = {}) {
+  const container =
+    context.container ||
+    action?.container ||
+    getCookieContainer(action?.element)
+
+  return normalizeMatchText(
+    [
+      getActionText(action?.element),
+      container ? getText(container).slice(0, 1600) : '',
+      container ? getElementActionText(container).slice(0, 800) : '',
+    ].join(' ')
+  )
+}
+
+function buildStatsFromSuccessfulCookieAction(action, context = {}) {
+  if (
+    !action ||
+    action.type !== 'reject' ||
+    !['rejectAll', 'essentialOnly'].includes(action.intent)
+  ) {
+    return []
+  }
+
+  const stats = ['trackersReduced']
+  const unifiedReport = context.unifiedReport || null
+  const preference = unifiedReport?.preference || context.preferenceReport || null
+  const cmpStrategy = unifiedReport?.cmpStrategy || context.cmpStrategy || null
+  const contextText = getCookieActionContextText(action, context)
+
+  const hasVendorOutcome = Boolean(
+    preference?.center?.hasVendors ||
+    cmpStrategy?.supportsVendorFlow ||
+    detectVendorSection(contextText)
+  )
+
+  const hasLegitimateInterestOutcome = Boolean(
+    preference?.center?.hasLegitimateInterests ||
+    cmpStrategy?.supportsLegitimateInterestFlow ||
+    detectLegitimateInterestSection(contextText)
+  )
+
+  if (hasVendorOutcome) {
+    stats.push('vendorsDenied')
+  }
+
+  if (hasLegitimateInterestOutcome) {
+    stats.push('legitimateInterestsDisabled')
+  }
+
+  return [...new Set(stats)]
+}
+
+function recordStatsFromSuccessfulCookieAction(action, context = {}) {
+  buildStatsFromSuccessfulCookieAction(action, context)
+    .forEach((statName) => {
+      incrementStat(statName)
+    })
 }
 
 function executeCookieAction(action) {
@@ -1943,6 +2013,9 @@ function executeCookieAction(action) {
 
   if (action.type === 'reject') {
     incrementStat('autoRejects')
+    recordStatsFromSuccessfulCookieAction(action, {
+      container: action.container,
+    })
     setLastAction('auto_reject')
     setLastError('')
     log('Consentimiento rechazado de forma segura')
@@ -2994,7 +3067,22 @@ function scanPage() {
       canProcessBannerAction(directRejectControl) &&
       clickElementSafely(directRejectControl)
     ) {
+      const directRejectContainer =
+        getCookieContainer(directRejectControl)
+      const directRejectAction = {
+        type: 'reject',
+        element: directRejectControl,
+        intent: getBestCookieIntent(
+          directRejectControl,
+          directRejectContainer || document
+        ).intent,
+        container: directRejectContainer,
+      }
+
       incrementStat('autoRejects')
+      recordStatsFromSuccessfulCookieAction(directRejectAction, {
+        container: directRejectContainer,
+      })
       setLastAction('auto_reject')
       setLastError('')
       log('Rechazo directo prioritario ejecutado')
