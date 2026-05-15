@@ -5494,6 +5494,147 @@ function buildCookieIntelligencePipeline(container) {
   }
 }
 
+function applyPassiveEnrichmentStage(report, key, builder) {
+  return {
+    ...report,
+    [key]: builder(report)
+  }
+}
+
+function buildPassiveEnrichmentPipeline(baseReport) {
+  let enrichedReport = applyPassiveEnrichmentStage(
+    baseReport,
+    'decision',
+    buildPassiveDecisionEngine
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'historical',
+    buildHistoricalSiteIntelligence
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'patterns',
+    buildPassivePatternClassification
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'fingerprint',
+    (report) => normalizeCMPFingerprint(report.cmp, report.cmpStrategy)
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'trend',
+    buildHistoricalTrendAnalysis
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'anomalies',
+    detectHistoricalAnomalies
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'confidenceAggregation',
+    aggregatePassiveConfidence
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'reputation',
+    buildDomainReputationScore
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'safety',
+    buildPassiveSafetyScore
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'normalized',
+    buildNormalizedUnifiedCookieReport
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'debugAnalytics',
+    buildDebugAnalyticsSummary
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'behaviorProfile',
+    buildCMPBehaviorProfile
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'trustScore',
+    buildHistoricalTrustScore
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'stabilityIndex',
+    buildDomainStabilityIndex
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'riskEvolution',
+    buildRiskEvolutionAnalysis
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'consistencyValidation',
+    validatePassiveConsistency
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'fingerprintHistory',
+    compareHistoricalFingerprint
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'lifecycle',
+    buildPassiveLifecycleMetadata
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'integrity',
+    validatePassiveMemoryIntegrity
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'compacted',
+    compactPassiveReport
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'diagnostics',
+    buildAdvancedDebugDiagnostics
+  )
+
+  return applyPassiveEnrichmentStage(
+    enrichedReport,
+    'debugAnalytics',
+    buildDebugAnalyticsSummary
+  )
+}
+
 function buildUnifiedCookieIntelligence(pipeline) {
   const bannerReport = pipeline?.report || null
   const preferenceReport = pipeline?.preferenceReport || null
@@ -5550,118 +5691,7 @@ function buildUnifiedCookieIntelligence(pipeline) {
     reason
   }
 
-  let enrichedReport = {
-    ...unifiedReport,
-    decision: buildPassiveDecisionEngine(unifiedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    historical: buildHistoricalSiteIntelligence(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    patterns: buildPassivePatternClassification(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    fingerprint: normalizeCMPFingerprint(
-      enrichedReport.cmp,
-      enrichedReport.cmpStrategy
-    )
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    trend: buildHistoricalTrendAnalysis(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    anomalies: detectHistoricalAnomalies(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    confidenceAggregation: aggregatePassiveConfidence(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    reputation: buildDomainReputationScore(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    safety: buildPassiveSafetyScore(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    normalized: buildNormalizedUnifiedCookieReport(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    debugAnalytics: buildDebugAnalyticsSummary(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    behaviorProfile: buildCMPBehaviorProfile(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    trustScore: buildHistoricalTrustScore(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    stabilityIndex: buildDomainStabilityIndex(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    riskEvolution: buildRiskEvolutionAnalysis(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    consistencyValidation: validatePassiveConsistency(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    fingerprintHistory: compareHistoricalFingerprint(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    lifecycle: buildPassiveLifecycleMetadata(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    integrity: validatePassiveMemoryIntegrity()
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    compacted: compactPassiveReport(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    diagnostics: buildAdvancedDebugDiagnostics(enrichedReport)
-  }
-
-  enrichedReport = {
-    ...enrichedReport,
-    debugAnalytics: buildDebugAnalyticsSummary(enrichedReport)
-  }
+  const enrichedReport = buildPassiveEnrichmentPipeline(unifiedReport)
 
   exposeUnifiedCookieDebug(enrichedReport)
   rememberPassiveCookieObservation(enrichedReport)
