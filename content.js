@@ -5454,6 +5454,314 @@ function buildDiagnosticsAggregate(unifiedReport) {
   }
 }
 
+function buildPassiveFixtureGenerator(unifiedReport) {
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    current: {
+      cmp: unifiedReport?.fingerprint?.cmp || 'unknown',
+      risk: unifiedReport?.decision?.risk || 'unknown',
+      readiness: unifiedReport?.decision?.readiness || 'unknown',
+      recommendation: unifiedReport?.decision?.recommendation || 'observe_only',
+      score: unifiedReport?.decision?.score || 0,
+      confidence: unifiedReport?.decision?.confidence || 0,
+      pattern: unifiedReport?.patterns?.pattern || 'unknown'
+    },
+    minimal: {
+      cmp: 'unknown',
+      risk: 'unknown',
+      readiness: 'unknown',
+      recommendation: 'observe_only',
+      safeToAct: false,
+      allowed: false,
+      requiresReview: true
+    },
+    historical: {
+      available: Boolean(unifiedReport?.historical?.available),
+      observations: unifiedReport?.historical?.observations || 0,
+      averageScore: unifiedReport?.historical?.averageScore || 0
+    }
+  }
+}
+
+function validatePassiveReportShape(unifiedReport) {
+  const findings = []
+  const decision = unifiedReport?.decision || {}
+
+  if (!unifiedReport || typeof unifiedReport !== 'object') {
+    findings.push('report_not_object')
+  }
+
+  if (!decision || typeof decision !== 'object') {
+    findings.push('decision_missing')
+  }
+
+  if (typeof decision.score !== 'number') {
+    findings.push('decision_score_not_number')
+  }
+
+  if (typeof decision.confidence !== 'number') {
+    findings.push('decision_confidence_not_number')
+  }
+
+  if (!Array.isArray(decision.blockers)) {
+    findings.push('decision_blockers_not_array')
+  }
+
+  if (!Array.isArray(decision.signals)) {
+    findings.push('decision_signals_not_array')
+  }
+
+  if (unifiedReport?.historical && typeof unifiedReport.historical !== 'object') {
+    findings.push('historical_not_object')
+  }
+
+  if (unifiedReport?.fingerprint && typeof unifiedReport.fingerprint !== 'object') {
+    findings.push('fingerprint_not_object')
+  }
+
+  return {
+    valid: findings.length === 0,
+    findings: uniquePassiveList(findings),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function validatePassiveEnrichmentDependencies(unifiedReport) {
+  const dependencyMap = {
+    historical: ['decision'],
+    patterns: ['historical'],
+    trend: ['historical'],
+    anomalies: ['historical', 'decision'],
+    confidenceAggregation: ['decision', 'historical', 'patterns'],
+    reputation: ['decision', 'historical', 'patterns', 'fingerprint'],
+    safety: ['decision', 'reputation', 'anomalies'],
+    behaviorProfile: ['fingerprint', 'historical', 'patterns'],
+    trustScore: ['historical', 'reputation', 'confidenceAggregation', 'anomalies'],
+    stabilityIndex: ['historical', 'trend', 'anomalies'],
+    riskEvolution: ['decision'],
+    consistencyValidation: ['decision', 'safety', 'normalized'],
+    fingerprintHistory: ['fingerprint'],
+    compacted: ['decision', 'confidenceAggregation', 'patterns', 'safety'],
+    diagnostics: ['lifecycle', 'integrity', 'consistencyValidation'],
+    diagnosticsAggregate: ['consistencyValidation', 'integrity', 'uncertainty', 'escalation']
+  }
+  const missing = []
+
+  Object.entries(dependencyMap).forEach(([field, dependencies]) => {
+    if (!Object.prototype.hasOwnProperty.call(unifiedReport || {}, field)) return
+
+    dependencies.forEach((dependency) => {
+      if (!Object.prototype.hasOwnProperty.call(unifiedReport || {}, dependency)) {
+        missing.push(`${field}_missing_${dependency}`)
+      }
+    })
+  })
+
+  return {
+    valid: missing.length === 0,
+    checked: Object.keys(dependencyMap).length,
+    missing: uniquePassiveList(missing),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassivePipelineIntegrityChecks(unifiedReport) {
+  const expectedFields = [
+    'decision',
+    'historical',
+    'patterns',
+    'fingerprint',
+    'trend',
+    'anomalies',
+    'confidenceAggregation',
+    'reputation',
+    'safety',
+    'normalized',
+    'debugAnalytics',
+    'behaviorProfile',
+    'trustScore',
+    'stabilityIndex',
+    'riskEvolution',
+    'consistencyValidation',
+    'fingerprintHistory',
+    'lifecycle',
+    'integrity',
+    'compacted',
+    'diagnostics',
+    'comparative',
+    'similarity',
+    'clustering',
+    'confidenceDrift',
+    'uncertainty',
+    'escalation',
+    'weighting',
+    'normalizedTrust',
+    'persistence',
+    'diagnosticsAggregate'
+  ]
+  const present = expectedFields.filter((field) =>
+    Object.prototype.hasOwnProperty.call(unifiedReport || {}, field)
+  )
+  const missing = expectedFields.filter((field) => !present.includes(field))
+
+  return {
+    valid: missing.length === 0,
+    expected: expectedFields.length,
+    present: present.length,
+    missing,
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassiveFieldConsistencyAssertions(unifiedReport) {
+  const assertions = []
+  const decision = unifiedReport?.decision || {}
+  const normalized = unifiedReport?.normalized || {}
+  const compacted = unifiedReport?.compacted || {}
+
+  if (normalized.decisionRisk !== decision.risk) {
+    assertions.push('normalized_risk_mismatch')
+  }
+
+  if (normalized.decisionReadiness !== decision.readiness) {
+    assertions.push('normalized_readiness_mismatch')
+  }
+
+  if (compacted.risk !== decision.risk) {
+    assertions.push('compacted_risk_mismatch')
+  }
+
+  if (compacted.readiness !== decision.readiness) {
+    assertions.push('compacted_readiness_mismatch')
+  }
+
+  if (unifiedReport?.safety?.safeToAct !== false) {
+    assertions.push('safety_safe_to_act_not_false')
+  }
+
+  if (unifiedReport?.trustScore?.requiresReview !== true) {
+    assertions.push('trust_review_not_required')
+  }
+
+  return {
+    valid: assertions.length === 0,
+    assertions: uniquePassiveList(assertions),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildMissingFieldDiagnostics(unifiedReport) {
+  const requiredFields = [
+    'banner',
+    'preference',
+    'cmp',
+    'cmpStrategy',
+    'reliability',
+    'observation',
+    'recommendation',
+    'decision',
+    'historical',
+    'patterns',
+    'fingerprint',
+    'trend',
+    'anomalies',
+    'confidenceAggregation',
+    'reputation',
+    'safety',
+    'normalized'
+  ]
+  const missing = requiredFields.filter((field) =>
+    !Object.prototype.hasOwnProperty.call(unifiedReport || {}, field)
+  )
+
+  return {
+    valid: missing.length === 0,
+    required: requiredFields.length,
+    missing: uniquePassiveList(missing),
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassiveReportSchemaSnapshot(unifiedReport) {
+  const fieldTypes = {}
+
+  Object.keys(unifiedReport || {}).forEach((field) => {
+    const value = unifiedReport[field]
+    fieldTypes[field] = Array.isArray(value) ? 'array' : typeof value
+  })
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    fieldCount: Object.keys(fieldTypes).length,
+    fieldTypes,
+    passiveOnly: true
+  }
+}
+
+function buildCompactValidationSummary(unifiedReport) {
+  const validationObjects = [
+    unifiedReport?.validation,
+    unifiedReport?.dependencies,
+    unifiedReport?.integrityChecks,
+    unifiedReport?.assertions,
+    unifiedReport?.missingFields
+  ].filter(Boolean)
+  const failed = validationObjects.filter((entry) => entry.valid === false)
+
+  return {
+    generatedAt: Date.now(),
+    checks: validationObjects.length,
+    failed: failed.length,
+    level: failed.length === 0 ? 'pass' : failed.length <= 2 ? 'watch' : 'review',
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildPassiveEnrichmentTimingMetadata(unifiedReport) {
+  const now = Date.now()
+  const lifecycleTimestamp = unifiedReport?.lifecycle?.timestamp || now
+
+  return {
+    generatedAt: now,
+    lifecycleTimestamp,
+    ageMs: Math.max(0, now - lifecycleTimestamp),
+    reportFieldCount: Object.keys(unifiedReport || {}).length,
+    passiveOnly: true
+  }
+}
+
+function buildDebugValidationAggregation(unifiedReport) {
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    validation: unifiedReport?.validation || null,
+    dependencies: unifiedReport?.dependencies || null,
+    integrityChecks: unifiedReport?.integrityChecks || null,
+    assertions: unifiedReport?.assertions || null,
+    missingFields: unifiedReport?.missingFields || null,
+    schemaSnapshot: unifiedReport?.schemaSnapshot || null,
+    validationSummary: unifiedReport?.validationSummary || null,
+    timing: unifiedReport?.timing || null,
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
 function classifyCookieBannerFromAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return 'unknown'
 
@@ -6031,6 +6339,66 @@ function buildPassiveEnrichmentPipeline(baseReport) {
     enrichedReport,
     'diagnosticsAggregate',
     buildDiagnosticsAggregate
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'fixtures',
+    buildPassiveFixtureGenerator
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'validation',
+    validatePassiveReportShape
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'dependencies',
+    validatePassiveEnrichmentDependencies
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'integrityChecks',
+    buildPassivePipelineIntegrityChecks
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'assertions',
+    buildPassiveFieldConsistencyAssertions
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'missingFields',
+    buildMissingFieldDiagnostics
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'schemaSnapshot',
+    buildPassiveReportSchemaSnapshot
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'validationSummary',
+    buildCompactValidationSummary
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'timing',
+    buildPassiveEnrichmentTimingMetadata
+  )
+
+  enrichedReport = applyPassiveEnrichmentStage(
+    enrichedReport,
+    'validationAggregate',
+    buildDebugValidationAggregation
   )
 
   return applyPassiveEnrichmentStage(
