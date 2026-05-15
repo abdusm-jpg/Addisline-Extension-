@@ -1958,18 +1958,15 @@ function buildStatsFromSuccessfulCookieAction(action, context = {}) {
   const stats = ['trackersReduced']
   const unifiedReport = context.unifiedReport || null
   const preference = unifiedReport?.preference || context.preferenceReport || null
-  const cmpStrategy = unifiedReport?.cmpStrategy || context.cmpStrategy || null
   const contextText = getCookieActionContextText(action, context)
 
   const hasVendorOutcome = Boolean(
     preference?.center?.hasVendors ||
-    cmpStrategy?.supportsVendorFlow ||
     detectVendorSection(contextText)
   )
 
   const hasLegitimateInterestOutcome = Boolean(
     preference?.center?.hasLegitimateInterests ||
-    cmpStrategy?.supportsLegitimateInterestFlow ||
     detectLegitimateInterestSection(contextText)
   )
 
@@ -2387,7 +2384,6 @@ function getDeniedPreferenceStats(control) {
     stats.length === 0 &&
     isOptionalPreferenceControl(control)
   ) {
-    stats.push('vendorsDenied')
     stats.push('trackersReduced')
   }
 
@@ -2867,6 +2863,50 @@ function disableOptionalPreferenceControls(panel) {
 
   let disabledCount = 0
 
+  function recordDeniedPreferenceStats(control, deniedPreference, stats) {
+    const uncountedStats = stats.filter((statName) =>
+      (
+        statName !== 'legitimateInterestsDisabled' ||
+        control.dataset.addislineLegitimateCounted !== 'true'
+      ) &&
+      (
+        statName !== 'vendorsDenied' ||
+        control.dataset.addislineVendorCounted !== 'true'
+      ) &&
+      (
+        statName !== 'trackersReduced' ||
+        control.dataset.addislineTrackerCounted !== 'true'
+      )
+    )
+
+    if (uncountedStats.length === 0) {
+      return false
+    }
+
+    uncountedStats.forEach((statName) => {
+      incrementStat(statName)
+    })
+
+    if (
+      uncountedStats.includes('legitimateInterestsDisabled')
+    ) {
+      control.dataset.addislineLegitimateCounted = 'true'
+    }
+
+    if (uncountedStats.includes('vendorsDenied')) {
+      control.dataset.addislineVendorCounted = 'true'
+    }
+
+    if (uncountedStats.includes('trackersReduced')) {
+      control.dataset.addislineTrackerCounted = 'true'
+    }
+
+    setLastAction(deniedPreference.action)
+    setLastError('')
+
+    return true
+  }
+
   getToggleControls(panel).forEach((control) => {
     if (!shouldRunOnThisSite()) return
 
@@ -2894,27 +2934,36 @@ function disableOptionalPreferenceControls(panel) {
       statsToIncrement.length > 0
     ) {
       if (clickElementSafely(control)) {
-        statsToIncrement.forEach((statName) => {
-          incrementStat(statName)
-        })
-
         if (
-          statsToIncrement.includes('legitimateInterestsDisabled')
+          !isToggleEnabled(control) &&
+          recordDeniedPreferenceStats(
+            control,
+            deniedPreference,
+            statsToIncrement
+          )
         ) {
-          control.dataset.addislineLegitimateCounted = 'true'
+          disabledCount += 1
+          return
         }
 
-        if (statsToIncrement.includes('vendorsDenied')) {
-          control.dataset.addislineVendorCounted = 'true'
-        }
+        setTimeout(() => {
+          if (
+            !shouldRunOnThisSite() ||
+            isToggleEnabled(control)
+          ) {
+            return
+          }
 
-        if (statsToIncrement.includes('trackersReduced')) {
-          control.dataset.addislineTrackerCounted = 'true'
-        }
-
-        setLastAction(deniedPreference.action)
-        setLastError('')
-        disabledCount += 1
+          if (
+            recordDeniedPreferenceStats(
+              control,
+              deniedPreference,
+              statsToIncrement
+            )
+          ) {
+            saveCookiePreferences(panel)
+          }
+        }, 250)
       }
     }
   })
