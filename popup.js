@@ -569,7 +569,7 @@ function renderState({
       : 'No conectado'
 
   loginButton.hidden = connected
-  openWebButton.hidden = connected
+  openWebButton.hidden = false
   logoutButton.hidden = !connected
   accountForm.hidden = connected
   accountToggleButton.classList.toggle(
