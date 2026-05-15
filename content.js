@@ -5773,6 +5773,11 @@ function buildPassiveStageRegistrySnapshot(unifiedReport, registry) {
     stages: stages.map((stage) => ({
       key: stage.key,
       index: stage.index,
+      group: stage.group || getPassiveStageGroup(stage.key),
+      category: stage.category || getPassiveStageCategory(stage.key),
+      dependencies: uniquePassiveList(
+        stage.dependencies || getPassiveStageDependencies(stage.key)
+      ),
       builder: stage.builder?.name || 'anonymous_builder'
     })),
     passiveOnly: true
@@ -5986,6 +5991,394 @@ function buildPassivePipelineExecutionSummary(unifiedReport) {
     slowestStage: profiling.slowestStage || 'unknown',
     health: health.level || 'unknown',
     memoryPressure: memoryPressure.level || 'unknown',
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function getPassiveStageGroup(key) {
+  const groupMap = {
+    decision: 'core',
+    historical: 'history',
+    patterns: 'history',
+    fingerprint: 'cmp',
+    trend: 'history',
+    anomalies: 'risk',
+    confidenceAggregation: 'risk',
+    reputation: 'risk',
+    safety: 'risk',
+    normalized: 'reporting',
+    debugAnalytics: 'debug',
+    behaviorProfile: 'cmp',
+    trustScore: 'risk',
+    stabilityIndex: 'history',
+    riskEvolution: 'history',
+    consistencyValidation: 'validation',
+    fingerprintHistory: 'cmp',
+    lifecycle: 'infrastructure',
+    integrity: 'validation',
+    compacted: 'reporting',
+    diagnostics: 'debug',
+    comparative: 'history',
+    similarity: 'cmp',
+    clustering: 'analysis',
+    confidenceDrift: 'history',
+    uncertainty: 'risk',
+    escalation: 'risk',
+    weighting: 'history',
+    normalizedTrust: 'cmp',
+    persistence: 'history',
+    diagnosticsAggregate: 'debug',
+    fixtures: 'validation',
+    validation: 'validation',
+    dependencies: 'validation',
+    integrityChecks: 'validation',
+    assertions: 'validation',
+    missingFields: 'validation',
+    schemaSnapshot: 'validation',
+    validationSummary: 'validation',
+    timing: 'infrastructure',
+    validationAggregate: 'validation',
+    stageRegistry: 'infrastructure',
+    stageExecution: 'infrastructure',
+    observability: 'infrastructure',
+    profiling: 'infrastructure',
+    timingProfile: 'infrastructure',
+    lazyDiagnostics: 'debug',
+    compactDiagnostics: 'debug',
+    memoryPressure: 'infrastructure',
+    stageHealth: 'infrastructure',
+    executionSummary: 'infrastructure',
+    stageGroups: 'infrastructure',
+    stageCategories: 'infrastructure',
+    stageOrderSnapshot: 'infrastructure',
+    stageDependencySnapshot: 'infrastructure',
+    finalExecution: 'infrastructure',
+    finalObservability: 'infrastructure',
+    finalProfiling: 'infrastructure',
+    finalStageHealth: 'infrastructure',
+    finalExecutionSummary: 'infrastructure',
+    pipelineHealth: 'infrastructure'
+  }
+
+  return groupMap[key] || 'other'
+}
+
+function getPassiveStageCategory(key) {
+  const categoryMap = {
+    decision: 'scoring',
+    historical: 'memory_read',
+    patterns: 'classification',
+    fingerprint: 'normalization',
+    trend: 'trend',
+    anomalies: 'risk_detection',
+    confidenceAggregation: 'confidence',
+    reputation: 'scoring',
+    safety: 'guardrail',
+    normalized: 'normalization',
+    debugAnalytics: 'debug',
+    behaviorProfile: 'classification',
+    trustScore: 'scoring',
+    stabilityIndex: 'scoring',
+    riskEvolution: 'trend',
+    consistencyValidation: 'validation',
+    fingerprintHistory: 'comparison',
+    lifecycle: 'metadata',
+    integrity: 'validation',
+    compacted: 'compaction',
+    diagnostics: 'debug',
+    comparative: 'comparison',
+    similarity: 'comparison',
+    clustering: 'classification',
+    confidenceDrift: 'trend',
+    uncertainty: 'scoring',
+    escalation: 'guardrail',
+    weighting: 'scoring',
+    normalizedTrust: 'normalization',
+    persistence: 'persistence',
+    diagnosticsAggregate: 'debug',
+    fixtures: 'fixture',
+    validation: 'validation',
+    dependencies: 'validation',
+    integrityChecks: 'validation',
+    assertions: 'validation',
+    missingFields: 'validation',
+    schemaSnapshot: 'schema',
+    validationSummary: 'summary',
+    timing: 'timing',
+    validationAggregate: 'debug',
+    stageRegistry: 'registry',
+    stageExecution: 'execution',
+    observability: 'observability',
+    profiling: 'profiling',
+    timingProfile: 'timing',
+    lazyDiagnostics: 'debug',
+    compactDiagnostics: 'compaction',
+    memoryPressure: 'memory',
+    stageHealth: 'health',
+    executionSummary: 'summary',
+    stageGroups: 'registry',
+    stageCategories: 'registry',
+    stageOrderSnapshot: 'registry',
+    stageDependencySnapshot: 'registry',
+    finalExecution: 'execution',
+    finalObservability: 'observability',
+    finalProfiling: 'profiling',
+    finalStageHealth: 'health',
+    finalExecutionSummary: 'summary',
+    pipelineHealth: 'health'
+  }
+
+  return categoryMap[key] || 'metadata'
+}
+
+function getPassiveStageDependencies(key) {
+  const dependencyMap = {
+    historical: ['decision'],
+    patterns: ['historical'],
+    fingerprint: ['cmp', 'cmpStrategy'],
+    trend: ['historical'],
+    anomalies: ['historical', 'decision'],
+    confidenceAggregation: ['decision', 'historical', 'patterns'],
+    reputation: ['decision', 'historical', 'patterns', 'fingerprint'],
+    safety: ['decision', 'reputation', 'anomalies'],
+    normalized: ['decision', 'patterns', 'confidenceAggregation'],
+    debugAnalytics: ['decision'],
+    behaviorProfile: ['fingerprint', 'historical', 'patterns'],
+    trustScore: ['historical', 'reputation', 'confidenceAggregation', 'anomalies'],
+    stabilityIndex: ['historical', 'trend', 'anomalies'],
+    riskEvolution: ['decision'],
+    consistencyValidation: ['decision', 'safety', 'normalized'],
+    fingerprintHistory: ['fingerprint'],
+    compacted: ['decision', 'confidenceAggregation', 'patterns', 'safety'],
+    diagnostics: ['lifecycle', 'integrity', 'consistencyValidation'],
+    comparative: ['decision'],
+    similarity: ['fingerprint'],
+    clustering: ['behaviorProfile', 'patterns', 'safety', 'reputation'],
+    confidenceDrift: ['decision'],
+    uncertainty: ['decision', 'anomalies', 'similarity', 'consistencyValidation'],
+    escalation: ['anomalies', 'stabilityIndex', 'uncertainty'],
+    weighting: ['decision'],
+    normalizedTrust: ['fingerprint', 'similarity', 'fingerprintHistory'],
+    persistence: ['patterns'],
+    diagnosticsAggregate: ['consistencyValidation', 'integrity', 'uncertainty', 'escalation'],
+    validation: ['decision'],
+    dependencies: ['decision'],
+    integrityChecks: ['decision'],
+    assertions: ['decision', 'normalized', 'compacted', 'safety', 'trustScore'],
+    missingFields: ['decision'],
+    schemaSnapshot: ['decision'],
+    validationSummary: ['validation', 'dependencies', 'integrityChecks', 'assertions', 'missingFields'],
+    timing: ['lifecycle'],
+    validationAggregate: ['validation', 'dependencies', 'integrityChecks', 'assertions'],
+    stageExecution: ['stageRegistry'],
+    observability: ['stageExecution', 'stageRegistry', 'validationSummary'],
+    profiling: ['stageExecution'],
+    timingProfile: ['stageExecution'],
+    lazyDiagnostics: ['validationSummary', 'diagnosticsAggregate', 'memoryPressure'],
+    compactDiagnostics: ['validation', 'dependencies', 'assertions', 'integrity'],
+    stageHealth: ['stageExecution', 'integrityChecks'],
+    executionSummary: ['stageExecution', 'profiling', 'stageHealth', 'memoryPressure'],
+    stageGroups: ['stageRegistry'],
+    stageCategories: ['stageRegistry'],
+    stageOrderSnapshot: ['stageRegistry'],
+    stageDependencySnapshot: ['stageRegistry'],
+    finalExecution: ['stageExecution'],
+    finalObservability: ['finalExecution', 'stageRegistry', 'validationSummary'],
+    finalProfiling: ['finalExecution'],
+    finalStageHealth: ['finalExecution', 'integrityChecks'],
+    finalExecutionSummary: ['finalExecution', 'finalProfiling', 'finalStageHealth', 'memoryPressure'],
+    pipelineHealth: ['finalStageHealth', 'finalExecutionSummary', 'validationSummary']
+  }
+
+  return dependencyMap[key] || []
+}
+
+function buildPassiveStageGroups(unifiedReport) {
+  const stages = unifiedReport?.stageRegistry?.stages || []
+  const groups = stages.reduce((summary, stage) => {
+    const group = stage.group || getPassiveStageGroup(stage.key)
+    if (!summary[group]) {
+      summary[group] = {
+        count: 0,
+        keys: []
+      }
+    }
+
+    summary[group].count += 1
+    summary[group].keys.push(stage.key)
+    return summary
+  }, {})
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    groupCount: Object.keys(groups).length,
+    groups,
+    passiveOnly: true
+  }
+}
+
+function buildPassiveStageCategories(unifiedReport) {
+  const stages = unifiedReport?.stageRegistry?.stages || []
+  const categories = stages.reduce((summary, stage) => {
+    const category = stage.category || getPassiveStageCategory(stage.key)
+    if (!summary[category]) {
+      summary[category] = []
+    }
+
+    summary[category].push(stage.key)
+    return summary
+  }, {})
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    categoryCount: Object.keys(categories).length,
+    categories,
+    passiveOnly: true
+  }
+}
+
+function buildPassiveStageOrderSnapshot(unifiedReport) {
+  const stages = unifiedReport?.stageRegistry?.stages || []
+  const keys = stages
+    .slice()
+    .sort((left, right) => (left.index || 0) - (right.index || 0))
+    .map((stage) => stage.key)
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    count: keys.length,
+    first: keys[0] || 'unknown',
+    last: keys[keys.length - 1] || 'unknown',
+    keys,
+    passiveOnly: true
+  }
+}
+
+function buildPassiveStageDependencySnapshot(unifiedReport) {
+  const stages = unifiedReport?.stageRegistry?.stages || []
+  const dependencies = stages.reduce((summary, stage) => {
+    summary[stage.key] = uniquePassiveList(
+      stage.dependencies || getPassiveStageDependencies(stage.key)
+    )
+    return summary
+  }, {})
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    count: Object.keys(dependencies).length,
+    dependencies,
+    passiveOnly: true
+  }
+}
+
+function buildFinalPassiveStageExecutionMetadata(unifiedReport, executionRecords) {
+  const metadata = buildPassiveStageExecutionMetadata(unifiedReport, executionRecords)
+
+  return {
+    ...metadata,
+    refreshed: true,
+    includesLateInfrastructure: true
+  }
+}
+
+function buildFinalPassivePipelineObservability(unifiedReport) {
+  const execution = unifiedReport?.finalExecution || unifiedReport?.stageExecution || {}
+  const registry = unifiedReport?.stageRegistry || {}
+  const validationSummary = unifiedReport?.validationSummary || {}
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    stageCount: registry.count || 0,
+    completedStages: execution.completedStages || 0,
+    totalDurationMs: execution.totalDurationMs || 0,
+    validationLevel: validationSummary.level || 'unknown',
+    diagnosticsLevel: unifiedReport?.diagnosticsAggregate?.level || 'unknown',
+    refreshed: true,
+    passiveOnly: true,
+    safeToAct: false,
+    allowed: false,
+    requiresReview: true
+  }
+}
+
+function buildFinalPassiveExecutionProfiling(unifiedReport) {
+  const nextReport = {
+    ...unifiedReport,
+    stageExecution: unifiedReport?.finalExecution || unifiedReport?.stageExecution
+  }
+  const profiling = buildPassiveExecutionProfiling(nextReport)
+
+  return {
+    ...profiling,
+    refreshed: true
+  }
+}
+
+function buildFinalPassiveStageHealthTracking(unifiedReport) {
+  const nextReport = {
+    ...unifiedReport,
+    stageExecution: unifiedReport?.finalExecution || unifiedReport?.stageExecution
+  }
+  const health = buildPassiveStageHealthTracking(nextReport)
+
+  return {
+    ...health,
+    refreshed: true
+  }
+}
+
+function buildFinalPassivePipelineExecutionSummary(unifiedReport) {
+  const nextReport = {
+    ...unifiedReport,
+    stageExecution: unifiedReport?.finalExecution || unifiedReport?.stageExecution,
+    profiling: unifiedReport?.finalProfiling || unifiedReport?.profiling,
+    stageHealth: unifiedReport?.finalStageHealth || unifiedReport?.stageHealth
+  }
+  const summary = buildPassivePipelineExecutionSummary(nextReport)
+
+  return {
+    ...summary,
+    refreshed: true
+  }
+}
+
+function buildPassivePipelineHealthSummary(unifiedReport) {
+  const reasons = []
+  const validationLevel = unifiedReport?.validationSummary?.level || 'unknown'
+  const diagnosticsLevel = unifiedReport?.diagnosticsAggregate?.level || 'unknown'
+  const stageHealth = unifiedReport?.finalStageHealth?.level ||
+    unifiedReport?.stageHealth?.level ||
+    'unknown'
+  const memoryPressure = unifiedReport?.memoryPressure?.level || 'unknown'
+
+  if (validationLevel !== 'pass') reasons.push(`validation_${validationLevel}`)
+  if (diagnosticsLevel === 'review') reasons.push('diagnostics_review')
+  if (stageHealth !== 'healthy') reasons.push(`stage_health_${stageHealth}`)
+  if (memoryPressure === 'high') reasons.push('memory_pressure_high')
+
+  let level = 'healthy'
+  if (reasons.some((reason) => reason.includes('review') || reason.includes('high'))) {
+    level = 'review'
+  } else if (reasons.length > 0) {
+    level = 'watch'
+  }
+
+  return {
+    generatedAt: Date.now(),
+    hostname: getCurrentHostname(),
+    level,
+    validationLevel,
+    diagnosticsLevel,
+    stageHealth,
+    memoryPressure,
+    reasons: uniquePassiveList(reasons),
     safeToAct: false,
     allowed: false,
     requiresReview: true
@@ -6597,12 +6990,60 @@ function buildPassiveEnrichmentStageRegistry(context = {}) {
       builder: buildPassivePipelineExecutionSummary
     },
     {
+      key: 'stageGroups',
+      builder: buildPassiveStageGroups
+    },
+    {
+      key: 'stageCategories',
+      builder: buildPassiveStageCategories
+    },
+    {
+      key: 'stageOrderSnapshot',
+      builder: buildPassiveStageOrderSnapshot
+    },
+    {
+      key: 'stageDependencySnapshot',
+      builder: buildPassiveStageDependencySnapshot
+    },
+    {
+      key: 'finalExecution',
+      builder: (report) => buildFinalPassiveStageExecutionMetadata(
+        report,
+        context.executionRecords
+      )
+    },
+    {
+      key: 'finalObservability',
+      builder: buildFinalPassivePipelineObservability
+    },
+    {
+      key: 'finalProfiling',
+      builder: buildFinalPassiveExecutionProfiling
+    },
+    {
+      key: 'finalStageHealth',
+      builder: buildFinalPassiveStageHealthTracking
+    },
+    {
+      key: 'finalExecutionSummary',
+      builder: buildFinalPassivePipelineExecutionSummary
+    },
+    {
+      key: 'pipelineHealth',
+      builder: buildPassivePipelineHealthSummary
+    },
+    {
       key: 'debugAnalytics',
       builder: buildDebugAnalyticsSummary
     }
   ].map((stage, index) => ({
     ...stage,
-    index
+    index,
+    group: stage.group || getPassiveStageGroup(stage.key),
+    category: stage.category || getPassiveStageCategory(stage.key),
+    dependencies: uniquePassiveList(
+      stage.dependencies || getPassiveStageDependencies(stage.key)
+    )
   }))
 }
 
