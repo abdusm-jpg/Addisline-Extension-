@@ -384,32 +384,54 @@ function escapeCookieIntentRegExp(value) {
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function cookieIntentPhraseMatches(normalizedText, phrase) {
-  const normalizedPhrase =
-    normalizeCookieIntentText(phrase)
+function createCookieIntentMatchers(dictionary) {
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(dictionary)
+        .map(([intent, terms]) => [
+          intent,
+          Object.freeze(
+            Array.from(
+              terms.reduce((normalizedTerms, term) => {
+                const normalizedTerm =
+                  normalizeCookieIntentText(term)
 
-  if (!normalizedText || !normalizedPhrase) {
-    return false
-  }
+                if (normalizedTerm && !normalizedTerms.has(normalizedTerm)) {
+                  normalizedTerms.set(normalizedTerm, term)
+                }
 
-  return new RegExp(
-    `(^|\\s)${escapeCookieIntentRegExp(normalizedPhrase)}(?=\\s|$)`
-  ).test(normalizedText)
+                return normalizedTerms
+              }, new Map())
+            ).map(([normalizedTerm, term]) =>
+              Object.freeze({
+                term,
+                pattern: new RegExp(
+                  `(^|\\s)${escapeCookieIntentRegExp(normalizedTerm)}(?=\\s|$)`
+                ),
+              })
+            )
+          ),
+        ])
+    )
+  )
 }
 
-function textMatchesCookieIntent(text, intentName) {
-  const terms =
-    COOKIE_INTENT_DICTIONARY[intentName]
+const COOKIE_INTENT_MATCHERS =
+  createCookieIntentMatchers(COOKIE_INTENT_DICTIONARY)
 
-  if (!Array.isArray(terms)) {
+function textMatchesCookieIntent(text, intentName) {
+  const matchers =
+    COOKIE_INTENT_MATCHERS[intentName]
+
+  if (!Array.isArray(matchers)) {
     return false
   }
 
   const normalizedText =
     normalizeCookieIntentText(text)
 
-  return terms.some((term) =>
-    cookieIntentPhraseMatches(normalizedText, term)
+  return matchers.some(({ pattern }) =>
+    pattern.test(normalizedText)
   )
 }
 
@@ -418,15 +440,11 @@ function getCookieIntentMatches(text) {
     normalizeCookieIntentText(text)
 
   return Object.entries(COOKIE_INTENT_DICTIONARY)
-    .map(([intent, terms]) => ({
+    .map(([intent]) => ({
       intent,
-      terms: Array.from(
-        new Set(
-          terms.filter((term) =>
-            cookieIntentPhraseMatches(normalizedText, term)
-          )
-        )
-      ),
+      terms: COOKIE_INTENT_MATCHERS[intent]
+        .filter(({ pattern }) => pattern.test(normalizedText))
+        .map(({ term }) => term),
     }))
     .filter((match) => match.terms.length > 0)
 }
