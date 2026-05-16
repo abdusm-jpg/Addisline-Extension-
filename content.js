@@ -4328,6 +4328,117 @@ function openPreferenceSections(panel) {
   return openedCount
 }
 
+function getConsentToggleState(control) {
+  if (!control || !isVisible(control)) return 'unknown'
+
+  if (
+    control.disabled ||
+    control.getAttribute?.('disabled') !== null ||
+    control.getAttribute?.('aria-disabled') === 'true'
+  ) {
+    return 'disabled'
+  }
+
+  if (control.matches?.('input[type="checkbox"]')) {
+    return control.checked ? 'enabled' : 'disabled'
+  }
+
+  if (control.matches?.('input[type="radio"]')) {
+    return control.checked ? 'enabled' : 'disabled'
+  }
+
+  const role = normalizeMatchText(control.getAttribute?.('role'))
+  const ariaChecked = normalizeMatchText(control.getAttribute?.('aria-checked'))
+  const ariaPressed = normalizeMatchText(control.getAttribute?.('aria-pressed'))
+  const checked = normalizeMatchText(control.getAttribute?.('checked'))
+  const hasCheckedAttribute =
+    typeof control.hasAttribute === 'function' &&
+    control.hasAttribute('checked')
+  const dataState = normalizeMatchText(control.getAttribute?.('data-state'))
+  const dataChecked = normalizeMatchText(control.getAttribute?.('data-checked'))
+  const dataEnabled = normalizeMatchText(control.getAttribute?.('data-enabled'))
+  const actionText = getActionText(control)
+  const classText = normalizeMatchText(getClassNameText(control))
+
+  if (
+    ariaChecked === 'false' ||
+    ariaPressed === 'false' ||
+    checked === 'false' ||
+    dataState === 'unchecked' ||
+    dataState === 'off' ||
+    dataState === 'disabled' ||
+    dataState === 'inactive' ||
+    dataChecked === 'false' ||
+    dataEnabled === 'false'
+  ) {
+    return 'disabled'
+  }
+
+  if (
+    ariaChecked === 'true' ||
+    ariaPressed === 'true' ||
+    hasCheckedAttribute ||
+    checked === 'true' ||
+    checked === 'checked' ||
+    dataState === 'checked' ||
+    dataState === 'on' ||
+    dataState === 'enabled' ||
+    dataState === 'active' ||
+    dataChecked === 'true' ||
+    dataEnabled === 'true' ||
+    textHasAny(actionText, [
+      'enabled',
+      'active',
+      'selected',
+      'on',
+      'checked',
+    ]) ||
+    textHasAny(classText, [
+      'active',
+      'checked',
+      'enabled',
+      'selected',
+      'switch on',
+      'toggle on',
+      'is on',
+      'is active',
+      'is checked',
+    ])
+  ) {
+    return 'enabled'
+  }
+
+  if (
+    role === 'switch' ||
+    role === 'checkbox'
+  ) {
+    return 'unknown'
+  }
+
+  return 'unknown'
+}
+
+function isConsentToggleEnabled(element) {
+  return getConsentToggleState(element) === 'enabled'
+}
+
+function logConsentToggleState(control, state) {
+  if (state !== 'enabled' && state !== 'disabled') return
+  if (classifyToggleContext(control) !== 'optional') return
+
+  cookieDebugLog(
+    state === 'enabled'
+      ? 'Toggle detected as ENABLED'
+      : 'Toggle detected as DISABLED',
+    {
+      control: getCookieDebugElementSummary(control),
+      role: control?.getAttribute?.('role') || '',
+      ariaChecked: control?.getAttribute?.('aria-checked') || '',
+      ariaPressed: control?.getAttribute?.('aria-pressed') || '',
+    }
+  )
+}
+
 function isToggleEnabled(control) {
   if (!isVisible(control)) return false
 
@@ -6032,31 +6143,12 @@ function analyzePreferenceCenter(panel) {
 function getToggleState(control) {
   if (!control) return 'unknown'
 
-  if (
-    control.disabled ||
-    (
-      typeof control.getAttribute === 'function' &&
-      control.getAttribute('disabled') !== null
-    ) ||
-    control.getAttribute?.('aria-disabled') === 'true'
-  ) {
-    return 'disabled'
-  }
+  const state =
+    getConsentToggleState(control)
 
-  if (
-    control.matches?.('input[type="checkbox"]') ||
-    control.matches?.('input[type="radio"]')
-  ) {
-    return control.checked ? 'enabled' : 'disabled'
-  }
+  logConsentToggleState(control, state)
 
-  const ariaChecked = normalizeMatchText(control.getAttribute?.('aria-checked'))
-  const ariaPressed = normalizeMatchText(control.getAttribute?.('aria-pressed'))
-
-  if (ariaChecked === 'true' || ariaPressed === 'true') return 'enabled'
-  if (ariaChecked === 'false' || ariaPressed === 'false') return 'disabled'
-
-  return 'unknown'
+  return state
 }
 
 function classifyToggleContext(control) {
