@@ -178,6 +178,11 @@ const clearReportsButton =
     'clearReportsButton'
   )
 
+const loadMoreReportsButton =
+  document.getElementById(
+    'loadMoreReportsButton'
+  )
+
 const reportsToggleButton =
   document.getElementById(
     'reportsToggleButton'
@@ -244,6 +249,15 @@ let currentTabId =
 
 let reportsExpanded =
   false
+
+let visibleReportCount =
+  5
+
+let latestIssueReports =
+  []
+
+const REPORTS_PAGE_SIZE =
+  5
 
 let accountPanelExpanded =
   false
@@ -948,7 +962,23 @@ reportsToggleButton.addEventListener(
     reportsExpanded =
       !reportsExpanded
 
+    if (reportsExpanded) {
+      visibleReportCount =
+        REPORTS_PAGE_SIZE
+    }
+
     updateReportsDisclosure()
+    renderIssueReports(latestIssueReports)
+  }
+)
+
+loadMoreReportsButton.addEventListener(
+  'click',
+  () => {
+    visibleReportCount +=
+      REPORTS_PAGE_SIZE
+
+    renderIssueReports(latestIssueReports)
   }
 )
 
@@ -1040,27 +1070,41 @@ function renderIssueReports(issueReports) {
       ? issueReports
       : []
 
-  const latestReports =
+  latestIssueReports =
     reports
-      .slice(-5)
+
+  const sortedReports =
+    reports
+      .slice()
       .reverse()
+
+  const visibleReports =
+    sortedReports.slice(
+      0,
+      Math.max(
+        REPORTS_PAGE_SIZE,
+        visibleReportCount
+      )
+    )
 
   reportsToggleButton.textContent =
     `REPORTADOS (${reports.length})`
 
   clearReportsButton.disabled =
-    latestReports.length === 0
+    reports.length === 0
 
   updateReportsDisclosure()
 
-  if (latestReports.length === 0) {
+  if (visibleReports.length === 0) {
     issueReportsList.innerHTML =
       '<p class="emptyState">No hay reportes locales.</p>'
+    loadMoreReportsButton.hidden =
+      true
     return
   }
 
   issueReportsList.innerHTML =
-    latestReports
+    visibleReports
       .map((report) => `
         <article class="reportItem">
           <button
@@ -1076,6 +1120,17 @@ function renderIssueReports(issueReports) {
         </article>
       `)
       .join('')
+
+  const remainingReports =
+    sortedReports.length - visibleReports.length
+
+  loadMoreReportsButton.hidden =
+    remainingReports <= 0
+
+  loadMoreReportsButton.textContent =
+    remainingReports > 0
+      ? `Mostrar más (${remainingReports})`
+      : 'Mostrar más'
 }
 
 async function sendIssueReportToBackground(report) {

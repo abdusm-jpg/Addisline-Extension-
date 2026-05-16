@@ -490,6 +490,9 @@ button.compact {
 .reportsList {
   display: grid;
   gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .reportItem {
@@ -499,6 +502,10 @@ button.compact {
   border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.72);
+}
+
+.reportsMoreButton[hidden] {
+  display: none;
 }
 
 .reportItem strong,
