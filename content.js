@@ -30,6 +30,7 @@ const hiddenBannerCooldowns = new Map()
 const dismissedBannerSuppressions = new Map()
 const preferenceExpansionSignatures = new Map()
 const preferenceTraversalCooldowns = new Map()
+const unstablePreferenceToggleSignatures = new Map()
 const observedShadowRoots = new WeakSet()
 
 const STATS_KEY = 'stats'
@@ -48,6 +49,7 @@ const SHADOW_OBSERVE_COOLDOWN_MS = 5000
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
+const TOGGLE_PERSISTENCE_VERIFY_MS = 650
 const PREFERENCE_EXPANSION_TTL_MS = 60000
 const MAX_PREFERENCE_TRAVERSAL_DEPTH = 3
 const PREFERENCE_TRAVERSAL_COOLDOWN_MS = 15000
@@ -167,6 +169,13 @@ const directSafeRejectClassSignals = [
   'denyall',
   'rejectall',
   'declineall',
+  'ot pc refuse all handler',
+  'onetrust reject all handler',
+  'didomi disagree',
+  'didomi deny',
+  'uc deny all',
+  'uc reject all',
+  'CybotCookiebotDialogBodyButtonDecline',
   'twcc__decline-button',
   'decline-button',
 ]
@@ -419,10 +428,27 @@ const savePreferenceTexts = [
   'save preferences',
   'confirm choices',
   'confirm my choices',
+  'apply choices',
+  'apply settings',
+  'save settings',
+  'submit preferences',
+  'continue with selected',
+  'continue with selection',
+  'use selected',
+  'save my choices',
+  'save and exit',
+  'submit all choices',
+  'agree to selected',
   'confirmar opciones',
   'guardar preferencias',
   'confirmar preferencias',
   'aplicar preferencias',
+  'guardar configuracion',
+  'guardar configuraciÃ³n',
+  'enviar preferencias',
+  'continuar con seleccion',
+  'continuar con selecciÃ³n',
+  'guardar y salir',
 ]
 
 const bannerKeywords = [
@@ -537,6 +563,12 @@ const COOKIE_INTENT_KEYWORDS = {
     ...savePreferenceTexts,
     'save selection',
     'save choices',
+    'apply selection',
+    'apply selected',
+    'confirm selection',
+    'submit choices',
+    'submit consent',
+    'agree to current selection',
     'guardar seleccion',
     'guardar selección',
     'guardar configuracion',
@@ -1341,14 +1373,26 @@ function findCookieBannerCandidates() {
         '[class*="privacy" i]',
         '[id*="onetrust" i]',
         '[class*="onetrust" i]',
+        '[id*="ot-sdk" i]',
+        '[class*="ot-sdk" i]',
+        '[id*="onetrust-pc" i]',
         '[id*="didomi" i]',
         '[class*="didomi" i]',
+        '[id*="didomi-popup" i]',
+        '[class*="didomi-popup" i]',
         '[id*="cookiebot" i]',
         '[class*="cookiebot" i]',
+        '[id*="CybotCookiebotDialog" i]',
         '[id*="trustarc" i]',
         '[class*="trustarc" i]',
+        '[id*="truste" i]',
+        '[class*="truste" i]',
         '[id*="usercentrics" i]',
         '[class*="usercentrics" i]',
+        '[id*="uc-center" i]',
+        '[class*="uc-center" i]',
+        '[id*="uc-privacy" i]',
+        '[class*="uc-privacy" i]',
         '[id*="quantcast" i]',
         '[class*="quantcast" i]',
         '[id*="qc-cmp" i]',
@@ -1508,6 +1552,66 @@ function restorePageInteractionForCookieBanner(element) {
     target.style.removeProperty('overflow-y')
     target.style.removeProperty('position')
   })
+}
+
+function cleanupCookieInteractionLeftovers(element) {
+  if (!shouldRunOnThisSite()) return false
+
+  restorePageInteractionForCookieBanner(element)
+
+  if (hasActiveCookieOverlay()) {
+    return false
+  }
+
+  let cleaned = false
+
+  ;[
+    document.documentElement,
+    document.body,
+  ].forEach((target) => {
+    if (!target) return
+
+    if (
+      target.style.overflow ||
+      target.style.overflowY ||
+      target.style.position
+    ) {
+      cleaned = true
+    }
+
+    target.style.removeProperty('overflow')
+    target.style.removeProperty('overflow-y')
+    target.style.removeProperty('position')
+
+    if (target.hasAttribute('inert')) {
+      target.removeAttribute('inert')
+      cleaned = true
+    }
+
+    target.style.removeProperty('pointer-events')
+  })
+
+  Array.from(document.body?.children || [])
+    .filter((child) =>
+      child.hasAttribute?.('inert') &&
+      !isPotentialCookieContainer(child) &&
+      !isLikelyNonCookieModal(child)
+    )
+    .slice(0, 12)
+    .forEach((child) => {
+      child.removeAttribute('inert')
+      cleaned = true
+    })
+
+  if (cleaned || !hasPageScrollLock()) {
+    log('page interaction restored')
+  }
+
+  if (cleaned) {
+    log('overlay cleanup executed')
+  }
+
+  return cleaned
 }
 
 function scanCookieOverlays() {
@@ -2566,6 +2670,8 @@ function schedulePostActionVerification(context = {}) {
       getBannerVerificationState(context.container)
 
     if (!state.active) {
+      cleanupCookieInteractionLeftovers(state.container || context.container)
+
       if (state.container || context.container) {
         markBannerSuppressed(
           state.container || context.container,
@@ -2586,6 +2692,7 @@ function schedulePostActionVerification(context = {}) {
     })
 
     if (runSingleVerificationFollowUp(context, state)) {
+      cleanupCookieInteractionLeftovers(state.container || context.container)
       markBannerSuppressed(
         state.container || context.container,
         `${context.type || 'action'}-follow-up`
@@ -3512,6 +3619,41 @@ function isToggleEnabled(control) {
   )
 }
 
+function getPreferenceToggleSignature(control) {
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      getActionText(control).slice(0, 160),
+      getNearbyPreferenceText(control).slice(0, 260),
+      control?.getAttribute?.('aria-label'),
+      control?.getAttribute?.('aria-labelledby'),
+      control?.getAttribute?.('name'),
+      control?.id,
+      getClassNameText(control).slice(0, 120),
+    ].join(' ')
+  ).slice(0, 520)
+}
+
+function isUnstablePreferenceToggle(control) {
+  const signature =
+    getPreferenceToggleSignature(control)
+
+  return Boolean(
+    signature &&
+    unstablePreferenceToggleSignatures.has(signature)
+  )
+}
+
+function markUnstablePreferenceToggle(control) {
+  const signature =
+    getPreferenceToggleSignature(control)
+
+  if (!signature) return
+
+  unstablePreferenceToggleSignatures.set(signature, Date.now())
+  log('unstable toggle skipped')
+}
+
 function getExplicitPreferenceControls(container) {
   return Array.from(
     querySelectorAllDeep(
@@ -3763,14 +3905,26 @@ function findCookiePreferencesPanel() {
         '[class*="interest" i]',
         '[id*="onetrust" i]',
         '[class*="onetrust" i]',
+        '[id*="ot-sdk" i]',
+        '[class*="ot-sdk" i]',
+        '[id*="onetrust-pc" i]',
         '[id*="didomi" i]',
         '[class*="didomi" i]',
+        '[id*="didomi-popup" i]',
+        '[class*="didomi-popup" i]',
         '[id*="cookiebot" i]',
         '[class*="cookiebot" i]',
+        '[id*="CybotCookiebotDialog" i]',
         '[id*="trustarc" i]',
         '[class*="trustarc" i]',
+        '[id*="truste" i]',
+        '[class*="truste" i]',
         '[id*="usercentrics" i]',
         '[class*="usercentrics" i]',
+        '[id*="uc-center" i]',
+        '[class*="uc-center" i]',
+        '[id*="uc-privacy" i]',
+        '[class*="uc-privacy" i]',
         '[id*="quantcast" i]',
         '[class*="quantcast" i]',
         '[id*="qc-cmp" i]',
@@ -3815,6 +3969,69 @@ function findCookiePreferencesPanel() {
   return candidates[0]?.element || null
 }
 
+function scheduleTogglePersistenceVerification(panel, controls) {
+  const trackedControls =
+    Array.from(new Set(controls || []))
+      .filter(Boolean)
+      .map((control) => ({
+        control,
+        signature: getPreferenceToggleSignature(control),
+      }))
+      .filter((entry) => entry.signature)
+
+  if (trackedControls.length === 0) return
+
+  setTimeout(() => {
+    if (!shouldRunOnThisSite()) return
+
+    const currentPanel =
+      findCookiePreferencesPanel() || panel
+
+    trackedControls.forEach(({ control, signature }) => {
+      if (unstablePreferenceToggleSignatures.has(signature)) {
+        log('unstable toggle skipped')
+        return
+      }
+
+      const currentControl =
+        (
+          control &&
+          document.documentElement.contains(control)
+        )
+          ? control
+          : getToggleControls(currentPanel).find((candidate) =>
+              getPreferenceToggleSignature(candidate) === signature
+            )
+
+      if (!currentControl || !isToggleEnabled(currentControl)) {
+        return
+      }
+
+      log('toggle reverted')
+
+      processedActionElements.delete(currentControl)
+
+      if (
+        !isUnstablePreferenceToggle(currentControl) &&
+        clickElementSafely(currentControl)
+      ) {
+        setTimeout(() => {
+          if (!shouldRunOnThisSite()) return
+
+          if (isToggleEnabled(currentControl)) {
+            markUnstablePreferenceToggle(currentControl)
+            return
+          }
+
+          saveCookiePreferences(currentPanel)
+        }, 300)
+      } else {
+        markUnstablePreferenceToggle(currentControl)
+      }
+    })
+  }, TOGGLE_PERSISTENCE_VERIFY_MS)
+}
+
 function disableOptionalPreferenceControls(panel) {
   if (
     !shouldRunOnThisSite() ||
@@ -3825,6 +4042,7 @@ function disableOptionalPreferenceControls(panel) {
   }
 
   let disabledCount = 0
+  const disabledControls = []
 
   function recordDeniedPreferenceStats(control, deniedPreference, stats) {
     const uncountedStats = stats.filter((statName) =>
@@ -3872,6 +4090,10 @@ function disableOptionalPreferenceControls(panel) {
 
   getToggleControls(panel).forEach((control) => {
     if (!shouldRunOnThisSite()) return
+    if (isUnstablePreferenceToggle(control)) {
+      log('unstable toggle skipped')
+      return
+    }
 
     const deniedPreference =
       getDeniedPreferenceStats(control)
@@ -3906,6 +4128,7 @@ function disableOptionalPreferenceControls(panel) {
           )
         ) {
           disabledCount += 1
+          disabledControls.push(control)
           return
         }
 
@@ -3924,6 +4147,7 @@ function disableOptionalPreferenceControls(panel) {
               statsToIncrement
             )
           ) {
+            scheduleTogglePersistenceVerification(panel, [control])
             saveCookiePreferences(panel)
           }
         }, 250)
@@ -3931,13 +4155,68 @@ function disableOptionalPreferenceControls(panel) {
     }
   })
 
+  if (disabledControls.length > 0) {
+    scheduleTogglePersistenceVerification(panel, disabledControls)
+  }
+
   return disabledCount
+}
+
+function findFinalConfirmationControl(panel) {
+  if (!panel) return null
+
+  const explicitSave =
+    findBestActionByIntent(panel, 'savePreferences', 8) ||
+    findActionByTexts(panel, savePreferenceTexts)
+
+  if (
+    explicitSave &&
+    !hasUnsafeAcceptText(explicitSave) &&
+    !isSensitiveActionControl(explicitSave, panel)
+  ) {
+    log('final confirmation found')
+    return explicitSave
+  }
+
+  return getActionControls(panel)
+    .filter((control) =>
+      isVisible(control) &&
+      !hasUnsafeAcceptText(control) &&
+      !isSensitiveActionControl(control, panel)
+    )
+    .map((control) => {
+      const actionText =
+        getActionText(control)
+
+      const contextText =
+        normalizeMatchText(
+          [
+            actionText,
+            getNearbyActionContext(control, panel).nearby,
+            getAncestorContextText(control).slice(0, 500),
+          ].join(' ')
+        )
+
+      let score =
+        getCookieIntentScore(control, panel, 'savePreferences')
+
+      if (textHasAny(actionText, savePreferenceTexts)) score += 30
+      if (textHasAny(contextText, ['selected', 'selection', 'choices', 'preferences'])) score += 12
+      if (textHasAny(actionText, ['continue', 'next', 'done', 'finish'])) score += 4
+      if (textHasAny(actionText, unsafeAcceptTexts)) score -= 40
+
+      return {
+        control,
+        score,
+      }
+    })
+    .filter((candidate) => candidate.score >= 18)
+    .sort((first, second) => second.score - first.score)[0]?.control || null
 }
 
 function saveCookiePreferences(panel, options = {}) {
   const saveControl =
-    findBestActionByIntent(panel, 'savePreferences') ||
-    findActionByTexts(panel, savePreferenceTexts)
+    findFinalConfirmationControl(panel)
 
   if (
     saveControl &&
@@ -4038,7 +4317,7 @@ log('handleCookiePreferences:action', {
   }
 
   if (disabledCount > 0) {
-    return saveCookiePreferences(panel) || true
+    return saveCookiePreferences(panel)
   }
 
   if (openedSections > 0) {
