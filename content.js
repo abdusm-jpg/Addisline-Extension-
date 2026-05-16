@@ -710,6 +710,90 @@ function log(...args) {
   }
 }
 
+function isAddislineTestMode() {
+  try {
+    return window.__ADDISLINE_TEST_MODE__ === true
+  } catch {
+    return false
+  }
+}
+
+function truncateTestText(value, limit = 120) {
+  return normalizeMatchText(value)
+    .slice(0, limit)
+}
+
+function getElementTestSummary(element) {
+  if (!element) return null
+
+  const rect =
+    element.getBoundingClientRect?.()
+
+  return {
+    tag: String(element.tagName || '').toLowerCase(),
+    id: truncateTestText(element.id, 80),
+    className: truncateTestText(getClassNameText(element), 120),
+    role: truncateTestText(element.getAttribute?.('role'), 40),
+    text: truncateTestText(getActionText(element), 120),
+    visible: isVisible(element),
+    width: rect ? Math.round(rect.width) : 0,
+    height: rect ? Math.round(rect.height) : 0,
+  }
+}
+
+function updateAddislineTestReport(partial = {}) {
+  if (!isAddislineTestMode()) return
+
+  try {
+    const previous =
+      (
+        window.__addislineTestReport &&
+        typeof window.__addislineTestReport === 'object'
+      )
+        ? window.__addislineTestReport
+        : {}
+
+    const recentEvents =
+      Array.isArray(previous.recentEvents)
+        ? previous.recentEvents.slice(-19)
+        : []
+
+    const event =
+      partial.event
+        ? {
+            at: Date.now(),
+            name: truncateTestText(partial.event, 80),
+          }
+        : null
+
+    window.__addislineTestReport = {
+      ...previous,
+      ...partial,
+      currentDomain: getCurrentDomain(),
+      updatedAt: Date.now(),
+      recentEvents: event
+        ? [...recentEvents, event]
+        : recentEvents,
+    }
+  } catch {
+    // Test diagnostics must never affect page behavior.
+  }
+}
+
+function getVerificationTestState(state) {
+  if (!state) return null
+
+  return {
+    active: Boolean(state.active),
+    bannerVisible: Boolean(state.bannerVisible),
+    ariaHidden: Boolean(state.ariaHidden),
+    cssHidden: Boolean(state.cssHidden),
+    modalPresent: Boolean(state.modalPresent),
+    overlayPresent: Boolean(state.overlayPresent),
+    scrollRestored: Boolean(state.scrollRestored),
+  }
+}
+
 function canUsePageActionBudget(reason = 'action') {
   if (pageActionCount >= MAX_PAGE_ACTIONS) {
     log('page action budget stopped', reason)
@@ -1359,6 +1443,13 @@ function findCookieBannerCandidates() {
     isVisible(activeCookieContainer) &&
     isPotentialCookieContainer(activeCookieContainer)
   ) {
+    if (isAddislineTestMode()) {
+      updateAddislineTestReport({
+        event: 'findCookieBannerCandidates:active',
+        bannerCandidateCount: 1,
+        chosenCandidateSummary: getElementTestSummary(activeCookieContainer),
+      })
+    }
     return [activeCookieContainer]
   }
 
@@ -1424,6 +1515,14 @@ function findCookieBannerCandidates() {
 
   activeCookieContainer =
     candidates[0] || null
+
+  if (isAddislineTestMode()) {
+    updateAddislineTestReport({
+      event: 'findCookieBannerCandidates',
+      bannerCandidateCount: candidates.length,
+      chosenCandidateSummary: getElementTestSummary(activeCookieContainer),
+    })
+  }
 
   return candidates
 }
@@ -2175,14 +2274,31 @@ function suppressReRenderedBanner(element) {
   const suppression =
     getBannerSuppression(element)
 
-  if (!suppression) return false
+  if (!suppression) {
+    updateAddislineTestReport({
+      event: 'suppressReRenderedBanner:none',
+      lastActionResult: 'no_suppression_match',
+    })
+    return false
+  }
 
   if (!isSafeToHide(element)) {
+    updateAddislineTestReport({
+      event: 'suppressReRenderedBanner:unsafe',
+      lastSkipReason: 'suppression_not_safe_to_hide',
+      lastActionResult: 'suppression_skipped',
+    })
     return false
   }
 
   if (suppression.record.hiddenCount >= MAX_SUPPRESSION_HIDES) {
     log('banner suppression budget reached')
+    updateAddislineTestReport({
+      event: 'suppressReRenderedBanner:budget',
+      lastSkipReason: 'suppression_budget_reached',
+      lastActionResult: 'suppression_skipped',
+      budgetOrCooldownBlockedWork: true,
+    })
     return false
   }
 
@@ -2191,6 +2307,10 @@ function suppressReRenderedBanner(element) {
   suppression.record.hiddenCount += 1
   restorePageInteractionForCookieBanner(element)
   log('banner suppressed', suppression.record.reason)
+  updateAddislineTestReport({
+    event: 'suppressReRenderedBanner:hidden',
+    lastActionResult: 'suppressed_rerender',
+  })
   return true
 }
 
@@ -2327,33 +2447,55 @@ function clickElementForProviderModalClose(element) {
 }
 
 function decideCookieAction(container) {
+  function finish(action) {
+    if (isAddislineTestMode()) {
+      const skipReason =
+        action.reason ||
+        (
+          action.type === 'none' && !action.element
+            ? 'no_safe_action'
+            : ''
+        )
+
+      updateAddislineTestReport({
+        event: 'decideCookieAction',
+        chosenActionType: action.type,
+        chosenActionIntent: action.intent || skipReason || 'none',
+        chosenCandidateSummary: getElementTestSummary(container),
+        lastSkipReason: skipReason,
+      })
+    }
+
+    return action
+  }
+
   if (!shouldRunOnThisSite()) {
-    return {
+    return finish({
       type: 'none',
       element: null,
-    }
+    })
   }
 
   const totalReject = findBestActionByIntent(container, 'rejectAll')
 
   if (totalReject) {
-    return {
+    return finish({
       type: 'reject',
       element: totalReject,
       intent: 'rejectAll',
       container,
-    }
+    })
   }
 
   const necessaryOnly = findBestActionByIntent(container, 'essentialOnly')
 
   if (necessaryOnly) {
-    return {
+    return finish({
       type: 'reject',
       element: necessaryOnly,
       intent: 'essentialOnly',
       container,
-    }
+    })
   }
 
   const rejectCategory =
@@ -2367,66 +2509,66 @@ function decideCookieAction(container) {
       .find(Boolean)
 
   if (rejectCategory) {
-    return {
+    return finish({
       type: 'reject',
       element: rejectCategory,
       intent: getBestCookieIntent(rejectCategory, container).intent,
       container,
-    }
+    })
   }
 
   const reject = findBestActionByKeywords(container, rejectTexts)
 
   if (reject) {
-    return {
+    return finish({
       type: 'reject',
       element: reject,
       intent: getBestCookieIntent(reject, container).intent,
       container,
-    }
+    })
   }
 
   if (getNormalizedProtectionMode() === 'soft') {
-    return {
+    return finish({
       type: 'none',
       element: null,
-    }
+    })
   }
 
   const settings = findBestActionByIntent(container, 'managePreferences')
 
   if (settings) {
-    return {
+    return finish({
       type: 'settings',
       element: settings,
       container,
-    }
+    })
   }
 
   const save = findBestActionByIntent(container, 'savePreferences')
 
   if (save) {
-    return {
+    return finish({
       type: 'save',
       element: save,
       container,
-    }
+    })
   }
 
   const accept = findBestActionByIntent(container, 'acceptAll')
 
   if (accept) {
-    return {
+    return finish({
       type: 'none',
       element: null,
       reason: 'accept_all_is_last_resort',
-    }
+    })
   }
 
-  return {
+  return finish({
     type: 'none',
     element: null,
-  }
+  })
 }
 
 function getCookieActionContextText(action, context = {}) {
@@ -2668,6 +2810,16 @@ function schedulePostActionVerification(context = {}) {
 
     const state =
       getBannerVerificationState(context.container)
+
+    if (isAddislineTestMode()) {
+      updateAddislineTestReport({
+        event: 'schedulePostActionVerification',
+        lastVerificationState: getVerificationTestState(state),
+        lastActionResult: state.active
+          ? 'verification_active'
+          : 'verification_inactive',
+      })
+    }
 
     if (!state.active) {
       cleanupCookieInteractionLeftovers(state.container || context.container)
@@ -3230,6 +3382,32 @@ function canStartPreferenceTraversal(panel) {
   return true
 }
 
+function getPreferenceTraversalBlockReason(panel) {
+  if (!isAddislineTestMode()) return ''
+
+  if (preferenceTraversalActive) return 'active'
+  if (preferenceTraversalClickCount >= MAX_PREFERENCE_TRAVERSAL_CLICKS) {
+    return 'click_budget'
+  }
+
+  const signature =
+    getPreferencePanelSignature(panel)
+
+  if (!signature) return ''
+
+  const lastTraversalAt =
+    preferenceTraversalCooldowns.get(signature) || 0
+
+  if (
+    lastTraversalAt &&
+    Date.now() - lastTraversalAt < PREFERENCE_TRAVERSAL_COOLDOWN_MS
+  ) {
+    return 'cooldown'
+  }
+
+  return ''
+}
+
 function getPreferenceExpansionSignature(control, depth) {
   return normalizeMatchText(
     [
@@ -3434,20 +3612,47 @@ function traversePreferenceCenterDepth(panel, options = {}) {
   )
 
   if (depth >= maxDepth) {
+    updateAddislineTestReport({
+      event: 'traversePreferenceCenterDepth:skip',
+      traversalDepth: depth,
+      traversalClickCount: preferenceTraversalClickCount,
+      lastSkipReason: 'max_depth',
+    })
     return 0
   }
 
   if (!canUseTraversalBudget('preference traversal')) {
+    updateAddislineTestReport({
+      event: 'traversePreferenceCenterDepth:budget',
+      traversalDepth: depth,
+      traversalClickCount: preferenceTraversalClickCount,
+      lastSkipReason: 'traversal_budget',
+      budgetOrCooldownBlockedWork: true,
+    })
     return 0
   }
 
   if (Date.now() - startedAt > PREFERENCE_TRAVERSAL_BUDGET_MS) {
     log('preference traversal skipped: runtime budget')
+    updateAddislineTestReport({
+      event: 'traversePreferenceCenterDepth:runtime-budget',
+      traversalDepth: depth,
+      traversalClickCount: preferenceTraversalClickCount,
+      lastSkipReason: 'runtime_budget',
+      budgetOrCooldownBlockedWork: true,
+    })
     return 0
   }
 
   if (preferenceTraversalClickCount >= MAX_PREFERENCE_TRAVERSAL_CLICKS) {
     log('preference traversal skipped: click budget')
+    updateAddislineTestReport({
+      event: 'traversePreferenceCenterDepth:click-budget',
+      traversalDepth: depth,
+      traversalClickCount: preferenceTraversalClickCount,
+      lastSkipReason: 'click_budget',
+      budgetOrCooldownBlockedWork: true,
+    })
     return 0
   }
 
@@ -3473,6 +3678,14 @@ function traversePreferenceCenterDepth(panel, options = {}) {
 
   if (controls.length === 0) {
     log('no new controls found')
+    updateAddislineTestReport({
+      event: 'traversePreferenceCenterDepth:no-controls',
+      traversalDepth: depth,
+      traversalClickCount: preferenceTraversalClickCount,
+      expansionCount: beforeSnapshot.expansionCount,
+      toggleCount: beforeSnapshot.toggleCount,
+      lastSkipReason: 'no_new_controls',
+    })
   }
 
   controls.forEach(({ control }) => {
@@ -3493,6 +3706,17 @@ function traversePreferenceCenterDepth(panel, options = {}) {
       openedCount += 1
       preferenceTraversalClickCount += 1
     }
+  })
+
+  updateAddislineTestReport({
+    event: 'traversePreferenceCenterDepth',
+    traversalDepth: depth,
+    traversalClickCount: preferenceTraversalClickCount,
+    expansionCount: beforeSnapshot.expansionCount,
+    toggleCount: beforeSnapshot.toggleCount,
+    lastActionResult: openedCount > 0
+      ? 'expanded_section'
+      : 'no_expansion',
   })
 
   if (openedCount > 0) {
@@ -4271,6 +4495,21 @@ log('handleCookiePreferences:panel', {
   found: Boolean(panel),
   text: getText(panel).slice(0, 300),
 })
+  if (isAddislineTestMode()) {
+    const panelSnapshot =
+      panel ? getPreferenceTraversalSnapshot(panel) : null
+
+    updateAddislineTestReport({
+      event: 'handleCookiePreferences:panel',
+      preferencePanelFound: Boolean(panel),
+      toggleCount: panelSnapshot?.toggleCount || 0,
+      expansionCount: panelSnapshot?.expansionCount || 0,
+      traversalDepth: 0,
+      traversalClickCount: preferenceTraversalClickCount,
+      lastSkipReason: panel ? '' : 'preference_panel_not_found',
+    })
+  }
+
   if (!panel) {
     log('Panel de preferencias no encontrado')
     return false
@@ -4283,6 +4522,18 @@ log('handleCookiePreferences:action', {
   id: rejectAction.element?.id,
   className: getClassNameText(rejectAction.element).slice(0, 120),
 })
+  if (isAddislineTestMode()) {
+    const traversalBlockReason =
+      getPreferenceTraversalBlockReason(panel)
+
+    updateAddislineTestReport({
+      event: 'handleCookiePreferences:action',
+      chosenActionType: rejectAction.type,
+      chosenActionIntent: rejectAction.intent || rejectAction.reason || 'none',
+      lastSkipReason: traversalBlockReason || rejectAction.reason || '',
+      budgetOrCooldownBlockedWork: Boolean(traversalBlockReason),
+    })
+  }
 
   if (
     rejectAction.type === 'reject' &&
@@ -4373,6 +4624,10 @@ function shouldDeferScanForLoading() {
 function scanPage() {
   try {
     if (!shouldRunOnThisSite()) {
+      updateAddislineTestReport({
+        event: 'scanPage:stop',
+        lastSkipReason: 'site_not_enabled',
+      })
       stopObserver()
       return
     }
@@ -4380,11 +4635,23 @@ function scanPage() {
     cleanupBannerSuppressions()
 
     if (shouldDeferScanForLoading()) {
+      updateAddislineTestReport({
+        event: 'scanPage:deferred',
+        lastSkipReason: 'page_loading',
+        budgetOrCooldownBlockedWork: true,
+      })
       return
     }
 
     const candidates = findCookieBannerCandidates()
       .filter((candidate) => !suppressReRenderedBanner(candidate))
+    if (isAddislineTestMode()) {
+      updateAddislineTestReport({
+        event: 'scanPage:candidates',
+        bannerCandidateCount: candidates.length,
+        chosenCandidateSummary: getElementTestSummary(candidates[0]),
+      })
+    }
     runPassiveCookieIntelligenceForCandidates(candidates)
 
     for (const candidate of candidates) {
@@ -4393,6 +4660,12 @@ function scanPage() {
       const action = decideCookieAction(candidate)
 
       if (executeCookieAction(action)) {
+        updateAddislineTestReport({
+          event: 'scanPage:action-executed',
+          chosenActionType: action.type,
+          chosenActionIntent: action.intent || 'none',
+          lastActionResult: 'action_executed',
+        })
         return
       }
     }
@@ -4428,6 +4701,12 @@ function scanPage() {
       setLastAction('auto_reject')
       setLastError('')
       log('Rechazo directo prioritario ejecutado')
+      updateAddislineTestReport({
+        event: 'scanPage:direct-reject',
+        chosenActionType: 'reject',
+        chosenActionIntent: directRejectAction.intent || 'none',
+        lastActionResult: 'direct_reject_executed',
+      })
       return
     }
 
@@ -4442,6 +4721,12 @@ function scanPage() {
       setLastAction('settings_opened')
       setLastError('')
       log('Configuracion de cookies abierta')
+      updateAddislineTestReport({
+        event: 'scanPage:settings',
+        chosenActionType: 'settings',
+        chosenActionIntent: 'managePreferences',
+        lastActionResult: 'settings_opened',
+      })
       return
     }
 
@@ -4461,9 +4746,26 @@ function scanPage() {
     ) {
       setLastAction('no_safe_action')
       setLastError('')
+      updateAddislineTestReport({
+        event: 'scanPage:no-safe-action',
+        lastActionResult: 'no_safe_action',
+        lastSkipReason: 'no_safe_action',
+      })
+    } else {
+      updateAddislineTestReport({
+        event: 'scanPage:complete',
+        lastActionResult: hiddenCandidate
+          ? 'candidate_hidden'
+          : 'no_candidates',
+      })
     }
   } catch (error) {
     setLastError(error?.message || 'Error en content script')
+    updateAddislineTestReport({
+      event: 'scanPage:error',
+      lastActionResult: 'error',
+      lastSkipReason: truncateTestText(error?.message || 'content_script_error', 120),
+    })
   }
 }
 function getMutationNodeText(node) {
