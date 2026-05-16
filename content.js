@@ -2608,13 +2608,19 @@ function canProcessBannerAction(element) {
   return true
 }
 
-function clickElementSafely(element) {
+function clickElementSafely(element, options = {}) {
   if (
     !shouldRunOnThisSite() ||
     !element ||
     !isVisible(element) ||
-    hasUnsafeAcceptText(element) ||
-    processedActionElements.has(element)
+    hasUnsafeAcceptText(element)
+  ) {
+    return false
+  }
+
+  if (
+    processedActionElements.has(element) &&
+    !options.allowProcessedRetry
   ) {
     return false
   }
@@ -3214,7 +3220,26 @@ function attemptRejectFallbackSettingsFlow(context, state) {
     return false
   }
 
-  if (!canProcessBannerAction(settingsControl)) {
+  const settingsAlreadyProcessed =
+    processedActionElements.has(settingsControl)
+  const settingsActionSignature =
+    getBannerActionSignature(settingsControl)
+  const settingsActionOnCooldown =
+    Boolean(
+      settingsActionSignature &&
+      Date.now() - (
+        bannerActionCooldowns.get(settingsActionSignature) || 0
+      ) < BANNER_ACTION_COOLDOWN_MS
+    )
+
+  if (settingsAlreadyProcessed || settingsActionOnCooldown) {
+    cookieDebugLog('Allowing one-time fallback settings attempt', {
+      reason: settingsAlreadyProcessed
+        ? 'already_processed'
+        : 'action_cooldown',
+      control: getCookieDebugElementSummary(settingsControl),
+    })
+  } else if (!canProcessBannerAction(settingsControl)) {
     cookieDebugLog('cookie.reject_fallback.settings_unavailable', {
       hasSettingsControl: true,
       rejectedBy: ['action_cooldown_or_processed'],
@@ -3228,7 +3253,18 @@ function attemptRejectFallbackSettingsFlow(context, state) {
     rejectFallbackSettingsCooldowns.set(signature, Date.now())
   }
 
-  if (!clickElementSafely(settingsControl)) {
+  if (
+    settingsActionSignature &&
+    !settingsActionOnCooldown
+  ) {
+    bannerActionCooldowns.set(settingsActionSignature, Date.now())
+  }
+
+  if (
+    !clickElementSafely(settingsControl, {
+      allowProcessedRetry: settingsAlreadyProcessed,
+    })
+  ) {
     cookieDebugLog('cookie.reject_fallback.settings_click_failed', {
       control: getCookieDebugElementSummary(settingsControl),
     })
