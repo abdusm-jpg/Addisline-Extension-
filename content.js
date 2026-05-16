@@ -30,6 +30,7 @@ const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
 const hiddenBannerCooldowns = new Map()
 const dismissedBannerSuppressions = new Map()
+const rejectFallbackSettingsCooldowns = new Map()
 const preferenceExpansionSignatures = new Map()
 const preferenceTraversalCooldowns = new Map()
 const unstablePreferenceToggleSignatures = new Map()
@@ -40,6 +41,7 @@ const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
 const BANNER_HIDE_COOLDOWN_MS = 60000
 const BANNER_SUPPRESSION_TTL_MS = 45000
+const REJECT_FALLBACK_SETTINGS_COOLDOWN_MS = 30000
 const MAX_SUPPRESSION_HIDES = 3
 const MAX_BANNER_HIDE_ATTEMPTS = 1
 const SCAN_DEBOUNCE_MS = 800
@@ -3028,6 +3030,104 @@ function runSingleVerificationFollowUp(context, state) {
   return false
 }
 
+function getRejectFallbackSettingsSignature(context, container) {
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      context?.intent || '',
+      context?.element ? getActionText(context.element).slice(0, 120) : '',
+      container ? getBannerHideSignature(container) : '',
+    ].join(' ')
+  ).slice(0, 420)
+}
+
+function attemptRejectFallbackSettingsFlow(context, state) {
+  const modeConfig =
+    getProtectionModeConfig()
+
+  if (
+    !context ||
+    context.type !== 'reject' ||
+    !modeConfig.allowSettingsOpen ||
+    !shouldRunOnThisSite()
+  ) {
+    return false
+  }
+
+  const container =
+    state?.container ||
+    context.container ||
+    findCookiePreferencesPanel() ||
+    findCookieBannerCandidates()[0]
+
+  if (!container) {
+    return false
+  }
+
+  const signature =
+    getRejectFallbackSettingsSignature(context, container)
+  const lastFallbackAt =
+    rejectFallbackSettingsCooldowns.get(signature) || 0
+
+  if (
+    signature &&
+    Date.now() - lastFallbackAt < REJECT_FALLBACK_SETTINGS_COOLDOWN_MS
+  ) {
+    cookieDebugLog('Reject verification failed', {
+      fallbackBlocked: 'cooldown',
+      intent: context.intent || '',
+      control: getCookieDebugElementSummary(context.element),
+    })
+    return false
+  }
+
+  cookieDebugLog('Reject verification failed', {
+    fallbackBlocked: '',
+    intent: context.intent || '',
+    control: getCookieDebugElementSummary(context.element),
+  })
+
+  const settingsControl =
+    findBestActionByIntent(container, 'managePreferences') ||
+    findDirectSettingsControl()
+
+  if (
+    !settingsControl ||
+    hasUnsafeAcceptText(settingsControl) ||
+    isSensitiveActionControl(settingsControl, container) ||
+    !canProcessBannerAction(settingsControl)
+  ) {
+    cookieDebugLog('cookie.reject_fallback.settings_unavailable', {
+      hasSettingsControl: Boolean(settingsControl),
+      control: getCookieDebugElementSummary(settingsControl),
+    })
+    return false
+  }
+
+  if (signature) {
+    rejectFallbackSettingsCooldowns.set(signature, Date.now())
+  }
+
+  if (!clickElementSafely(settingsControl)) {
+    cookieDebugLog('cookie.reject_fallback.settings_click_failed', {
+      control: getCookieDebugElementSummary(settingsControl),
+    })
+    return false
+  }
+
+  cookieDebugLog('Falling back to settings flow', {
+    source: 'reject_verification',
+    control: getCookieDebugElementSummary(settingsControl),
+  })
+
+  schedulePreferencesFlow()
+  setLastAction('settings_opened')
+  setLastError('')
+  log('Configuracion de cookies abierta tras rechazo fallido')
+
+  return true
+}
+
 function schedulePostActionVerification(context = {}) {
   setTimeout(() => {
     if (!shouldRunOnThisSite()) return
@@ -3075,6 +3175,10 @@ function schedulePostActionVerification(context = {}) {
       overlayPresent: state.overlayPresent,
       scrollRestored: state.scrollRestored,
     })
+
+    if (attemptRejectFallbackSettingsFlow(context, state)) {
+      return
+    }
 
     if (runSingleVerificationFollowUp(context, state)) {
       cleanupCookieInteractionLeftovers(state.container || context.container)
