@@ -1,4 +1,5 @@
 const DEBUG = false
+const COOKIE_DEBUG = true
 
 let protectionEnabled = false
 let protectionMode = 'normal'
@@ -23,6 +24,7 @@ let pageTraversalCount = 0
 let lastObserverScanScheduledAt = 0
 let lastShadowObserveAt = 0
 let loadingScanDeferred = false
+const cookieDebugLogCooldowns = new Map()
 const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
@@ -46,6 +48,7 @@ const MAX_SCAN_BURST = 5
 const SCAN_BURST_RESET_MS = 15000
 const OBSERVER_COOLDOWN_MS = 1200
 const SHADOW_OBSERVE_COOLDOWN_MS = 5000
+const COOKIE_DEBUG_LOG_COOLDOWN_MS = 5000
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
@@ -741,6 +744,38 @@ function log(...args) {
   if (DEBUG) {
     console.log('[ADDISLINE SM]', ...args)
   }
+}
+
+function getCookieDebugElementSummary(element) {
+  if (!element) {
+    return null
+  }
+
+  return {
+    tag: element.tagName?.toLowerCase?.() || '',
+    id: element.id || '',
+    className: getClassNameText(element).slice(0, 120),
+    text: getActionText(element).slice(0, 140),
+  }
+}
+
+function cookieDebugLog(event, details = {}) {
+  if (!COOKIE_DEBUG) {
+    return
+  }
+
+  const now = Date.now()
+  const signature =
+    `${event}:${JSON.stringify(details).slice(0, 600)}`
+  const lastLoggedAt =
+    cookieDebugLogCooldowns.get(signature) || 0
+
+  if (now - lastLoggedAt < COOKIE_DEBUG_LOG_COOLDOWN_MS) {
+    return
+  }
+
+  cookieDebugLogCooldowns.set(signature, now)
+  console.log('[Addisline]', event, details)
 }
 
 function exposeContentScriptLoadedMarker() {
@@ -2588,6 +2623,12 @@ function decideCookieAction(container) {
   const totalReject = findBestActionByIntent(container, 'rejectAll')
 
   if (totalReject) {
+    cookieDebugLog('cookie.reject.detected', {
+      source: 'container_intent',
+      intent: 'rejectAll',
+      control: getCookieDebugElementSummary(totalReject),
+    })
+
     return finish({
       type: 'reject',
       element: totalReject,
@@ -2599,6 +2640,12 @@ function decideCookieAction(container) {
   const necessaryOnly = findBestActionByIntent(container, 'essentialOnly')
 
   if (necessaryOnly) {
+    cookieDebugLog('cookie.reject.detected', {
+      source: 'container_intent',
+      intent: 'essentialOnly',
+      control: getCookieDebugElementSummary(necessaryOnly),
+    })
+
     return finish({
       type: 'reject',
       element: necessaryOnly,
@@ -2618,10 +2665,19 @@ function decideCookieAction(container) {
       .find(Boolean)
 
   if (rejectCategory) {
+    const rejectCategoryIntent =
+      getBestCookieIntent(rejectCategory, container).intent
+
+    cookieDebugLog('cookie.reject.detected', {
+      source: 'category_intent',
+      intent: rejectCategoryIntent,
+      control: getCookieDebugElementSummary(rejectCategory),
+    })
+
     return finish({
       type: 'reject',
       element: rejectCategory,
-      intent: getBestCookieIntent(rejectCategory, container).intent,
+      intent: rejectCategoryIntent,
       container,
     })
   }
@@ -2629,10 +2685,19 @@ function decideCookieAction(container) {
   const reject = findBestActionByKeywords(container, rejectTexts)
 
   if (reject) {
+    const rejectIntent =
+      getBestCookieIntent(reject, container).intent
+
+    cookieDebugLog('cookie.reject.detected', {
+      source: 'legacy_keywords',
+      intent: rejectIntent,
+      control: getCookieDebugElementSummary(reject),
+    })
+
     return finish({
       type: 'reject',
       element: reject,
-      intent: getBestCookieIntent(reject, container).intent,
+      intent: rejectIntent,
       container,
     })
   }
@@ -2647,6 +2712,11 @@ function decideCookieAction(container) {
   const settings = findBestActionByIntent(container, 'managePreferences')
 
   if (settings) {
+    cookieDebugLog('cookie.settings.detected', {
+      source: 'container_intent',
+      control: getCookieDebugElementSummary(settings),
+    })
+
     return finish({
       type: 'settings',
       element: settings,
@@ -2657,6 +2727,11 @@ function decideCookieAction(container) {
   const save = findBestActionByIntent(container, 'savePreferences')
 
   if (save) {
+    cookieDebugLog('cookie.save.detected', {
+      source: 'container_intent',
+      control: getCookieDebugElementSummary(save),
+    })
+
     return finish({
       type: 'save',
       element: save,
@@ -2770,10 +2845,19 @@ function executeCookieAction(action) {
   }
 
   if (!clickElementSafely(action.element)) {
+    cookieDebugLog('cookie.action.click_failed', {
+      type: action.type,
+      intent: action.intent || '',
+      control: getCookieDebugElementSummary(action.element),
+    })
     return false
   }
 
   if (action.type === 'reject') {
+    cookieDebugLog('cookie.reject.clicked', {
+      intent: action.intent || '',
+      control: getCookieDebugElementSummary(action.element),
+    })
     incrementStat('autoRejects')
     recordStatsFromSuccessfulCookieAction(action, {
       container: action.container,
@@ -2789,6 +2873,9 @@ function executeCookieAction(action) {
   }
 
   if (action.type === 'settings') {
+    cookieDebugLog('cookie.settings.clicked', {
+      control: getCookieDebugElementSummary(action.element),
+    })
     schedulePreferencesFlow()
     setLastAction('settings_opened')
     setLastError('')
@@ -2796,6 +2883,9 @@ function executeCookieAction(action) {
   }
 
   if (action.type === 'save') {
+    cookieDebugLog('cookie.save.clicked', {
+      control: getCookieDebugElementSummary(action.element),
+    })
     schedulePostActionVerification({
       type: 'save',
       container: action.container,
@@ -2944,6 +3034,15 @@ function schedulePostActionVerification(context = {}) {
 
     const state =
       getBannerVerificationState(context.container)
+
+    cookieDebugLog('cookie.panel.verification', {
+      type: context.type || '',
+      active: state.active,
+      bannerVisible: state.bannerVisible,
+      modalPresent: state.modalPresent,
+      overlayPresent: state.overlayPresent,
+      scrollRestored: state.scrollRestored,
+    })
 
     if (isAddislineTestMode()) {
       updateAddislineTestReport({
@@ -4203,6 +4302,11 @@ function closeProviderInfoModalIfPresent() {
   const signature =
     getProviderInfoModalSignature(modal)
 
+  cookieDebugLog('cookie.provider_modal.detected', {
+    signature,
+    modal: getCookieDebugElementSummary(modal),
+  })
+
   const modalAttempts =
     providerInfoModalSignatures.get(signature) || 0
 
@@ -4212,6 +4316,11 @@ function closeProviderInfoModalIfPresent() {
   ) {
     setLastAction('provider_modal_loop_detected')
     log('Bucle de modal de proveedores detectado')
+    cookieDebugLog('cookie.provider_modal.loop_blocked', {
+      signature,
+      totalAttempts: providerInfoModalCloseAttempts,
+      modalAttempts,
+    })
 
     return {
       closed: false,
@@ -4223,6 +4332,10 @@ function closeProviderInfoModalIfPresent() {
     findProviderInfoModalCloseControl(modal)
 
   if (!closeControl) {
+    cookieDebugLog('cookie.provider_modal.close_missing', {
+      signature,
+    })
+
     return {
       closed: false,
       loop: false,
@@ -4230,6 +4343,11 @@ function closeProviderInfoModalIfPresent() {
   }
 
   if (!clickElementForProviderModalClose(closeControl)) {
+    cookieDebugLog('cookie.provider_modal.close_failed', {
+      signature,
+      control: getCookieDebugElementSummary(closeControl),
+    })
+
     return {
       closed: false,
       loop: false,
@@ -4238,6 +4356,12 @@ function closeProviderInfoModalIfPresent() {
 
   providerInfoModalCloseAttempts += 1
   providerInfoModalSignatures.set(signature, modalAttempts + 1)
+
+  cookieDebugLog('cookie.provider_modal.closed', {
+    signature,
+    attempts: providerInfoModalCloseAttempts,
+    control: getCookieDebugElementSummary(closeControl),
+  })
 
   setTimeout(() => {
     handleCookiePreferences()
@@ -4551,10 +4675,15 @@ function findFinalConfirmationControl(panel) {
     !isSensitiveActionControl(explicitSave, panel)
   ) {
     log('final confirmation found')
+    cookieDebugLog('cookie.save.detected', {
+      source: 'explicit_save',
+      control: getCookieDebugElementSummary(explicitSave),
+    })
     return explicitSave
   }
 
-  return getActionControls(panel)
+  const scoredSaveControl =
+    getActionControls(panel)
     .filter((control) =>
       isVisible(control) &&
       !hasUnsafeAcceptText(control) &&
@@ -4591,6 +4720,15 @@ function findFinalConfirmationControl(panel) {
     })
     .filter((candidate) => candidate.score >= 18)
     .sort((first, second) => second.score - first.score)[0]?.control || null
+
+  if (scoredSaveControl) {
+    cookieDebugLog('cookie.save.detected', {
+      source: 'scored_save',
+      control: getCookieDebugElementSummary(scoredSaveControl),
+    })
+  }
+
+  return scoredSaveControl
 }
 
 function saveCookiePreferences(panel, options = {}) {
@@ -4609,9 +4747,16 @@ function saveCookiePreferences(panel, options = {}) {
     canProcessBannerAction(saveControl)
   ) {
     if (!clickElementSafely(saveControl)) {
+      cookieDebugLog('cookie.save.click_failed', {
+        control: getCookieDebugElementSummary(saveControl),
+      })
       return false
     }
 
+    cookieDebugLog('cookie.save.clicked', {
+      skipVerification: Boolean(options.skipVerification),
+      control: getCookieDebugElementSummary(saveControl),
+    })
     log('Preferencias de cookies guardadas')
     if (!options.skipVerification) {
       schedulePostActionVerification({
@@ -4630,7 +4775,7 @@ function handleCookiePreferences() {
   const modeConfig =
     getProtectionModeConfig()
 
-  log('handleCookiePreferences:start', {
+  cookieDebugLog('cookie.preferences.start', {
     shouldRun: shouldRunOnThisSite(),
     mode: getNormalizedProtectionMode(),
   })
@@ -4653,10 +4798,10 @@ function handleCookiePreferences() {
   }
 
   const panel = findCookiePreferencesPanel()
-log('handleCookiePreferences:panel', {
-  found: Boolean(panel),
-  text: getText(panel).slice(0, 300),
-})
+  cookieDebugLog('cookie.preferences.panel', {
+    found: Boolean(panel),
+    panel: getCookieDebugElementSummary(panel),
+  })
   if (isAddislineTestMode()) {
     const panelSnapshot =
       panel ? getPreferenceTraversalSnapshot(panel) : null
@@ -4674,16 +4819,16 @@ log('handleCookiePreferences:panel', {
 
   if (!panel) {
     log('Panel de preferencias no encontrado')
+    cookieDebugLog('cookie.preferences.panel_missing')
     return false
   }
 
   const rejectAction = decideCookieAction(panel)
-log('handleCookiePreferences:action', {
-  type: rejectAction.type,
-  text: getActionText(rejectAction.element).slice(0, 120),
-  id: rejectAction.element?.id,
-  className: getClassNameText(rejectAction.element).slice(0, 120),
-})
+  cookieDebugLog('cookie.preferences.action', {
+    type: rejectAction.type,
+    intent: rejectAction.intent || rejectAction.reason || '',
+    control: getCookieDebugElementSummary(rejectAction.element),
+  })
   if (isAddislineTestMode()) {
     const traversalBlockReason =
       getPreferenceTraversalBlockReason(panel)
@@ -4814,6 +4959,10 @@ function scanPage() {
         !modeConfig.allowSuppression ||
         !suppressReRenderedBanner(candidate)
       )
+    cookieDebugLog('cookie.scan.candidates', {
+      count: candidates.length,
+      first: getCookieDebugElementSummary(candidates[0]),
+    })
     if (isAddislineTestMode()) {
       updateAddislineTestReport({
         event: 'scanPage:candidates',
@@ -4846,11 +4995,22 @@ function scanPage() {
         ? findDirectSafeRejectControl()
         : null
 
+    if (directRejectControl) {
+      cookieDebugLog('cookie.reject.detected', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+    }
+
     if (
       directRejectControl &&
       canProcessBannerAction(directRejectControl) &&
       clickElementSafely(directRejectControl)
     ) {
+      cookieDebugLog('cookie.reject.clicked', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
       const directRejectContainer =
         getCookieContainer(directRejectControl)
       const directRejectAction = {
@@ -4889,11 +5049,22 @@ function scanPage() {
         ? findDirectSettingsControl()
         : null
 
+    if (directSettingsControl) {
+      cookieDebugLog('cookie.settings.detected', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directSettingsControl),
+      })
+    }
+
     if (
       directSettingsControl &&
       canProcessBannerAction(directSettingsControl) &&
       clickElementSafely(directSettingsControl)
     ) {
+      cookieDebugLog('cookie.settings.clicked', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directSettingsControl),
+      })
       schedulePreferencesFlow()
       setLastAction('settings_opened')
       setLastError('')
@@ -5536,6 +5707,16 @@ function analyzePreferenceCenter(panel) {
   const categories = detectPreferenceCategories(combinedText)
   const hasVendors = detectVendorSection(combinedText)
   const hasLegitimateInterests = detectLegitimateInterestSection(combinedText)
+
+  if (hasVendors || hasLegitimateInterests || categories.length > 0) {
+    cookieDebugLog('cookie.preference_sections.detected', {
+      hasVendors,
+      hasLegitimateInterests,
+      categories,
+      toggleCount: toggles.length,
+      textLength: text.length,
+    })
+  }
 
   return {
     hasPreferences: textHasAny(combinedText, preferenceSectionTexts),
