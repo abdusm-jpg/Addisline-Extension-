@@ -754,7 +754,7 @@ function getCookieDebugElementSummary(element) {
   }
 
   return {
-    tag: element.tagName?.toLowerCase?.() || '',
+    tagName: element.tagName?.toLowerCase?.() || '',
     id: element.id || '',
     className: getClassNameText(element).slice(0, 120),
     text: getActionText(element).slice(0, 140),
@@ -2265,6 +2265,105 @@ function findDirectSettingsControl() {
     })
 }
 
+function getCookieDebugDisabledState(control) {
+  if (!control) {
+    return 'unknown'
+  }
+
+  if (
+    control.disabled ||
+    control.getAttribute?.('disabled') !== null ||
+    control.getAttribute?.('aria-disabled') === 'true'
+  ) {
+    return 'disabled'
+  }
+
+  return 'enabled'
+}
+
+function getSettingsCandidateDebugInfo(control, container) {
+  const text =
+    getActionText(control)
+  const visible =
+    isVisible(control)
+  const disabledState =
+    getCookieDebugDisabledState(control)
+  const insideNonCookieModal =
+    isInsideNonCookieModal(control)
+  const unsafeAccept =
+    hasUnsafeAcceptText(control)
+  const sensitive =
+    isSensitiveActionControl(control, container || document)
+  const dictionaryMatch =
+    textMatchesDictionaryCookieIntent(text, 'openSettings')
+  const legacyTextMatch =
+    textHasAny(text, settingsTexts)
+  const score =
+    getCookieIntentScore(control, container || document, 'managePreferences')
+
+  const rejectedBy = []
+
+  if (!visible) rejectedBy.push('not_visible')
+  if (disabledState === 'disabled') rejectedBy.push('disabled')
+  if (insideNonCookieModal) rejectedBy.push('non_cookie_modal')
+  if (unsafeAccept) rejectedBy.push('unsafe_accept')
+  if (sensitive) rejectedBy.push('sensitive_context')
+  if (!dictionaryMatch && !legacyTextMatch && score < 8) {
+    rejectedBy.push('no_settings_signal')
+  }
+
+  return {
+    text: text.slice(0, 160),
+    tagName: control?.tagName?.toLowerCase?.() || '',
+    role: control?.getAttribute?.('role') || '',
+    visibility: visible ? 'visible' : 'hidden',
+    disabledState,
+    dictionaryMatch,
+    legacyTextMatch,
+    score,
+    rejectedBy,
+  }
+}
+
+function traceRejectedSettingsCandidates(container, reason) {
+  const containerControls =
+    container ? getDirectClickableControls(container) : []
+  const documentControls =
+    getDirectClickableControls(document)
+  const controls =
+    Array.from(new Set([
+      ...containerControls,
+      ...documentControls,
+    ]))
+
+  const candidateDetails =
+    controls
+      .map((control) =>
+        getSettingsCandidateDebugInfo(control, container)
+      )
+      .filter((candidate) =>
+        candidate.dictionaryMatch ||
+        candidate.legacyTextMatch ||
+        candidate.score > 0 ||
+        textHasAny(candidate.text, ['opciones', 'options', 'choices'])
+      )
+      .slice(0, 12)
+
+  cookieDebugLog('cookie.settings.candidate_extraction', {
+    reason,
+    containerControls: containerControls.length,
+    documentControls: documentControls.length,
+    tracedCandidates: candidateDetails.length,
+  })
+
+  if (candidateDetails.length > 0) {
+    cookieDebugLog('cookie.settings.rejected_candidates', {
+      reason,
+      candidates: candidateDetails,
+    })
+  }
+}
+
 function getBannerActionSignature(element) {
   const container =
     getCookieContainer(element) ||
@@ -3091,16 +3190,37 @@ function attemptRejectFallbackSettingsFlow(context, state) {
     findBestActionByIntent(container, 'managePreferences') ||
     findDirectSettingsControl()
 
-  if (
-    !settingsControl ||
-    hasUnsafeAcceptText(settingsControl) ||
-    isSensitiveActionControl(settingsControl, container) ||
-    !canProcessBannerAction(settingsControl)
-  ) {
+  const settingsRejectedBy = []
+
+  if (!settingsControl) {
+    settingsRejectedBy.push('not_found')
+  } else {
+    if (hasUnsafeAcceptText(settingsControl)) {
+      settingsRejectedBy.push('unsafe_accept')
+    }
+
+    if (isSensitiveActionControl(settingsControl, container)) {
+      settingsRejectedBy.push('sensitive_context')
+    }
+  }
+
+  if (settingsRejectedBy.length > 0) {
     cookieDebugLog('cookie.reject_fallback.settings_unavailable', {
       hasSettingsControl: Boolean(settingsControl),
+      rejectedBy: settingsRejectedBy,
       control: getCookieDebugElementSummary(settingsControl),
     })
+    traceRejectedSettingsCandidates(container, settingsRejectedBy.join(','))
+    return false
+  }
+
+  if (!canProcessBannerAction(settingsControl)) {
+    cookieDebugLog('cookie.reject_fallback.settings_unavailable', {
+      hasSettingsControl: true,
+      rejectedBy: ['action_cooldown_or_processed'],
+      control: getCookieDebugElementSummary(settingsControl),
+    })
+    traceRejectedSettingsCandidates(container, 'action_cooldown_or_processed')
     return false
   }
 
