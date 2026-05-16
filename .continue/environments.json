@@ -1,0 +1,7 @@
+[
+  {
+    "install": "echo 'No dependencies required for this browser extension'",
+    "start": "echo 'Load this extension in Chrome: chrome://extensions/ (enable Developer Mode and click Load Unpacked)'",
+    "resourceSize": "small"
+  }
+]
