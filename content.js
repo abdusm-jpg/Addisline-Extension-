@@ -1285,6 +1285,21 @@ function textHasAny(text, values) {
   )
 }
 
+function textMatchesDictionaryCookieIntent(text, intentName) {
+  const matcher =
+    globalThis?.AddislineCookieIntentDictionary?.textMatchesCookieIntent
+
+  if (typeof matcher !== 'function') {
+    return false
+  }
+
+  try {
+    return matcher(text, intentName) === true
+  } catch {
+    return false
+  }
+}
+
 function querySelectorAllDeep(selector, root = document) {
   const results = []
   const visitedRoots = new WeakSet()
@@ -2119,6 +2134,7 @@ function hasDirectSafeRejectSignal(element) {
   const idText = element.id || ''
 
   if (
+    textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
     textHasAny(actionText, rejectTexts) ||
     textHasAny(actionText, totalRejectTexts) ||
     textHasAny(classText, directSafeRejectClassSignals) ||
@@ -2133,6 +2149,10 @@ function hasDirectSafeRejectSignal(element) {
 function hasDirectSettingsSignal(element) {
   if (!element || hasUnsafeAcceptText(element)) {
     return false
+  }
+
+  if (textMatchesDictionaryCookieIntent(getActionText(element), 'openSettings')) {
+    return true
   }
 
   return getCookieIntentScore(element, null, 'managePreferences') >= 8
@@ -2180,6 +2200,7 @@ function findDirectSafeRejectControl() {
       const actionText = getActionText(control)
 
       if (
+        textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
         textHasAny(actionText, rejectTexts) ||
         textHasAny(actionText, totalRejectTexts)
       ) {
@@ -3631,7 +3652,9 @@ function isSafePreferenceExpansionControl(control, panel, depth) {
 
   if (
     textHasAny(unsafeText, unsafePreferenceExpansionTexts) ||
+    textMatchesDictionaryCookieIntent(actionText, 'savePreferences') ||
     textHasAny(actionText, savePreferenceTexts) ||
+    textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
     textHasAny(actionText, totalRejectTexts) ||
     textHasAny(actionText, rejectTexts) ||
     textHasAny(actionText, necessaryOnlyTexts)
@@ -4553,7 +4576,10 @@ function findFinalConfirmationControl(panel) {
       let score =
         getCookieIntentScore(control, panel, 'savePreferences')
 
-      if (textHasAny(actionText, savePreferenceTexts)) score += 30
+      if (
+        textMatchesDictionaryCookieIntent(actionText, 'savePreferences') ||
+        textHasAny(actionText, savePreferenceTexts)
+      ) score += 30
       if (textHasAny(contextText, ['selected', 'selection', 'choices', 'preferences'])) score += 12
       if (textHasAny(actionText, ['continue', 'next', 'done', 'finish'])) score += 4
       if (textHasAny(actionText, unsafeAcceptTexts)) score -= 40

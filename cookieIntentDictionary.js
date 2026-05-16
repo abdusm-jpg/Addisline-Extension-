@@ -1,11 +1,9 @@
 /*
  * Cookie consent intent vocabulary for Addisline.
  *
- * This file is intentionally isolated from content.js for now. The current
- * Manifest V3 content script only injects content.js, so wiring this module in
- * would require a manifest/load-order change or a safe bundling step. Until
- * then, content.js behavior remains unchanged and can adopt these helpers when
- * the Cookie Intelligence Layer is integrated.
+ * This file is injected before content.js by manifest.json. content.js reads
+ * the helpers defensively through window.AddislineCookieIntentDictionary so the
+ * extension can continue using its legacy checks if this dictionary is absent.
  *
  * Legal boundary: this dictionary is only for recognizing legitimate cookie
  * consent choices. It must not be used to bypass paywalls, login walls,
