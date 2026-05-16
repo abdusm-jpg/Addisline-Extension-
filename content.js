@@ -25,6 +25,7 @@ let lastObserverScanScheduledAt = 0
 let lastShadowObserveAt = 0
 let loadingScanDeferred = false
 const cookieDebugLogCooldowns = new Map()
+const loggedCMPFingerprints = new Set()
 const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
@@ -778,6 +779,44 @@ function cookieDebugLog(event, details = {}) {
 
   cookieDebugLogCooldowns.set(signature, now)
   console.log('[Addisline]', event, details)
+}
+
+function runCMPFingerprintDebugDetection(root = document) {
+  const detector =
+    globalThis?.AddislineCMPFingerprint?.detectCMPFingerprint
+
+  if (typeof detector !== 'function') {
+    return null
+  }
+
+  let fingerprint = null
+
+  try {
+    fingerprint = detector(root)
+  } catch {
+    return null
+  }
+
+  const cmpName =
+    fingerprint?.cmpName || 'unknown'
+
+  if (
+    !cmpName ||
+    cmpName === 'unknown' ||
+    loggedCMPFingerprints.has(cmpName)
+  ) {
+    return fingerprint
+  }
+
+  loggedCMPFingerprints.add(cmpName)
+  cookieDebugLog(`CMP detected: ${cmpName}`, {
+    confidence: fingerprint.confidence || 0,
+    signals: Array.isArray(fingerprint.signals)
+      ? fingerprint.signals.slice(0, 5)
+      : [],
+  })
+
+  return fingerprint
 }
 
 function exposeContentScriptLoadedMarker() {
@@ -5223,6 +5262,7 @@ function scanPage() {
       count: candidates.length,
       first: getCookieDebugElementSummary(candidates[0]),
     })
+    runCMPFingerprintDebugDetection(candidates[0] || document)
     if (isAddislineTestMode()) {
       updateAddislineTestReport({
         event: 'scanPage:candidates',
