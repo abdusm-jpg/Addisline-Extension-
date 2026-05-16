@@ -710,9 +710,41 @@ function log(...args) {
   }
 }
 
+function exposeContentScriptLoadedMarker() {
+  try {
+    window.__addislineContentScriptLoaded = true
+  } catch {
+    // Isolated worlds can hide this from the page console.
+  }
+
+  try {
+    document.documentElement.dataset.addislineContentScriptLoaded = 'true'
+  } catch {
+    // Some pages can replace or lock the root element while loading.
+  }
+}
+
+exposeContentScriptLoadedMarker()
+
 function isAddislineTestMode() {
   try {
-    return window.__ADDISLINE_TEST_MODE__ === true
+    if (window.__ADDISLINE_TEST_MODE__ === true) {
+      return true
+    }
+  } catch {
+    // Page-level globals can be inaccessible across isolated worlds.
+  }
+
+  try {
+    if (localStorage.getItem('ADDISLINE_TEST_MODE') === 'true') {
+      return true
+    }
+  } catch {
+    // Storage can be blocked on some pages.
+  }
+
+  try {
+    return document.documentElement.dataset.addislineTestMode === 'true'
   } catch {
     return false
   }
