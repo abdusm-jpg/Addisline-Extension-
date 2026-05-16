@@ -671,6 +671,39 @@ const COOKIE_ACTION_PRIORITY = [
   'acceptAll',
 ]
 
+const PROTECTION_MODE_CONFIGS = {
+  soft: {
+    allowAutoReject: false,
+    allowSettingsOpen: false,
+    allowDeepTraversal: false,
+    allowHide: false,
+    allowSuppression: false,
+    maxTraversalDepth: 0,
+    maxTraversalClicks: 0,
+    scanAggressiveness: 'detect',
+  },
+  normal: {
+    allowAutoReject: true,
+    allowSettingsOpen: true,
+    allowDeepTraversal: true,
+    allowHide: true,
+    allowSuppression: true,
+    maxTraversalDepth: MAX_PREFERENCE_TRAVERSAL_DEPTH,
+    maxTraversalClicks: MAX_PREFERENCE_TRAVERSAL_CLICKS,
+    scanAggressiveness: 'normal',
+  },
+  strict: {
+    allowAutoReject: true,
+    allowSettingsOpen: true,
+    allowDeepTraversal: true,
+    allowHide: true,
+    allowSuppression: true,
+    maxTraversalDepth: 5,
+    maxTraversalClicks: 8,
+    scanAggressiveness: 'strict',
+  },
+}
+
 const sensitiveAreaKeywords = [
   'login',
   'log in',
@@ -1042,6 +1075,11 @@ function getNormalizedProtectionMode() {
   if (protectionMode === 'strict') return 'strict'
 
   return 'normal'
+}
+
+function getProtectionModeConfig() {
+  return PROTECTION_MODE_CONFIGS[getNormalizedProtectionMode()] ||
+    PROTECTION_MODE_CONFIGS.normal
 }
 
 async function incrementStat(statName, amount = 1) {
@@ -1748,7 +1786,7 @@ function cleanupCookieInteractionLeftovers(element) {
 function scanCookieOverlays() {
   if (
     !shouldRunOnThisSite() ||
-    getNormalizedProtectionMode() !== 'strict'
+    getProtectionModeConfig().scanAggressiveness !== 'strict'
   ) {
     return
   }
@@ -2155,7 +2193,7 @@ function findDirectSafeRejectControl() {
 function findDirectSettingsControl() {
   if (
     !shouldRunOnThisSite() ||
-    getNormalizedProtectionMode() === 'soft'
+    !getProtectionModeConfig().allowSettingsOpen
   ) {
     return null
   }
@@ -2303,6 +2341,14 @@ function getBannerSuppression(element) {
 }
 
 function suppressReRenderedBanner(element) {
+  if (!getProtectionModeConfig().allowSuppression) {
+    updateAddislineTestReport({
+      event: 'suppressReRenderedBanner:mode',
+      lastSkipReason: 'suppression_disabled_by_mode',
+    })
+    return false
+  }
+
   const suppression =
     getBannerSuppression(element)
 
@@ -2479,6 +2525,9 @@ function clickElementForProviderModalClose(element) {
 }
 
 function decideCookieAction(container) {
+  const modeConfig =
+    getProtectionModeConfig()
+
   function finish(action) {
     if (isAddislineTestMode()) {
       const skipReason =
@@ -2502,6 +2551,13 @@ function decideCookieAction(container) {
   }
 
   if (!shouldRunOnThisSite()) {
+    return finish({
+      type: 'none',
+      element: null,
+    })
+  }
+
+  if (!modeConfig.allowAutoReject) {
     return finish({
       type: 'none',
       element: null,
@@ -2560,7 +2616,7 @@ function decideCookieAction(container) {
     })
   }
 
-  if (getNormalizedProtectionMode() === 'soft') {
+  if (!modeConfig.allowSettingsOpen) {
     return finish({
       type: 'none',
       element: null,
@@ -2661,10 +2717,26 @@ function recordStatsFromSuccessfulCookieAction(action, context = {}) {
 }
 
 function executeCookieAction(action) {
+  const modeConfig =
+    getProtectionModeConfig()
+
   if (
     !shouldRunOnThisSite() ||
     !action ||
     !action.element
+  ) {
+    return false
+  }
+
+  if (
+    (
+      action.type === 'reject' &&
+      !modeConfig.allowAutoReject
+    ) ||
+    (
+      ['settings', 'save'].includes(action.type) &&
+      !modeConfig.allowSettingsOpen
+    )
   ) {
     return false
   }
@@ -2804,7 +2876,16 @@ function getBannerVerificationState(container) {
 }
 
 function runSingleVerificationFollowUp(context, state) {
-  if (!shouldRunOnThisSite() || getNormalizedProtectionMode() === 'soft') {
+  const modeConfig =
+    getProtectionModeConfig()
+
+  if (
+    !shouldRunOnThisSite() ||
+    (
+      !modeConfig.allowHide &&
+      !modeConfig.allowSettingsOpen
+    )
+  ) {
     return false
   }
 
@@ -2815,7 +2896,7 @@ function runSingleVerificationFollowUp(context, state) {
 
   if (!container) return false
 
-  if (context.type === 'save') {
+  if (context.type === 'save' && modeConfig.allowSettingsOpen) {
     const panel =
       findCookiePreferencesPanel()
 
@@ -2824,11 +2905,11 @@ function runSingleVerificationFollowUp(context, state) {
     }
   }
 
-  if (suppressReRenderedBanner(container)) {
+  if (modeConfig.allowSuppression && suppressReRenderedBanner(container)) {
     return true
   }
 
-  if (hideElement(container)) {
+  if (modeConfig.allowHide && hideElement(container)) {
     return true
   }
 
@@ -2910,7 +2991,7 @@ function runCookiePreferencesRetries() {
       if (
         completed ||
         !shouldRunOnThisSite() ||
-        getNormalizedProtectionMode() === 'soft'
+        !getProtectionModeConfig().allowSettingsOpen
       ) {
         return
       }
@@ -3379,12 +3460,20 @@ function getPreferencePanelSignature(panel) {
 }
 
 function canStartPreferenceTraversal(panel) {
+  const modeConfig =
+    getProtectionModeConfig()
+
+  if (!modeConfig.allowDeepTraversal) {
+    log('preference traversal skipped: mode')
+    return false
+  }
+
   if (preferenceTraversalActive) {
     log('preference traversal skipped: active')
     return false
   }
 
-  if (preferenceTraversalClickCount >= MAX_PREFERENCE_TRAVERSAL_CLICKS) {
+  if (preferenceTraversalClickCount >= modeConfig.maxTraversalClicks) {
     log('preference traversal skipped: click budget')
     return false
   }
@@ -3418,7 +3507,12 @@ function getPreferenceTraversalBlockReason(panel) {
   if (!isAddislineTestMode()) return ''
 
   if (preferenceTraversalActive) return 'active'
-  if (preferenceTraversalClickCount >= MAX_PREFERENCE_TRAVERSAL_CLICKS) {
+  const modeConfig =
+    getProtectionModeConfig()
+
+  if (!modeConfig.allowDeepTraversal) return 'mode'
+
+  if (preferenceTraversalClickCount >= modeConfig.maxTraversalClicks) {
     return 'click_budget'
   }
 
@@ -3628,9 +3722,12 @@ function hasPreferenceTraversalChanged(previous, next) {
 }
 
 function traversePreferenceCenterDepth(panel, options = {}) {
+  const modeConfig =
+    getProtectionModeConfig()
+
   if (
     !shouldRunOnThisSite() ||
-    getNormalizedProtectionMode() === 'soft' ||
+    !modeConfig.allowDeepTraversal ||
     !panel
   ) {
     return 0
@@ -3639,8 +3736,8 @@ function traversePreferenceCenterDepth(panel, options = {}) {
   const depth = Math.max(0, options.depth || 0)
   const startedAt = options.startedAt || Date.now()
   const maxDepth = Math.min(
-    MAX_PREFERENCE_TRAVERSAL_DEPTH,
-    Math.max(1, options.maxDepth || MAX_PREFERENCE_TRAVERSAL_DEPTH)
+    modeConfig.maxTraversalDepth,
+    Math.max(1, options.maxDepth || modeConfig.maxTraversalDepth)
   )
 
   if (depth >= maxDepth) {
@@ -3676,7 +3773,7 @@ function traversePreferenceCenterDepth(panel, options = {}) {
     return 0
   }
 
-  if (preferenceTraversalClickCount >= MAX_PREFERENCE_TRAVERSAL_CLICKS) {
+  if (preferenceTraversalClickCount >= modeConfig.maxTraversalClicks) {
     log('preference traversal skipped: click budget')
     updateAddislineTestReport({
       event: 'traversePreferenceCenterDepth:click-budget',
@@ -3727,7 +3824,7 @@ function traversePreferenceCenterDepth(panel, options = {}) {
       getPreferenceExpansionSignature(control, depth)
 
     if (
-      preferenceTraversalClickCount < MAX_PREFERENCE_TRAVERSAL_CLICKS &&
+      preferenceTraversalClickCount < modeConfig.maxTraversalClicks &&
       canProcessBannerAction(control) &&
       clickElementSafely(control)
     ) {
@@ -3785,7 +3882,7 @@ function traversePreferenceCenterDepth(panel, options = {}) {
 function openPreferenceSections(panel) {
   if (
     !shouldRunOnThisSite() ||
-    getNormalizedProtectionMode() === 'soft' ||
+    !getProtectionModeConfig().allowDeepTraversal ||
     !panel
   ) {
     return 0
@@ -4062,7 +4159,7 @@ function findProviderInfoModal() {
 function closeProviderInfoModalIfPresent() {
   if (
     !shouldRunOnThisSite() ||
-    getNormalizedProtectionMode() === 'soft'
+    !getProtectionModeConfig().allowSettingsOpen
   ) {
     return {
       closed: false,
@@ -4291,7 +4388,7 @@ function scheduleTogglePersistenceVerification(panel, controls) {
 function disableOptionalPreferenceControls(panel) {
   if (
     !shouldRunOnThisSite() ||
-    getNormalizedProtectionMode() === 'soft' ||
+    !getProtectionModeConfig().allowSettingsOpen ||
     !panel
   ) {
     return 0
@@ -4471,6 +4568,10 @@ function findFinalConfirmationControl(panel) {
 }
 
 function saveCookiePreferences(panel, options = {}) {
+  if (!getProtectionModeConfig().allowSettingsOpen) {
+    return false
+  }
+
   const saveControl =
     findFinalConfirmationControl(panel)
 
@@ -4500,13 +4601,16 @@ function saveCookiePreferences(panel, options = {}) {
 }
 
 function handleCookiePreferences() {
+  const modeConfig =
+    getProtectionModeConfig()
+
   log('handleCookiePreferences:start', {
     shouldRun: shouldRunOnThisSite(),
     mode: getNormalizedProtectionMode(),
   })
   if (
     !shouldRunOnThisSite() ||
-    getNormalizedProtectionMode() === 'soft'
+    !modeConfig.allowSettingsOpen
   ) {
     return false
   }
@@ -4575,9 +4679,10 @@ log('handleCookiePreferences:action', {
   }
 
   const openedSections =
+    modeConfig.allowDeepTraversal &&
     canStartPreferenceTraversal(panel)
       ? traversePreferenceCenterDepth(panel, {
-          maxDepth: MAX_PREFERENCE_TRAVERSAL_DEPTH,
+          maxDepth: modeConfig.maxTraversalDepth,
           startedAt: Date.now(),
         })
       : 0
@@ -4612,7 +4717,7 @@ log('handleCookiePreferences:action', {
 
 function hideElement(element) {
   if (!shouldRunOnThisSite()) return false
-  if (getNormalizedProtectionMode() === 'soft') return false
+  if (!getProtectionModeConfig().allowHide) return false
   if (!isSafeToHide(element)) return false
   if (!canHideCookieBanner(element)) {
     setLastAction('banner_hide_loop_blocked')
@@ -4655,6 +4760,9 @@ function shouldDeferScanForLoading() {
 
 function scanPage() {
   try {
+    const modeConfig =
+      getProtectionModeConfig()
+
     if (!shouldRunOnThisSite()) {
       updateAddislineTestReport({
         event: 'scanPage:stop',
@@ -4676,7 +4784,10 @@ function scanPage() {
     }
 
     const candidates = findCookieBannerCandidates()
-      .filter((candidate) => !suppressReRenderedBanner(candidate))
+      .filter((candidate) =>
+        !modeConfig.allowSuppression ||
+        !suppressReRenderedBanner(candidate)
+      )
     if (isAddislineTestMode()) {
       updateAddislineTestReport({
         event: 'scanPage:candidates',
@@ -4686,23 +4797,28 @@ function scanPage() {
     }
     runPassiveCookieIntelligenceForCandidates(candidates)
 
-    for (const candidate of candidates) {
-      if (!isPotentialCookieContainer(candidate)) continue
+    if (modeConfig.allowAutoReject) {
+      for (const candidate of candidates) {
+        if (!isPotentialCookieContainer(candidate)) continue
 
-      const action = decideCookieAction(candidate)
+        const action = decideCookieAction(candidate)
 
-      if (executeCookieAction(action)) {
-        updateAddislineTestReport({
-          event: 'scanPage:action-executed',
-          chosenActionType: action.type,
-          chosenActionIntent: action.intent || 'none',
-          lastActionResult: 'action_executed',
-        })
-        return
+        if (executeCookieAction(action)) {
+          updateAddislineTestReport({
+            event: 'scanPage:action-executed',
+            chosenActionType: action.type,
+            chosenActionIntent: action.intent || 'none',
+            lastActionResult: 'action_executed',
+          })
+          return
+        }
       }
     }
 
-    const directRejectControl = findDirectSafeRejectControl()
+    const directRejectControl =
+      modeConfig.allowAutoReject
+        ? findDirectSafeRejectControl()
+        : null
 
     if (
       directRejectControl &&
@@ -4742,7 +4858,10 @@ function scanPage() {
       return
     }
 
-    const directSettingsControl = findDirectSettingsControl()
+    const directSettingsControl =
+      modeConfig.allowSettingsOpen
+        ? findDirectSettingsControl()
+        : null
 
     if (
       directSettingsControl &&
@@ -4764,13 +4883,17 @@ function scanPage() {
 
     let hiddenCandidate = false
 
-    for (const candidate of candidates) {
-      if (hideElement(candidate)) {
-        hiddenCandidate = true
+    if (modeConfig.allowHide) {
+      for (const candidate of candidates) {
+        if (hideElement(candidate)) {
+          hiddenCandidate = true
+        }
       }
     }
 
-    scanCookieOverlays()
+    if (modeConfig.scanAggressiveness === 'strict') {
+      scanCookieOverlays()
+    }
 
     if (
       candidates.length > 0 &&
