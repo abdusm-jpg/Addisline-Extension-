@@ -18,10 +18,16 @@ let statsUpdateQueue = Promise.resolve()
 let activeCookieContainer = null
 let preferenceTraversalClickCount = 0
 let preferenceTraversalActive = false
+let pageActionCount = 0
+let pageTraversalCount = 0
+let lastObserverScanScheduledAt = 0
+let lastShadowObserveAt = 0
+let loadingScanDeferred = false
 const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
 const hiddenBannerCooldowns = new Map()
+const dismissedBannerSuppressions = new Map()
 const preferenceExpansionSignatures = new Map()
 const preferenceTraversalCooldowns = new Map()
 const observedShadowRoots = new WeakSet()
@@ -30,11 +36,18 @@ const STATS_KEY = 'stats'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
 const BANNER_HIDE_COOLDOWN_MS = 60000
+const BANNER_SUPPRESSION_TTL_MS = 45000
+const MAX_SUPPRESSION_HIDES = 3
 const MAX_BANNER_HIDE_ATTEMPTS = 1
 const SCAN_DEBOUNCE_MS = 800
 const MIN_SCAN_INTERVAL_MS = 2000
 const MAX_SCAN_BURST = 5
 const SCAN_BURST_RESET_MS = 15000
+const OBSERVER_COOLDOWN_MS = 1200
+const SHADOW_OBSERVE_COOLDOWN_MS = 5000
+const PAGE_LOADING_SCAN_DELAY_MS = 1500
+const MAX_PAGE_ACTIONS = 16
+const MAX_PAGE_TRAVERSALS = 500
 const PREFERENCE_EXPANSION_TTL_MS = 60000
 const MAX_PREFERENCE_TRAVERSAL_DEPTH = 3
 const PREFERENCE_TRAVERSAL_COOLDOWN_MS = 15000
@@ -428,11 +441,16 @@ const bannerKeywords = [
 const nonCookieModalTexts = [
   'you seem to be in',
   'you are visiting from',
+  'select your language',
+  'choose your language',
+  'language selector',
   'go to spanish site',
   'spanish site',
   'change region',
   'select region',
   'choose region',
+  'region selector',
+  'country selector',
   'regional site',
   'location',
   'country',
@@ -444,6 +462,15 @@ const nonCookieModalTexts = [
   'regiÃ³n',
   'espaÃ±a',
   'spain',
+  'newsletter',
+  'sign up for our newsletter',
+  'subscribe',
+  'subscription',
+  'premium',
+  'paywall',
+  'download our app',
+  'install app',
+  'open in app',
 ]
 
 const knownCmpKeywords = [
@@ -649,6 +676,26 @@ function log(...args) {
   if (DEBUG) {
     console.log('[ADDISLINE SM]', ...args)
   }
+}
+
+function canUsePageActionBudget(reason = 'action') {
+  if (pageActionCount >= MAX_PAGE_ACTIONS) {
+    log('page action budget stopped', reason)
+    return false
+  }
+
+  pageActionCount += 1
+  return true
+}
+
+function canUseTraversalBudget(reason = 'traversal') {
+  if (pageTraversalCount >= MAX_PAGE_TRAVERSALS) {
+    log('traversal stopped by budget', reason)
+    return false
+  }
+
+  pageTraversalCount += 1
+  return true
 }
 
 function hasExtensionContext() {
@@ -1058,6 +1105,10 @@ function querySelectorAllDeep(selector, root = document) {
 
   function collect(currentRoot) {
     if (!currentRoot || visitedRoots.has(currentRoot)) {
+      return
+    }
+
+    if (!canUseTraversalBudget('querySelectorAllDeep')) {
       return
     }
 
@@ -1482,6 +1533,7 @@ function scanCookieOverlays() {
     ].join(',')
   ).forEach((overlay) => {
     if (!hasCookieBannerSignal(overlay)) return
+    if (isLikelyNonCookieModal(overlay)) return
     hideElement(overlay)
   })
 }
@@ -1923,6 +1975,121 @@ function getBannerHideSignature(element) {
   ).slice(0, 360)
 }
 
+function cleanupBannerSuppressions() {
+  const now = Date.now()
+
+  for (const [signature, record] of dismissedBannerSuppressions.entries()) {
+    if (!record || record.expiresAt <= now) {
+      dismissedBannerSuppressions.delete(signature)
+    }
+  }
+}
+
+function getCmpFingerprint(element) {
+  const signal =
+    normalizeMatchText(
+      [
+        element?.id,
+        getClassNameText(element),
+        element?.getAttribute?.('data-testid'),
+        element?.getAttribute?.('data-cmp'),
+        element?.getAttribute?.('data-consent'),
+        getDatasetText(element),
+        getText(element).slice(0, 900),
+      ].join(' ')
+    )
+
+  return knownCmpKeywords.find((keyword) =>
+    textHasPhrase(signal, keyword)
+  ) || 'generic-cmp'
+}
+
+function getBannerTextFingerprint(element) {
+  return tokenizeMatchText(getText(element).slice(0, 900))
+    .filter((token) => token.length > 2)
+    .slice(0, 32)
+    .join(' ')
+    .slice(0, 220)
+}
+
+function getBannerSuppressionSignature(element) {
+  const container =
+    getCookieContainer(element) || element
+
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      getCmpFingerprint(container),
+      container?.getAttribute?.('role'),
+      container?.id,
+      getClassNameText(container).slice(0, 140),
+      getBannerTextFingerprint(container),
+    ].join(' ')
+  ).slice(0, 520)
+}
+
+function markBannerSuppressed(element, reason = 'dismissed') {
+  if (!element) return
+
+  const signature =
+    getBannerSuppressionSignature(element)
+
+  if (!signature) return
+
+  dismissedBannerSuppressions.set(signature, {
+    expiresAt: Date.now() + BANNER_SUPPRESSION_TTL_MS,
+    hiddenCount: 0,
+    reason,
+  })
+
+  log('banner suppressed', reason, signature.slice(0, 120))
+}
+
+function getBannerSuppression(element) {
+  cleanupBannerSuppressions()
+
+  const signature =
+    getBannerSuppressionSignature(element)
+
+  if (!signature) return null
+
+  const record =
+    dismissedBannerSuppressions.get(signature)
+
+  if (!record || record.expiresAt <= Date.now()) {
+    dismissedBannerSuppressions.delete(signature)
+    return null
+  }
+
+  return {
+    signature,
+    record,
+  }
+}
+
+function suppressReRenderedBanner(element) {
+  const suppression =
+    getBannerSuppression(element)
+
+  if (!suppression) return false
+
+  if (!isSafeToHide(element)) {
+    return false
+  }
+
+  if (suppression.record.hiddenCount >= MAX_SUPPRESSION_HIDES) {
+    log('banner suppression budget reached')
+    return false
+  }
+
+  element.dataset.addislineHidden = 'true'
+  element.style.setProperty('display', 'none', 'important')
+  suppression.record.hiddenCount += 1
+  restorePageInteractionForCookieBanner(element)
+  log('banner suppressed', suppression.record.reason)
+  return true
+}
+
 function canHideCookieBanner(element) {
   const signature =
     getBannerHideSignature(element)
@@ -1990,6 +2157,10 @@ function clickElementSafely(element) {
     hasUnsafeAcceptText(element) ||
     processedActionElements.has(element)
   ) {
+    return false
+  }
+
+  if (!canUsePageActionBudget('clickElementSafely')) {
     return false
   }
 
@@ -2236,6 +2407,11 @@ function executeCookieAction(action) {
     recordStatsFromSuccessfulCookieAction(action, {
       container: action.container,
     })
+    schedulePostActionVerification({
+      type: 'reject',
+      container: action.container,
+      element: action.element,
+    })
     setLastAction('auto_reject')
     setLastError('')
     log('Consentimiento rechazado de forma segura')
@@ -2249,12 +2425,173 @@ function executeCookieAction(action) {
   }
 
   if (action.type === 'save') {
+    schedulePostActionVerification({
+      type: 'save',
+      container: action.container,
+      element: action.element,
+    })
     setLastAction('preferences_saved')
     setLastError('')
     log('Preferencias de cookies guardadas')
   }
 
   return true
+}
+
+function hasActiveCookieOverlay() {
+  return Array.from(
+    document.querySelectorAll(
+      [
+        '[id*="cookie" i][class*="overlay" i]',
+        '[class*="cookie" i][class*="overlay" i]',
+        '[id*="consent" i][class*="overlay" i]',
+        '[class*="consent" i][class*="overlay" i]',
+        '[id*="cookie" i][class*="backdrop" i]',
+        '[class*="cookie" i][class*="backdrop" i]',
+        '[id*="consent" i][class*="backdrop" i]',
+        '[class*="consent" i][class*="backdrop" i]',
+      ].join(',')
+    )
+  ).some((overlay) =>
+    isVisible(overlay) &&
+    hasCookieBannerSignal(overlay) &&
+    !isLikelyNonCookieModal(overlay)
+  )
+}
+
+function getBannerVerificationState(container) {
+  const currentContainer =
+    (
+      container &&
+      document.documentElement.contains(container) &&
+      isPotentialCookieContainer(container)
+    )
+      ? container
+      : findCookieBannerCandidates()[0]
+
+  const style =
+    currentContainer ? window.getComputedStyle(currentContainer) : null
+
+  const bannerVisible =
+    Boolean(currentContainer && isVisible(currentContainer))
+
+  const ariaHidden =
+    currentContainer?.getAttribute?.('aria-hidden') === 'true'
+
+  const cssHidden =
+    Boolean(
+      style &&
+      (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        Number(style.opacity) === 0
+      )
+    )
+
+  const modalPresent =
+    Boolean(
+      currentContainer?.matches?.(
+        'dialog, [role="dialog"], [aria-modal="true"]'
+      ) ||
+      findCookiePreferencesPanel()
+    )
+
+  const overlayPresent =
+    hasActiveCookieOverlay()
+
+  const scrollRestored =
+    !hasPageScrollLock()
+
+  return {
+    active:
+      Boolean(
+        bannerVisible ||
+        (
+          modalPresent &&
+          currentContainer &&
+          !ariaHidden &&
+          !cssHidden
+        ) ||
+        overlayPresent ||
+        !scrollRestored
+      ),
+    container: currentContainer,
+    bannerVisible,
+    ariaHidden,
+    cssHidden,
+    modalPresent,
+    overlayPresent,
+    scrollRestored,
+  }
+}
+
+function runSingleVerificationFollowUp(context, state) {
+  if (!shouldRunOnThisSite() || getNormalizedProtectionMode() === 'soft') {
+    return false
+  }
+
+  const container =
+    state.container ||
+    findCookiePreferencesPanel() ||
+    findCookieBannerCandidates()[0]
+
+  if (!container) return false
+
+  if (context.type === 'save') {
+    const panel =
+      findCookiePreferencesPanel()
+
+    if (panel && saveCookiePreferences(panel, { skipVerification: true })) {
+      return true
+    }
+  }
+
+  if (suppressReRenderedBanner(container)) {
+    return true
+  }
+
+  if (hideElement(container)) {
+    return true
+  }
+
+  restorePageInteractionForCookieBanner(container)
+  return false
+}
+
+function schedulePostActionVerification(context = {}) {
+  setTimeout(() => {
+    if (!shouldRunOnThisSite()) return
+
+    const state =
+      getBannerVerificationState(context.container)
+
+    if (!state.active) {
+      if (state.container || context.container) {
+        markBannerSuppressed(
+          state.container || context.container,
+          context.type || 'verified'
+        )
+      }
+      return
+    }
+
+    log('banner verification failed', {
+      type: context.type,
+      bannerVisible: state.bannerVisible,
+      ariaHidden: state.ariaHidden,
+      cssHidden: state.cssHidden,
+      modalPresent: state.modalPresent,
+      overlayPresent: state.overlayPresent,
+      scrollRestored: state.scrollRestored,
+    })
+
+    if (runSingleVerificationFollowUp(context, state)) {
+      markBannerSuppressed(
+        state.container || context.container,
+        `${context.type || 'action'}-follow-up`
+      )
+    }
+  }, 900)
 }
 
 function schedulePreferencesFlow() {
@@ -2824,7 +3161,18 @@ function getPreferenceExpansionControlScore(control) {
     score += 35
   }
 
-  if (textHasAny(text, ['details', 'more options', 'more choices', 'expand', 'customize', 'customise'])) {
+  if (textHasAny(text, [
+    'details',
+    'more options',
+    'more choices',
+    'expand',
+    'customize',
+    'customise',
+    'accordion',
+    'tab',
+    'show more',
+    'view list',
+  ])) {
     score += 20
   }
 
@@ -2927,16 +3275,27 @@ function getPreferenceTraversalSnapshot(panel) {
       textLength: 0,
       toggleCount: 0,
       expansionCount: 0,
+      actionableCount: 0,
     }
   }
 
-  return {
-    textLength: getText(panel).length,
-    toggleCount: getToggleControls(panel).filter(isVisible).length,
-    expansionCount: getDirectClickableControls(panel)
+  const toggles =
+    getToggleControls(panel).filter(isVisible)
+
+  const expansions =
+    getDirectClickableControls(panel)
       .filter((control) =>
         isSafePreferenceExpansionControl(control, panel, 0)
-      ).length,
+      )
+
+  return {
+    textLength: getText(panel).length,
+    toggleCount: toggles.length,
+    expansionCount: expansions.length,
+    actionableCount:
+      toggles.filter(isToggleEnabled).length +
+      expansions.length +
+      (findBestActionByIntent(panel, 'savePreferences') ? 1 : 0),
   }
 }
 
@@ -2946,6 +3305,7 @@ function hasPreferenceTraversalChanged(previous, next) {
     !next ||
     previous.toggleCount !== next.toggleCount ||
     previous.expansionCount !== next.expansionCount ||
+    previous.actionableCount !== next.actionableCount ||
     Math.abs(previous.textLength - next.textLength) > 40
   )
 }
@@ -2967,6 +3327,10 @@ function traversePreferenceCenterDepth(panel, options = {}) {
   )
 
   if (depth >= maxDepth) {
+    return 0
+  }
+
+  if (!canUseTraversalBudget('preference traversal')) {
     return 0
   }
 
@@ -2999,6 +3363,10 @@ function traversePreferenceCenterDepth(panel, options = {}) {
       .slice(0, 1)
 
   let openedCount = 0
+
+  if (controls.length === 0) {
+    log('no new controls found')
+  }
 
   controls.forEach(({ control }) => {
     if (!shouldRunOnThisSite()) return
@@ -3042,6 +3410,8 @@ function traversePreferenceCenterDepth(panel, options = {}) {
           maxDepth,
           startedAt,
         })
+      } else {
+        log('no new controls found')
       }
     }, 450)
   }
@@ -3564,7 +3934,7 @@ function disableOptionalPreferenceControls(panel) {
   return disabledCount
 }
 
-function saveCookiePreferences(panel) {
+function saveCookiePreferences(panel, options = {}) {
   const saveControl =
     findBestActionByIntent(panel, 'savePreferences') ||
     findActionByTexts(panel, savePreferenceTexts)
@@ -3581,6 +3951,13 @@ function saveCookiePreferences(panel) {
     }
 
     log('Preferencias de cookies guardadas')
+    if (!options.skipVerification) {
+      schedulePostActionVerification({
+        type: 'save',
+        container: panel,
+        element: saveControl,
+      })
+    }
     return true
   }
 
@@ -3688,8 +4065,29 @@ function hideElement(element) {
   setLastAction('banner_hidden')
   setLastError('')
   restorePageInteractionForCookieBanner(element)
+  markBannerSuppressed(element, 'hidden')
 
   log('Banner ocultado')
+  return true
+}
+
+function shouldDeferScanForLoading() {
+  if (
+    document.readyState !== 'loading' ||
+    loadingScanDeferred ||
+    (
+      performance?.now?.() || PAGE_LOADING_SCAN_DELAY_MS
+    ) > PAGE_LOADING_SCAN_DELAY_MS
+  ) {
+    return false
+  }
+
+  loadingScanDeferred = true
+  setTimeout(() => {
+    loadingScanDeferred = false
+    scheduleScan()
+  }, PAGE_LOADING_SCAN_DELAY_MS)
+
   return true
 }
 
@@ -3700,7 +4098,14 @@ function scanPage() {
       return
     }
 
+    cleanupBannerSuppressions()
+
+    if (shouldDeferScanForLoading()) {
+      return
+    }
+
     const candidates = findCookieBannerCandidates()
+      .filter((candidate) => !suppressReRenderedBanner(candidate))
     runPassiveCookieIntelligenceForCandidates(candidates)
 
     for (const candidate of candidates) {
@@ -3735,6 +4140,11 @@ function scanPage() {
       incrementStat('autoRejects')
       recordStatsFromSuccessfulCookieAction(directRejectAction, {
         container: directRejectContainer,
+      })
+      schedulePostActionVerification({
+        type: 'reject',
+        container: directRejectContainer,
+        element: directRejectControl,
       })
       setLastAction('auto_reject')
       setLastError('')
@@ -3847,6 +4257,15 @@ function scheduleScan(mutations = null) {
 
   const now = Date.now()
 
+  if (
+    mutations &&
+    now - lastObserverScanScheduledAt < OBSERVER_COOLDOWN_MS
+  ) {
+    return
+  }
+
+  lastObserverScanScheduledAt = now
+
   if (now - lastScanAt > SCAN_BURST_RESET_MS) {
     scanBurstCount = 0
   }
@@ -3882,6 +4301,14 @@ function scheduleScan(mutations = null) {
 
 function observeOpenShadowRoots() {
   if (!observer) return
+
+  const now = Date.now()
+
+  if (now - lastShadowObserveAt < SHADOW_OBSERVE_COOLDOWN_MS) {
+    return
+  }
+
+  lastShadowObserveAt = now
 
   querySelectorAllDeep('*').forEach((element) => {
     const root = element.shadowRoot
