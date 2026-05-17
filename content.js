@@ -4926,6 +4926,38 @@ function getDeepCMPPanelDiagnostics(root) {
   const visibleClickables =
     getDirectClickableControls(safeRoot)
       .filter(isVisible)
+  const deepNavigationControls =
+    visibleClickables
+      .filter((control) => {
+        const text =
+          getActionText(control)
+
+        return (
+          !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+          (
+            textMatchesDictionaryCookieIntent(text, 'manageSettings') ||
+            textMatchesDictionaryCookieIntent(text, 'viewProviders')
+          )
+        )
+      })
+      .slice(0, 10)
+      .map((control) => ({
+        ...getCookieDebugElementSummary(control),
+        intents: [
+          textMatchesDictionaryCookieIntent(
+            getActionText(control),
+            'manageSettings'
+          )
+            ? 'manageSettings'
+            : '',
+          textMatchesDictionaryCookieIntent(
+            getActionText(control),
+            'viewProviders'
+          )
+            ? 'viewProviders'
+            : '',
+        ].filter(Boolean),
+      }))
 
   return {
     root: getCookieDebugElementSummary(root),
@@ -4934,6 +4966,8 @@ function getDeepCMPPanelDiagnostics(root) {
     roleSwitchOrCheckboxCount: roleSwitchesAndCheckboxes.length,
     checkboxInputCount: checkboxInputs.length,
     visibleClickableCount: visibleClickables.length,
+    deepNavigationControlCount: deepNavigationControls.length,
+    deepNavigationControls,
     toggleCount: getToggleControls(safeRoot).length,
   }
 }

@@ -63,6 +63,24 @@ const COOKIE_INTENT_DICTIONARY = Object.freeze({
     'gerir preferencias',
   ]),
 
+  manageSettings: Object.freeze([
+    'manage settings',
+    'manage setting',
+    'configure settings',
+    'privacy settings',
+    'consent settings',
+  ]),
+
+  viewProviders: Object.freeze([
+    'view all providers',
+    'all providers',
+    'providers',
+    'third-party providers',
+    'provider list',
+    'vendor list',
+    'partners',
+  ]),
+
   rejectAll: Object.freeze([
     'reject',
     'reject all',
