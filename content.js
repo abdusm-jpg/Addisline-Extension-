@@ -5024,6 +5024,8 @@ function getDeepCMPPanelRootCandidates() {
         '[role="tabpanel"]',
         '[class*="modal" i]',
         '[class*="overlay" i]',
+        '[class*="pm-section" i]',
+        '[class*="page-action" i]',
         '[class*="preference" i]',
         '[class*="provider" i]',
         '[class*="vendor" i]',
@@ -5034,6 +5036,7 @@ function getDeepCMPPanelRootCandidates() {
         '[id*="vendor" i]',
         '[id*="partner" i]',
         '[id*="privacy" i]',
+        '[class*="pm-main" i]',
       ].join(',')
     )
   )
@@ -5061,6 +5064,10 @@ function getDeepCMPPanelDiagnostics(root) {
   const visibleClickables =
     getDirectClickableControls(safeRoot)
       .filter(isVisible)
+  const traversalNodes =
+    getDeepCMPTraversalNodes(safeRoot)
+  const pageActionDiagnostics =
+    getDeepCMPPageActionDiagnostics(safeRoot)
   const deepNavigationControls =
     getDeepCMPNavigationCandidates(safeRoot)
       .slice(0, 10)
@@ -5079,6 +5086,9 @@ function getDeepCMPPanelDiagnostics(root) {
     roleSwitchOrCheckboxCount: roleSwitchesAndCheckboxes.length,
     checkboxInputCount: checkboxInputs.length,
     visibleClickableCount: visibleClickables.length,
+    traversalNodeCount: traversalNodes.length,
+    pageActionNodeCount: pageActionDiagnostics.length,
+    pageActionDiagnostics,
     deepNavigationControlCount: deepNavigationControls.length,
     deepNavigationControls,
     anchorDiagnostics: getDeepCMPAnchorDiagnostics(safeRoot),
@@ -5181,7 +5191,6 @@ function findNearestDeepCMPClickableParent(element, root) {
 
   while (
     current &&
-    current !== root &&
     current !== document.body &&
     current !== document.documentElement &&
     depth < 5
@@ -5193,6 +5202,10 @@ function findNearestDeepCMPClickableParent(element, root) {
       return current
     }
 
+    if (current === root) {
+      break
+    }
+
     current = current.parentElement
     depth += 1
   }
@@ -5200,29 +5213,38 @@ function findNearestDeepCMPClickableParent(element, root) {
   return null
 }
 
-function getTextBasedDeepCMPNavigationCandidates(root) {
-  const safeRoot =
-    root || document
-
+function getDeepCMPTraversalNodes(root) {
   return Array.from(
     querySelectorAllDeep(
       [
+        'button',
+        'a',
         'div',
         'span',
         'p',
         'li',
         'section',
         'article',
+        '[class*="page-action" i]',
+        '[class*="pm-section" i]',
         '[role="button"]',
         '[role="tab"]',
         '[role="link"]',
-        '[tabindex]',
-        '[onclick]',
+        '[aria-controls]',
         '[data-action]',
+        '[onclick]',
+        '[tabindex]',
       ].join(','),
-      safeRoot
+      root || document
     )
   )
+}
+
+function getTextBasedDeepCMPNavigationCandidates(root) {
+  const safeRoot =
+    root || document
+
+  return getDeepCMPTraversalNodes(safeRoot)
     .filter((element) =>
       element &&
       element !== safeRoot &&
@@ -5243,9 +5265,9 @@ function getTextBasedDeepCMPNavigationCandidates(root) {
         sourceElement: element,
         text,
         intents,
-        clickability: getDeepCMPNavigationClickabilityIndicators(control),
-      }
-    })
+      clickability: getDeepCMPNavigationClickabilityIndicators(control),
+    }
+  })
     .filter((candidate) =>
       candidate.control &&
       candidate.intents.length > 0 &&
@@ -5253,28 +5275,49 @@ function getTextBasedDeepCMPNavigationCandidates(root) {
     )
 }
 
+function getDeepCMPPageActionDiagnostics(root) {
+  return getDeepCMPTraversalNodes(root || document)
+    .filter((element) =>
+      textHasAny(getClassNameText(element), ['page action']) ||
+      normalizeMatchText(getClassNameText(element)).includes('page action')
+    )
+    .slice(0, 12)
+    .map((element) => {
+      const text =
+        getDeepCMPTextNodeCandidateText(element)
+      const intents =
+        getDeepCMPNavigationIntentsFromText(text)
+      const clickableParent =
+        findNearestDeepCMPClickableParent(element, root || document)
+      const rejectionReasons = []
+
+      if (!isVisible(element)) rejectionReasons.push('not_visible')
+      if (intents.length === 0) rejectionReasons.push('no_deep_navigation_intent')
+      if (textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll')) {
+        rejectionReasons.push('avoid_accept_all')
+      }
+      if (!clickableParent) rejectionReasons.push('no_clickable_parent')
+
+      return {
+        text: getText(element).slice(0, 180),
+        extractedText: text.slice(0, 220),
+        tagName: element.tagName?.toLowerCase?.() || '',
+        className: getClassNameText(element).slice(0, 160),
+        visibility: isVisible(element) ? 'visible' : 'hidden',
+        intents,
+        clickableParent: getCookieDebugElementSummary(clickableParent),
+        clickability:
+          getDeepCMPNavigationClickabilityIndicators(clickableParent),
+        rejectionReasons,
+      }
+    })
+}
+
 function getDeepCMPNavigationCandidates(root) {
   const safeRoot =
     root || document
 
-  const directCandidates = Array.from(
-    querySelectorAllDeep(
-      [
-        'button',
-        'a',
-        'div',
-        'span',
-        '[role="button"]',
-        '[role="tab"]',
-        '[role="link"]',
-        '[aria-controls]',
-        '[data-action]',
-        '[onclick]',
-        '[tabindex]',
-      ].join(','),
-      safeRoot
-    )
-  )
+  const directCandidates = getDeepCMPTraversalNodes(safeRoot)
     .filter((control) =>
       control &&
       control !== safeRoot &&
