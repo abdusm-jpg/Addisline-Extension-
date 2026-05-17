@@ -4952,6 +4952,7 @@ function getDeepCMPPanelDiagnostics(root) {
     deepNavigationControlCount: deepNavigationControls.length,
     deepNavigationControls,
     anchorDiagnostics: getDeepCMPAnchorDiagnostics(safeRoot),
+    deepAnchorScan: getDeepCMPAnchorScanDiagnostics(safeRoot),
     toggleCount: getToggleControls(safeRoot).length,
   }
 }
@@ -5141,6 +5142,86 @@ function getDeepCMPAnchorDiagnostics(root) {
     .slice(0, 10)
 }
 
+function getAnchorComputedVisibility(anchor) {
+  if (!anchor) return 'missing'
+
+  const style =
+    window.getComputedStyle(anchor)
+  const rect =
+    anchor.getBoundingClientRect()
+
+  if (!isVisible(anchor)) {
+    return [
+      'hidden',
+      `display:${style.display}`,
+      `visibility:${style.visibility}`,
+      `opacity:${style.opacity}`,
+      `rect:${Math.round(rect.width)}x${Math.round(rect.height)}`,
+      `offset:${anchor.offsetWidth}x${anchor.offsetHeight}`,
+    ].join(' ')
+  }
+
+  return [
+    'visible',
+    `display:${style.display}`,
+    `visibility:${style.visibility}`,
+    `opacity:${style.opacity}`,
+    `rect:${Math.round(rect.width)}x${Math.round(rect.height)}`,
+  ].join(' ')
+}
+
+function getAnchorNearbyText(anchor) {
+  return normalizeMatchText([
+    anchor?.parentElement ? getText(anchor.parentElement).slice(0, 220) : '',
+    anchor?.closest?.('li, p, div, section')
+      ? getText(anchor.closest('li, p, div, section')).slice(0, 220)
+      : '',
+  ].join(' ')).slice(0, 260)
+}
+
+function getDeepCMPAnchorScanDiagnostics(root) {
+  const anchors =
+    Array.from(querySelectorAllDeep('a', root || document))
+
+  return {
+    totalAnchorCount: anchors.length,
+    firstAnchors: anchors.slice(0, 10).map((anchor) => {
+      const extractedText =
+        getDeepCMPNavigationCandidateText(anchor)
+      const intents = [
+        textMatchesDictionaryCookieIntent(extractedText, 'manageSettings')
+          ? 'manageSettings'
+          : '',
+        textMatchesDictionaryCookieIntent(extractedText, 'viewProviders')
+          ? 'viewProviders'
+          : '',
+      ].filter(Boolean)
+      const rejectionReasons = []
+
+      if (!isVisible(anchor)) rejectionReasons.push('not_visible')
+      if (textMatchesDictionaryCookieIntent(extractedText, 'avoidAcceptAll')) {
+        rejectionReasons.push('avoid_accept_all')
+      }
+      if (intents.length === 0) rejectionReasons.push('no_deep_navigation_intent')
+      if (!hasDeepCMPNavigationClickability(anchor)) {
+        rejectionReasons.push('not_clickable')
+      }
+
+      return {
+        text: getText(anchor).slice(0, 180),
+        extractedText: extractedText.slice(0, 220),
+        nearbyText: getAnchorNearbyText(anchor),
+        href: anchor.getAttribute?.('href') || '',
+        tagName: anchor.tagName?.toLowerCase?.() || '',
+        computedVisibility: getAnchorComputedVisibility(anchor),
+        intents,
+        clickability: getDeepCMPNavigationClickabilityIndicators(anchor),
+        rejectionReasons,
+      }
+    }),
+  }
+}
+
 function getDeepCMPNavigationSignature(control, panel) {
   return normalizeMatchText(
     [
@@ -5307,6 +5388,14 @@ function traceDeepCMPPanelScanning(reason, preferredRoot = null) {
     rootCount: roots.length,
     roots: roots.map(getDeepCMPPanelDiagnostics),
   })
+
+  if (roots[0]) {
+    cookieDebugLog('deep anchor scan', {
+      reason,
+      root: getCookieDebugElementSummary(roots[0]),
+      ...getDeepCMPAnchorScanDiagnostics(roots[0]),
+    })
+  }
 
   return panel || roots[0] || null
 }
