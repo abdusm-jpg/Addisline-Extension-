@@ -2305,6 +2305,11 @@ function findDirectSettingsControl() {
       if (!isVisible(control)) return false
       if (isInsideNonCookieModal(control)) return false
       if (isSensitiveActionControl(control, document)) return false
+      if (textMatchesDictionaryCookieIntent(getActionText(control), 'openSettings')) {
+        cookieDebugLog('More Options detected', {
+          control: getCookieDebugElementSummary(control),
+        })
+      }
       return hasDirectSettingsSignal(control)
     })
 }
@@ -5021,11 +5026,113 @@ function getDeepCMPNavigationCandidateText(control) {
   ].join(' '))
 }
 
-function getDeepCMPNavigationCandidates(root) {
+function getDeepCMPTextNodeCandidateText(element) {
+  return normalizeMatchText([
+    element?.innerText,
+    element?.textContent,
+    element?.getAttribute?.('aria-label'),
+    element?.getAttribute?.('title'),
+    element?.getAttribute?.('data-action'),
+    element?.getAttribute?.('data-testid'),
+    getDatasetText(element),
+  ].join(' '))
+}
+
+function getDeepCMPNavigationIntentsFromText(text) {
+  return [
+    textMatchesDictionaryCookieIntent(text, 'manageSettings')
+      ? 'manageSettings'
+      : '',
+    textMatchesDictionaryCookieIntent(text, 'viewProviders')
+      ? 'viewProviders'
+      : '',
+  ].filter(Boolean)
+}
+
+function findNearestDeepCMPClickableParent(element, root) {
+  let current =
+    element
+  let depth = 0
+
+  while (
+    current &&
+    current !== root &&
+    current !== document.body &&
+    current !== document.documentElement &&
+    depth < 5
+  ) {
+    if (
+      isVisible(current) &&
+      hasDeepCMPNavigationClickability(current)
+    ) {
+      return current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return null
+}
+
+function getTextBasedDeepCMPNavigationCandidates(root) {
   const safeRoot =
     root || document
 
   return Array.from(
+    querySelectorAllDeep(
+      [
+        'div',
+        'span',
+        'p',
+        'li',
+        'section',
+        'article',
+        '[role="button"]',
+        '[role="tab"]',
+        '[role="link"]',
+        '[tabindex]',
+        '[onclick]',
+        '[data-action]',
+      ].join(','),
+      safeRoot
+    )
+  )
+    .filter((element) =>
+      element &&
+      element !== safeRoot &&
+      isVisible(element)
+    )
+    .map((element) => {
+      const text =
+        getDeepCMPTextNodeCandidateText(element)
+      const intents =
+        getDeepCMPNavigationIntentsFromText(text)
+      const control =
+        intents.length > 0
+          ? findNearestDeepCMPClickableParent(element, safeRoot)
+          : null
+
+      return {
+        control,
+        sourceElement: element,
+        text,
+        intents,
+        clickability: getDeepCMPNavigationClickabilityIndicators(control),
+      }
+    })
+    .filter((candidate) =>
+      candidate.control &&
+      candidate.intents.length > 0 &&
+      !textMatchesDictionaryCookieIntent(candidate.text, 'avoidAcceptAll')
+    )
+}
+
+function getDeepCMPNavigationCandidates(root) {
+  const safeRoot =
+    root || document
+
+  const directCandidates = Array.from(
     querySelectorAllDeep(
       [
         'button',
@@ -5072,6 +5179,24 @@ function getDeepCMPNavigationCandidates(root) {
       hasDeepCMPNavigationClickability(candidate.control) &&
       !textMatchesDictionaryCookieIntent(candidate.text, 'avoidAcceptAll')
     )
+
+  const textCandidates =
+    getTextBasedDeepCMPNavigationCandidates(safeRoot)
+
+  const seenControls =
+    new Set()
+
+  return [
+    ...directCandidates,
+    ...textCandidates,
+  ].filter((candidate) => {
+    if (!candidate.control || seenControls.has(candidate.control)) {
+      return false
+    }
+
+    seenControls.add(candidate.control)
+    return true
+  })
 }
 
 function getDeepCMPNavigationIntent(control, providedText = '') {
@@ -5280,6 +5405,19 @@ function attemptControlledDeepCMPNavigation(panel) {
         }
       : null,
   })
+
+  if (controls[0]) {
+    cookieDebugLog('Deep text navigation control detected', {
+      control: getCookieDebugElementSummary(controls[0]),
+      extractedText:
+        getDeepCMPNavigationCandidateText(controls[0]).slice(0, 180),
+      intents: getDeepCMPNavigationIntentsFromText(
+        getDeepCMPNavigationCandidateText(controls[0])
+      ),
+      clickability:
+        getDeepCMPNavigationClickabilityIndicators(controls[0]),
+    })
+  }
 
   if (deepCMPNavigationOpened) {
     cookieDebugLog('cookie.deep_navigation.skipped', {
