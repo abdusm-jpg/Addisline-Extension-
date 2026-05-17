@@ -24,6 +24,8 @@ let pageTraversalCount = 0
 let lastObserverScanScheduledAt = 0
 let lastShadowObserveAt = 0
 let loadingScanDeferred = false
+let deepCMPNavigationOpened = false
+let deepCMPNavigationObservationUntil = 0
 const cookieDebugLogCooldowns = new Map()
 const loggedCMPFingerprints = new Set()
 const providerInfoModalSignatures = new Map()
@@ -34,6 +36,7 @@ const dismissedBannerSuppressions = new Map()
 const rejectFallbackSettingsCooldowns = new Map()
 const preferenceExpansionSignatures = new Map()
 const preferenceTraversalCooldowns = new Map()
+const deepCMPNavigationCooldowns = new Map()
 const unstablePreferenceToggleSignatures = new Map()
 const observedShadowRoots = new WeakSet()
 
@@ -61,6 +64,8 @@ const MAX_PREFERENCE_TRAVERSAL_DEPTH = 3
 const PREFERENCE_TRAVERSAL_COOLDOWN_MS = 15000
 const PREFERENCE_TRAVERSAL_BUDGET_MS = 2500
 const MAX_PREFERENCE_TRAVERSAL_CLICKS = 4
+const DEEP_CMP_NAVIGATION_COOLDOWN_MS = 30000
+const DEEP_CMP_NAVIGATION_OBSERVATION_MS = 4500
 const PASSIVE_INTELLIGENCE_SCAN_COOLDOWN_MS = 30000
 const MUTATION_SCAN_HINT_TEXTS = [
   'cookie',
@@ -4927,19 +4932,7 @@ function getDeepCMPPanelDiagnostics(root) {
     getDirectClickableControls(safeRoot)
       .filter(isVisible)
   const deepNavigationControls =
-    visibleClickables
-      .filter((control) => {
-        const text =
-          getActionText(control)
-
-        return (
-          !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
-          (
-            textMatchesDictionaryCookieIntent(text, 'manageSettings') ||
-            textMatchesDictionaryCookieIntent(text, 'viewProviders')
-          )
-        )
-      })
+    getVisibleDeepCMPNavigationControls(safeRoot)
       .slice(0, 10)
       .map((control) => ({
         ...getCookieDebugElementSummary(control),
@@ -4970,6 +4963,132 @@ function getDeepCMPPanelDiagnostics(root) {
     deepNavigationControls,
     toggleCount: getToggleControls(safeRoot).length,
   }
+}
+
+function getVisibleDeepCMPNavigationControls(root) {
+  const safeRoot =
+    root || document
+
+  return getDirectClickableControls(safeRoot)
+    .filter((control) => {
+      if (!isVisible(control)) return false
+      if (hasUnsafeAcceptText(control)) return false
+      if (isSensitiveActionControl(control, safeRoot)) return false
+
+      const text =
+        getActionText(control)
+
+      return (
+        !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+        (
+          textMatchesDictionaryCookieIntent(text, 'manageSettings') ||
+          textMatchesDictionaryCookieIntent(text, 'viewProviders')
+        )
+      )
+    })
+}
+
+function getDeepCMPNavigationIntent(control) {
+  const text =
+    getActionText(control)
+
+  if (textMatchesDictionaryCookieIntent(text, 'manageSettings')) {
+    return 'manageSettings'
+  }
+
+  if (textMatchesDictionaryCookieIntent(text, 'viewProviders')) {
+    return 'viewProviders'
+  }
+
+  return 'unknown'
+}
+
+function getDeepCMPNavigationSignature(control, panel) {
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      getDeepCMPNavigationIntent(control),
+      getActionText(control).slice(0, 160),
+      panel ? getPreferencePanelSignature(panel) : '',
+    ].join(' ')
+  ).slice(0, 520)
+}
+
+function attemptControlledDeepCMPNavigation(panel) {
+  if (
+    !panel ||
+    !shouldRunOnThisSite() ||
+    !getProtectionModeConfig().allowSettingsOpen ||
+    Date.now() < deepCMPNavigationObservationUntil
+  ) {
+    return false
+  }
+
+  const control =
+    getVisibleDeepCMPNavigationControls(panel)
+      .find((candidate) => {
+        const signature =
+          getDeepCMPNavigationSignature(candidate, panel)
+        const lastClickedAt =
+          deepCMPNavigationCooldowns.get(signature) || 0
+
+        return (
+          signature &&
+          Date.now() - lastClickedAt >= DEEP_CMP_NAVIGATION_COOLDOWN_MS
+        )
+      })
+
+  if (!control) {
+    return false
+  }
+
+  const intent =
+    getDeepCMPNavigationIntent(control)
+  const signature =
+    getDeepCMPNavigationSignature(control, panel)
+
+  if (
+    !signature ||
+    !canProcessBannerAction(control)
+  ) {
+    return false
+  }
+
+  if (!clickElementSafely(control)) {
+    cookieDebugLog('cookie.deep_navigation.click_failed', {
+      intent,
+      control: getCookieDebugElementSummary(control),
+    })
+    return false
+  }
+
+  deepCMPNavigationCooldowns.set(signature, Date.now())
+  deepCMPNavigationOpened = true
+  deepCMPNavigationObservationUntil =
+    Date.now() + DEEP_CMP_NAVIGATION_OBSERVATION_MS
+
+  cookieDebugLog(
+    intent === 'manageSettings'
+      ? 'Opening manage settings'
+      : 'Opening providers panel',
+    {
+      intent,
+      control: getCookieDebugElementSummary(control),
+    }
+  )
+
+  setTimeout(() => {
+    const updatedPanel =
+      findCookiePreferencesPanel() || panel
+
+    cookieDebugLog('Deep panel updated', {
+      intent,
+      panel: getCookieDebugElementSummary(updatedPanel),
+    })
+    traceDeepCMPPanelScanning('deep_navigation_updated', updatedPanel)
+  }, 900)
+
+  return true
 }
 
 function traceDeepCMPPanelScanning(reason, preferredRoot = null) {
@@ -5369,6 +5488,18 @@ function handleCookiePreferences() {
     executeCookieAction(rejectAction)
   ) {
     return true
+  }
+
+  if (
+    deepCMPNavigationOpened ||
+    Date.now() < deepCMPNavigationObservationUntil
+  ) {
+    traceDeepCMPPanelScanning('deep_navigation_observation', panel)
+    return false
+  }
+
+  if (attemptControlledDeepCMPNavigation(panel)) {
+    return false
   }
 
   const openedSections =
