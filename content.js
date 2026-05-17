@@ -4932,24 +4932,14 @@ function getDeepCMPPanelDiagnostics(root) {
     getDirectClickableControls(safeRoot)
       .filter(isVisible)
   const deepNavigationControls =
-    getVisibleDeepCMPNavigationControls(safeRoot)
+    getDeepCMPNavigationCandidates(safeRoot)
       .slice(0, 10)
-      .map((control) => ({
+      .map(({ control, text, intents, clickability }) => ({
         ...getCookieDebugElementSummary(control),
-        intents: [
-          textMatchesDictionaryCookieIntent(
-            getActionText(control),
-            'manageSettings'
-          )
-            ? 'manageSettings'
-            : '',
-          textMatchesDictionaryCookieIntent(
-            getActionText(control),
-            'viewProviders'
-          )
-            ? 'viewProviders'
-            : '',
-        ].filter(Boolean),
+        extractedText: text.slice(0, 180),
+        tagName: control?.tagName?.toLowerCase?.() || '',
+        intents,
+        clickability,
       }))
 
   return {
@@ -4969,23 +4959,115 @@ function getVisibleDeepCMPNavigationControls(root) {
   const safeRoot =
     root || document
 
-  return getDirectClickableControls(safeRoot)
-    .filter((control) => {
-      if (!isVisible(control)) return false
-      if (hasUnsafeAcceptText(control)) return false
-      if (isSensitiveActionControl(control, safeRoot)) return false
-
-      const text =
-        getActionText(control)
-
-      return (
-        !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
-        (
-          textMatchesDictionaryCookieIntent(text, 'manageSettings') ||
-          textMatchesDictionaryCookieIntent(text, 'viewProviders')
-        )
+  return getDeepCMPNavigationCandidates(safeRoot)
+    .filter(({ control }) =>
+      control &&
+      isVisible(control) &&
+      !hasUnsafeAcceptText(control) &&
+      !isSensitiveActionControl(control, safeRoot) &&
+      !textMatchesDictionaryCookieIntent(
+        getActionText(control),
+        'avoidAcceptAll'
       )
+    )
+    .map(({ control }) => control)
+}
+
+function getDeepCMPNavigationClickabilityIndicators(control) {
+  const style =
+    control ? window.getComputedStyle(control) : null
+
+  return {
+    role: control?.getAttribute?.('role') || '',
+    tabIndex: control?.getAttribute?.('tabindex') || '',
+    hasOnClick: typeof control?.onclick === 'function' ||
+      Boolean(control?.getAttribute?.('onclick')),
+    hasAriaControls: Boolean(control?.getAttribute?.('aria-controls')),
+    hasDataAction: Boolean(control?.getAttribute?.('data-action')),
+    cursor: style?.cursor || '',
+  }
+}
+
+function hasDeepCMPNavigationClickability(control) {
+  const indicators =
+    getDeepCMPNavigationClickabilityIndicators(control)
+
+  return (
+    indicators.hasOnClick ||
+    indicators.hasAriaControls ||
+    indicators.hasDataAction ||
+    indicators.cursor === 'pointer' ||
+    indicators.tabIndex !== '' ||
+    ['button', 'tab', 'link'].includes(
+      normalizeMatchText(indicators.role)
+    ) ||
+    control?.matches?.('button, a')
+  )
+}
+
+function getDeepCMPNavigationCandidateText(control) {
+  return normalizeMatchText([
+    getActionText(control),
+    getText(control).slice(0, 180),
+    control?.getAttribute?.('aria-label'),
+    control?.getAttribute?.('title'),
+    control?.getAttribute?.('data-action'),
+    control?.getAttribute?.('data-testid'),
+    getDatasetText(control),
+  ].join(' '))
+}
+
+function getDeepCMPNavigationCandidates(root) {
+  const safeRoot =
+    root || document
+
+  return Array.from(
+    querySelectorAllDeep(
+      [
+        'button',
+        'a',
+        'div',
+        'span',
+        '[role="button"]',
+        '[role="tab"]',
+        '[role="link"]',
+        '[aria-controls]',
+        '[data-action]',
+        '[onclick]',
+        '[tabindex]',
+      ].join(','),
+      safeRoot
+    )
+  )
+    .filter((control) =>
+      control &&
+      control !== safeRoot &&
+      isVisible(control)
+    )
+    .map((control) => {
+      const text =
+        getDeepCMPNavigationCandidateText(control)
+      const intents = [
+        textMatchesDictionaryCookieIntent(text, 'manageSettings')
+          ? 'manageSettings'
+          : '',
+        textMatchesDictionaryCookieIntent(text, 'viewProviders')
+          ? 'viewProviders'
+          : '',
+      ].filter(Boolean)
+
+      return {
+        control,
+        text,
+        intents,
+        clickability: getDeepCMPNavigationClickabilityIndicators(control),
+      }
     })
+    .filter((candidate) =>
+      candidate.intents.length > 0 &&
+      hasDeepCMPNavigationClickability(candidate.control) &&
+      !textMatchesDictionaryCookieIntent(candidate.text, 'avoidAcceptAll')
+    )
 }
 
 function getDeepCMPNavigationIntent(control) {
@@ -5038,20 +5120,25 @@ function attemptControlledDeepCMPNavigation(panel) {
     firstControl: controls[0]
       ? {
           text: getActionText(controls[0]).slice(0, 160),
+          extractedText:
+            getDeepCMPNavigationCandidateText(controls[0]).slice(0, 180),
+          tagName: controls[0]?.tagName?.toLowerCase?.() || '',
           intents: [
             textMatchesDictionaryCookieIntent(
-              getActionText(controls[0]),
+              getDeepCMPNavigationCandidateText(controls[0]),
               'manageSettings'
             )
               ? 'manageSettings'
               : '',
             textMatchesDictionaryCookieIntent(
-              getActionText(controls[0]),
+              getDeepCMPNavigationCandidateText(controls[0]),
               'viewProviders'
             )
               ? 'viewProviders'
               : '',
           ].filter(Boolean),
+          clickability:
+            getDeepCMPNavigationClickabilityIndicators(controls[0]),
         }
       : null,
   })
