@@ -24,6 +24,8 @@ let pageTraversalCount = 0
 let lastObserverScanScheduledAt = 0
 let lastShadowObserveAt = 0
 let loadingScanDeferred = false
+let moreOptionsNavigationOpened = false
+let moreOptionsNavigationOpeningUntil = 0
 let deepCMPNavigationOpened = false
 let deepCMPNavigationObservationUntil = 0
 const cookieDebugLogCooldowns = new Map()
@@ -36,6 +38,7 @@ const dismissedBannerSuppressions = new Map()
 const rejectFallbackSettingsCooldowns = new Map()
 const preferenceExpansionSignatures = new Map()
 const preferenceTraversalCooldowns = new Map()
+const moreOptionsNavigationCooldowns = new Map()
 const deepCMPNavigationCooldowns = new Map()
 const unstablePreferenceToggleSignatures = new Map()
 const observedShadowRoots = new WeakSet()
@@ -64,6 +67,7 @@ const MAX_PREFERENCE_TRAVERSAL_DEPTH = 3
 const PREFERENCE_TRAVERSAL_COOLDOWN_MS = 15000
 const PREFERENCE_TRAVERSAL_BUDGET_MS = 2500
 const MAX_PREFERENCE_TRAVERSAL_CLICKS = 4
+const MORE_OPTIONS_NAVIGATION_COOLDOWN_MS = 30000
 const DEEP_CMP_NAVIGATION_COOLDOWN_MS = 30000
 const DEEP_CMP_NAVIGATION_OBSERVATION_MS = 4500
 const PASSIVE_INTELLIGENCE_SCAN_COOLDOWN_MS = 30000
@@ -2312,6 +2316,127 @@ function findDirectSettingsControl() {
       }
       return hasDirectSettingsSignal(control)
     })
+}
+
+function textMatchesInitialMoreOptions(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return (
+    textMatchesDictionaryCookieIntent(normalizedText, 'openSettings') ||
+    textHasPhrase(normalizedText, 'more options') ||
+    textHasPhrase(normalizedText, 'options') ||
+    textHasPhrase(normalizedText, 'privacy options')
+  )
+}
+
+function isSafeInitialMoreOptionsControl(control, container = document) {
+  if (!control || !isVisible(control)) return false
+  if (isInsideNonCookieModal(control)) return false
+  if (hasUnsafeAcceptText(control)) return false
+  if (isSensitiveActionControl(control, container)) return false
+
+  const text =
+    getActionText(control)
+
+  return (
+    !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+    textMatchesInitialMoreOptions(text)
+  )
+}
+
+function findInitialMoreOptionsControl(container = document) {
+  const controls =
+    getDirectClickableControls(container)
+
+  return controls.find((control) =>
+    isSafeInitialMoreOptionsControl(control, container)
+  ) || null
+}
+
+function getInitialMoreOptionsSignature(control, container) {
+  return normalizeMatchText(
+    [
+      getCurrentDomain(),
+      getActionText(control).slice(0, 160),
+      container ? getBannerHideSignature(container) : '',
+    ].join(' ')
+  ).slice(0, 420)
+}
+
+function attemptInitialMoreOptionsNavigation(container = document) {
+  if (
+    moreOptionsNavigationOpened ||
+    !shouldRunOnThisSite() ||
+    !getProtectionModeConfig().allowSettingsOpen
+  ) {
+    return false
+  }
+
+  const control =
+    findInitialMoreOptionsControl(container) ||
+    findInitialMoreOptionsControl(document)
+
+  if (!control) {
+    return false
+  }
+
+  const signature =
+    getInitialMoreOptionsSignature(control, container)
+  const lastClickedAt =
+    moreOptionsNavigationCooldowns.get(signature) || 0
+
+  if (
+    signature &&
+    Date.now() - lastClickedAt < MORE_OPTIONS_NAVIGATION_COOLDOWN_MS
+  ) {
+    return false
+  }
+
+  if (!canProcessBannerAction(control)) {
+    return false
+  }
+
+  cookieDebugLog('More Options detected', {
+    control: getCookieDebugElementSummary(control),
+  })
+
+  if (!clickElementSafely(control)) {
+    cookieDebugLog('cookie.more_options.click_failed', {
+      control: getCookieDebugElementSummary(control),
+    })
+    return false
+  }
+
+  if (signature) {
+    moreOptionsNavigationCooldowns.set(signature, Date.now())
+  }
+
+  moreOptionsNavigationOpened = true
+  moreOptionsNavigationOpeningUntil =
+    Date.now() + 1200
+
+  cookieDebugLog('Opening More Options', {
+    control: getCookieDebugElementSummary(control),
+  })
+
+  setTimeout(() => {
+    const panel =
+      findCookiePreferencesPanel()
+
+    cookieDebugLog('Preferences panel opened', {
+      found: Boolean(panel),
+      panel: getCookieDebugElementSummary(panel),
+    })
+
+    traceDeepCMPPanelScanning('more_options_opened', panel)
+  }, 900)
+
+  schedulePreferencesFlow()
+  setLastAction('settings_opened')
+  setLastError('')
+
+  return true
 }
 
 function getCookieDebugDisabledState(control) {
@@ -5893,6 +6018,15 @@ function handleCookiePreferences() {
     return false
   }
 
+  if (
+    moreOptionsNavigationOpened &&
+    !deepCMPNavigationOpened
+  ) {
+    traceDeepCMPPanelScanning('more_options_preferences_flow', panel)
+    attemptControlledDeepCMPNavigation(panel)
+    return false
+  }
+
   const rejectAction = decideCookieAction(panel)
   cookieDebugLog('cookie.preferences.action', {
     type: rejectAction.type,
@@ -6045,12 +6179,31 @@ function scanPage() {
       count: candidates.length,
       first: getCookieDebugElementSummary(candidates[0]),
     })
-    if (candidates.length === 0) {
-      const deepPanel =
-        traceDeepCMPPanelScanning('zero_banner_candidates')
 
-      if (deepPanel) {
-        attemptControlledDeepCMPNavigation(deepPanel)
+    if (
+      !moreOptionsNavigationOpened &&
+      modeConfig.allowSettingsOpen
+    ) {
+      const moreOptionsContainer =
+        candidates.find(Boolean) || document
+
+      if (attemptInitialMoreOptionsNavigation(moreOptionsContainer)) {
+        return
+      }
+    }
+
+    if (candidates.length === 0) {
+      if (Date.now() < moreOptionsNavigationOpeningUntil) {
+        cookieDebugLog('cookie.deep_panel.scan_skipped', {
+          reason: 'waiting_for_more_options_panel',
+        })
+      } else {
+        const deepPanel =
+          traceDeepCMPPanelScanning('zero_banner_candidates')
+
+        if (deepPanel) {
+          attemptControlledDeepCMPNavigation(deepPanel)
+        }
       }
     }
     runCMPFingerprintDebugDetection(candidates[0] || document)
