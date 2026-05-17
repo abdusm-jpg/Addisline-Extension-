@@ -4879,6 +4879,83 @@ function findCookiePreferencesPanel() {
   return candidates[0]?.element || null
 }
 
+function getDeepCMPPanelRootCandidates() {
+  return Array.from(
+    querySelectorAllDeep(
+      [
+        'dialog',
+        '[role="dialog"]',
+        '[aria-modal="true"]',
+        '[role="tabpanel"]',
+        '[class*="modal" i]',
+        '[class*="overlay" i]',
+        '[class*="preference" i]',
+        '[class*="provider" i]',
+        '[class*="vendor" i]',
+        '[class*="partner" i]',
+        '[class*="privacy" i]',
+        '[id*="preference" i]',
+        '[id*="provider" i]',
+        '[id*="vendor" i]',
+        '[id*="partner" i]',
+        '[id*="privacy" i]',
+      ].join(',')
+    )
+  )
+    .filter((element) =>
+      element &&
+      element !== document.body &&
+      element !== document.documentElement &&
+      isVisible(element)
+    )
+    .slice(0, 8)
+}
+
+function getDeepCMPPanelDiagnostics(root) {
+  const safeRoot =
+    root || document
+  const buttons =
+    querySelectorAllDeep('button, [role="button"]', safeRoot)
+  const roleSwitchesAndCheckboxes =
+    querySelectorAllDeep(
+      '[role="switch"], [role="checkbox"], [aria-checked]',
+      safeRoot
+    )
+  const checkboxInputs =
+    querySelectorAllDeep('input[type="checkbox"]', safeRoot)
+  const visibleClickables =
+    getDirectClickableControls(safeRoot)
+      .filter(isVisible)
+
+  return {
+    root: getCookieDebugElementSummary(root),
+    textLength: root ? getText(root).length : getText(document.body).length,
+    buttonCount: buttons.length,
+    roleSwitchOrCheckboxCount: roleSwitchesAndCheckboxes.length,
+    checkboxInputCount: checkboxInputs.length,
+    visibleClickableCount: visibleClickables.length,
+    toggleCount: getToggleControls(safeRoot).length,
+  }
+}
+
+function traceDeepCMPPanelScanning(reason, preferredRoot = null) {
+  const panel =
+    preferredRoot || findCookiePreferencesPanel()
+  const roots =
+    Array.from(new Set([
+      panel,
+      ...getDeepCMPPanelRootCandidates(),
+    ].filter(Boolean)))
+      .slice(0, 6)
+
+  cookieDebugLog('cookie.deep_panel.scan', {
+    reason,
+    activePanelFound: Boolean(panel),
+    rootCount: roots.length,
+    roots: roots.map(getDeepCMPPanelDiagnostics),
+  })
+}
+
 function scheduleTogglePersistenceVerification(panel, controls) {
   const trackedControls =
     Array.from(new Set(controls || []))
@@ -5212,6 +5289,7 @@ function handleCookiePreferences() {
     found: Boolean(panel),
     panel: getCookieDebugElementSummary(panel),
   })
+  traceDeepCMPPanelScanning('preferences_flow', panel)
   if (isAddislineTestMode()) {
     const panelSnapshot =
       panel ? getPreferenceTraversalSnapshot(panel) : null
@@ -5373,6 +5451,9 @@ function scanPage() {
       count: candidates.length,
       first: getCookieDebugElementSummary(candidates[0]),
     })
+    if (candidates.length === 0) {
+      traceDeepCMPPanelScanning('zero_banner_candidates')
+    }
     runCMPFingerprintDebugDetection(candidates[0] || document)
     if (isAddislineTestMode()) {
       updateAddislineTestReport({
