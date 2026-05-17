@@ -2330,16 +2330,84 @@ function textMatchesInitialMoreOptions(text) {
   )
 }
 
+function getInitialMoreOptionsControlText(control) {
+  return normalizeMatchText([
+    getActionText(control),
+    control?.innerText,
+    control?.textContent,
+    control?.getAttribute?.('title'),
+    control?.getAttribute?.('aria-label'),
+  ].join(' '))
+}
+
+function getInitialMoreOptionsCandidateDebug(control, container = document) {
+  const text =
+    getInitialMoreOptionsControlText(control)
+  const visibility =
+    isVisible(control)
+  const disabledState =
+    getCookieDebugDisabledState(control)
+  const avoidAcceptAll =
+    textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll')
+  const matchedIntent =
+    textMatchesInitialMoreOptions(text)
+  const nearestContainer =
+    getCookieContainer(control) || container
+  const sensitive =
+    isSensitiveActionControl(control, nearestContainer)
+  const signature =
+    getInitialMoreOptionsSignature(control, nearestContainer)
+  const actionCooldown =
+    Boolean(
+      signature &&
+      Date.now() - (
+        bannerActionCooldowns.get(signature) || 0
+      ) < BANNER_ACTION_COOLDOWN_MS
+    )
+  const processed =
+    processedActionElements.has(control)
+  const rejectionReasons = []
+
+  if (!visibility) rejectionReasons.push('not_visible')
+  if (disabledState === 'disabled') rejectionReasons.push('disabled')
+  if (isInsideNonCookieModal(control)) rejectionReasons.push('non_cookie_modal')
+  if (hasUnsafeAcceptText(control)) rejectionReasons.push('unsafe_accept')
+  if (avoidAcceptAll) rejectionReasons.push('avoid_accept_all')
+  if (!matchedIntent) rejectionReasons.push('no_open_settings_intent')
+  if (sensitive) rejectionReasons.push('sensitive_context')
+  if (actionCooldown) rejectionReasons.push('action_cooldown')
+  if (processed) rejectionReasons.push('processed')
+
+  return {
+    text: text.slice(0, 180),
+    tagName: control?.tagName?.toLowerCase?.() || '',
+    title: control?.getAttribute?.('title') || '',
+    ariaLabel: control?.getAttribute?.('aria-label') || '',
+    visibility: visibility ? 'visible' : 'hidden',
+    disabledState,
+    matchedIntent,
+    avoidAcceptAll,
+    actionCooldown,
+    processed,
+    rejectionReasons,
+    control: getCookieDebugElementSummary(control),
+  }
+}
+
 function isSafeInitialMoreOptionsControl(control, container = document) {
-  if (!control || !isVisible(control)) return false
-  if (isInsideNonCookieModal(control)) return false
-  if (hasUnsafeAcceptText(control)) return false
-  if (isSensitiveActionControl(control, container)) return false
+  if (!control) return false
 
   const text =
-    getActionText(control)
+    getInitialMoreOptionsControlText(control)
+  const nearestContainer =
+    getCookieContainer(control) || container
 
   return (
+    isVisible(control) &&
+    getCookieDebugDisabledState(control) !== 'disabled' &&
+    !isInsideNonCookieModal(control) &&
+    !hasUnsafeAcceptText(control) &&
+    !isSensitiveActionControl(control, nearestContainer) &&
     !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
     textMatchesInitialMoreOptions(text)
   )
@@ -2348,6 +2416,24 @@ function isSafeInitialMoreOptionsControl(control, container = document) {
 function findInitialMoreOptionsControl(container = document) {
   const controls =
     getDirectClickableControls(container)
+  const matchingCandidates =
+    controls
+      .filter((control) =>
+        textMatchesInitialMoreOptions(
+          getInitialMoreOptionsControlText(control)
+        )
+      )
+      .slice(0, 8)
+      .map((control) =>
+        getInitialMoreOptionsCandidateDebug(control, container)
+      )
+
+  if (matchingCandidates.length > 0) {
+    cookieDebugLog('cookie.more_options.candidates', {
+      count: matchingCandidates.length,
+      candidates: matchingCandidates,
+    })
+  }
 
   return controls.find((control) =>
     isSafeInitialMoreOptionsControl(control, container)
@@ -2390,10 +2476,22 @@ function attemptInitialMoreOptionsNavigation(container = document) {
     signature &&
     Date.now() - lastClickedAt < MORE_OPTIONS_NAVIGATION_COOLDOWN_MS
   ) {
+    cookieDebugLog('cookie.more_options.skipped', {
+      reason: 'more_options_cooldown',
+      control: getInitialMoreOptionsCandidateDebug(control, container),
+    })
     return false
   }
 
-  if (!canProcessBannerAction(control)) {
+  const canProcess =
+    canProcessBannerAction(control)
+
+  cookieDebugLog('cookie.more_options.action_gate', {
+    canProcess,
+    control: getInitialMoreOptionsCandidateDebug(control, container),
+  })
+
+  if (!canProcess) {
     return false
   }
 
@@ -2401,7 +2499,15 @@ function attemptInitialMoreOptionsNavigation(container = document) {
     control: getCookieDebugElementSummary(control),
   })
 
-  if (!clickElementSafely(control)) {
+  const clicked =
+    clickElementSafely(control)
+
+  cookieDebugLog('cookie.more_options.click_result', {
+    clicked,
+    control: getInitialMoreOptionsCandidateDebug(control, container),
+  })
+
+  if (!clicked) {
     cookieDebugLog('cookie.more_options.click_failed', {
       control: getCookieDebugElementSummary(control),
     })
