@@ -5117,7 +5117,101 @@ function findCookiePreferencesPanel() {
       (first.toggleCount + (first.cmpSignal ? 2 : 0))
     )
 
-  return candidates[0]?.element || null
+  const confirmedCandidate =
+    candidates.find((candidate) =>
+      isConfirmedPreferencesPanel(candidate.element)
+    )
+
+  if (confirmedCandidate) {
+    cookieDebugLog('Preferences panel confirmed', {
+      panel: getCookieDebugElementSummary(confirmedCandidate.element),
+      signals: getPanelModeSignals(confirmedCandidate.element),
+    })
+    return confirmedCandidate.element
+  }
+
+  if (candidates[0]) {
+    cookieDebugLog('Initial consent banner detected', {
+      panelCandidate: getCookieDebugElementSummary(candidates[0].element),
+      signals: getPanelModeSignals(candidates[0].element),
+    })
+  }
+
+  return null
+}
+
+function getPanelModeSignals(element) {
+  if (!element) {
+    return {
+      hasMoreOptions: false,
+      hasManageSettings: false,
+      hasProviders: false,
+      hasSave: false,
+      toggleCount: 0,
+    }
+  }
+
+  const actionText =
+    getElementActionText(element)
+  const text =
+    normalizeMatchText([
+      getText(element),
+      actionText,
+    ].join(' '))
+  const controls =
+    getDirectClickableControls(element)
+  const hasMoreOptions =
+    controls.some((control) =>
+      textMatchesInitialMoreOptions(
+        getInitialMoreOptionsControlText(control)
+      )
+    )
+  const deepNavigationCandidates =
+    getDeepCMPNavigationCandidates(element)
+  const hasManageSettings =
+    deepNavigationCandidates.some((candidate) =>
+      candidate.intents.includes('manageSettings')
+    )
+  const hasProviders =
+    deepNavigationCandidates.some((candidate) =>
+      candidate.intents.includes('viewProviders')
+    )
+  const hasSave =
+    textMatchesDictionaryCookieIntent(text, 'savePreferences') ||
+    textHasAny(text, savePreferenceTexts)
+  const toggleCount =
+    getToggleControls(element).filter(isVisible).length
+
+  return {
+    hasMoreOptions,
+    hasManageSettings,
+    hasProviders,
+    hasSave,
+    toggleCount,
+    deepNavigationControlCount: deepNavigationCandidates.length,
+  }
+}
+
+function isConfirmedPreferencesPanel(element) {
+  const signals =
+    getPanelModeSignals(element)
+
+  if (
+    signals.hasMoreOptions &&
+    !signals.hasManageSettings &&
+    !signals.hasProviders &&
+    !signals.hasSave &&
+    signals.toggleCount === 0
+  ) {
+    return false
+  }
+
+  return (
+    signals.hasManageSettings ||
+    signals.hasProviders ||
+    signals.hasSave ||
+    signals.toggleCount > 0
+  )
 }
 
 function getDeepCMPPanelRootCandidates() {
@@ -5809,7 +5903,7 @@ function traceDeepCMPPanelScanning(reason, preferredRoot = null) {
     })
   }
 
-  return panel || roots[0] || null
+  return panel || null
 }
 
 function scheduleTogglePersistenceVerification(panel, controls) {
