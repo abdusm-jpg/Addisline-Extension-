@@ -5018,15 +5018,60 @@ function attemptControlledDeepCMPNavigation(panel) {
   if (
     !panel ||
     !shouldRunOnThisSite() ||
-    !getProtectionModeConfig().allowSettingsOpen ||
-    Date.now() < deepCMPNavigationObservationUntil
+    !getProtectionModeConfig().allowSettingsOpen
   ) {
+    cookieDebugLog('cookie.deep_navigation.skipped', {
+      reason: !panel
+        ? 'no_panel'
+        : !shouldRunOnThisSite()
+          ? 'site_not_enabled'
+          : 'settings_open_disabled',
+    })
+    return false
+  }
+
+  const controls =
+    getVisibleDeepCMPNavigationControls(panel)
+
+  cookieDebugLog('cookie.deep_navigation.controls', {
+    deepNavigationControlCount: controls.length,
+    firstControl: controls[0]
+      ? {
+          text: getActionText(controls[0]).slice(0, 160),
+          intents: [
+            textMatchesDictionaryCookieIntent(
+              getActionText(controls[0]),
+              'manageSettings'
+            )
+              ? 'manageSettings'
+              : '',
+            textMatchesDictionaryCookieIntent(
+              getActionText(controls[0]),
+              'viewProviders'
+            )
+              ? 'viewProviders'
+              : '',
+          ].filter(Boolean),
+        }
+      : null,
+  })
+
+  if (deepCMPNavigationOpened) {
+    cookieDebugLog('cookie.deep_navigation.skipped', {
+      reason: 'already_opened',
+    })
+    return false
+  }
+
+  if (Date.now() < deepCMPNavigationObservationUntil) {
+    cookieDebugLog('cookie.deep_navigation.skipped', {
+      reason: 'observation_window',
+    })
     return false
   }
 
   const control =
-    getVisibleDeepCMPNavigationControls(panel)
-      .find((candidate) => {
+    controls.find((candidate) => {
         const signature =
           getDeepCMPNavigationSignature(candidate, panel)
         const lastClickedAt =
@@ -5039,6 +5084,11 @@ function attemptControlledDeepCMPNavigation(panel) {
       })
 
   if (!control) {
+    cookieDebugLog('cookie.deep_navigation.skipped', {
+      reason: controls.length > 0
+        ? 'cooldown'
+        : 'no_controls',
+    })
     return false
   }
 
@@ -5051,6 +5101,12 @@ function attemptControlledDeepCMPNavigation(panel) {
     !signature ||
     !canProcessBannerAction(control)
   ) {
+    cookieDebugLog('cookie.deep_navigation.skipped', {
+      reason: !signature
+        ? 'missing_signature'
+        : 'action_cooldown_or_processed',
+      control: getCookieDebugElementSummary(control),
+    })
     return false
   }
 
@@ -5107,6 +5163,8 @@ function traceDeepCMPPanelScanning(reason, preferredRoot = null) {
     rootCount: roots.length,
     roots: roots.map(getDeepCMPPanelDiagnostics),
   })
+
+  return panel || roots[0] || null
 }
 
 function scheduleTogglePersistenceVerification(panel, controls) {
@@ -5617,7 +5675,12 @@ function scanPage() {
       first: getCookieDebugElementSummary(candidates[0]),
     })
     if (candidates.length === 0) {
-      traceDeepCMPPanelScanning('zero_banner_candidates')
+      const deepPanel =
+        traceDeepCMPPanelScanning('zero_banner_candidates')
+
+      if (deepPanel) {
+        attemptControlledDeepCMPNavigation(deepPanel)
+      }
     }
     runCMPFingerprintDebugDetection(candidates[0] || document)
     if (isAddislineTestMode()) {
