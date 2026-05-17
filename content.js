@@ -4951,6 +4951,7 @@ function getDeepCMPPanelDiagnostics(root) {
     visibleClickableCount: visibleClickables.length,
     deepNavigationControlCount: deepNavigationControls.length,
     deepNavigationControls,
+    anchorDiagnostics: getDeepCMPAnchorDiagnostics(safeRoot),
     toggleCount: getToggleControls(safeRoot).length,
   }
 }
@@ -4960,16 +4961,12 @@ function getVisibleDeepCMPNavigationControls(root) {
     root || document
 
   return getDeepCMPNavigationCandidates(safeRoot)
-    .filter(({ control }) =>
-      control &&
-      isVisible(control) &&
-      !hasUnsafeAcceptText(control) &&
-      !isSensitiveActionControl(control, safeRoot) &&
-      !textMatchesDictionaryCookieIntent(
-        getActionText(control),
-        'avoidAcceptAll'
-      )
-    )
+    .filter(({ control, text }) => {
+      if (!control || !isVisible(control)) return false
+      if (hasUnsafeAcceptText(control)) return false
+      if (isSensitiveActionControl(control, safeRoot)) return false
+      return !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll')
+    })
     .map(({ control }) => control)
 }
 
@@ -4980,8 +4977,10 @@ function getDeepCMPNavigationClickabilityIndicators(control) {
   return {
     role: control?.getAttribute?.('role') || '',
     tabIndex: control?.getAttribute?.('tabindex') || '',
+    href: control?.getAttribute?.('href') || '',
     hasOnClick: typeof control?.onclick === 'function' ||
       Boolean(control?.getAttribute?.('onclick')),
+    hasHref: Boolean(control?.getAttribute?.('href')),
     hasAriaControls: Boolean(control?.getAttribute?.('aria-controls')),
     hasDataAction: Boolean(control?.getAttribute?.('data-action')),
     cursor: style?.cursor || '',
@@ -4994,6 +4993,7 @@ function hasDeepCMPNavigationClickability(control) {
 
   return (
     indicators.hasOnClick ||
+    indicators.hasHref ||
     indicators.hasAriaControls ||
     indicators.hasDataAction ||
     indicators.cursor === 'pointer' ||
@@ -5008,9 +5008,12 @@ function hasDeepCMPNavigationClickability(control) {
 function getDeepCMPNavigationCandidateText(control) {
   return normalizeMatchText([
     getActionText(control),
+    control?.innerText,
+    control?.textContent,
     getText(control).slice(0, 180),
     control?.getAttribute?.('aria-label'),
     control?.getAttribute?.('title'),
+    control?.getAttribute?.('href'),
     control?.getAttribute?.('data-action'),
     control?.getAttribute?.('data-testid'),
     getDatasetText(control),
@@ -5070,9 +5073,9 @@ function getDeepCMPNavigationCandidates(root) {
     )
 }
 
-function getDeepCMPNavigationIntent(control) {
+function getDeepCMPNavigationIntent(control, providedText = '') {
   const text =
-    getActionText(control)
+    providedText || getDeepCMPNavigationCandidateText(control)
 
   if (textMatchesDictionaryCookieIntent(text, 'manageSettings')) {
     return 'manageSettings'
@@ -5085,12 +5088,65 @@ function getDeepCMPNavigationIntent(control) {
   return 'unknown'
 }
 
+function getDeepCMPAnchorDiagnostics(root) {
+  return Array.from(
+    querySelectorAllDeep('a', root || document)
+  )
+    .slice(0, 20)
+    .map((anchor) => {
+      const extractedText =
+        getDeepCMPNavigationCandidateText(anchor)
+      const visibility =
+        isVisible(anchor) ? 'visible' : 'hidden'
+      const intents = [
+        textMatchesDictionaryCookieIntent(extractedText, 'manageSettings')
+          ? 'manageSettings'
+          : '',
+        textMatchesDictionaryCookieIntent(extractedText, 'viewProviders')
+          ? 'viewProviders'
+          : '',
+      ].filter(Boolean)
+      const rejectionReasons = []
+
+      if (visibility !== 'visible') rejectionReasons.push('not_visible')
+      if (textMatchesDictionaryCookieIntent(extractedText, 'avoidAcceptAll')) {
+        rejectionReasons.push('avoid_accept_all')
+      }
+      if (intents.length === 0) rejectionReasons.push('no_deep_navigation_intent')
+      if (!hasDeepCMPNavigationClickability(anchor)) {
+        rejectionReasons.push('not_clickable')
+      }
+
+      return {
+        text: getText(anchor).slice(0, 160),
+        extractedText: extractedText.slice(0, 180),
+        href: anchor.getAttribute?.('href') || '',
+        tagName: anchor.tagName?.toLowerCase?.() || '',
+        visibility,
+        intents,
+        clickability: getDeepCMPNavigationClickabilityIndicators(anchor),
+        rejectionReasons,
+      }
+    })
+    .filter((diagnostic) =>
+      diagnostic.intents.length > 0 ||
+      textHasAny(diagnostic.extractedText, [
+        'manage',
+        'settings',
+        'providers',
+        'vendors',
+        'partners',
+      ])
+    )
+    .slice(0, 10)
+}
+
 function getDeepCMPNavigationSignature(control, panel) {
   return normalizeMatchText(
     [
       getCurrentDomain(),
       getDeepCMPNavigationIntent(control),
-      getActionText(control).slice(0, 160),
+      getDeepCMPNavigationCandidateText(control).slice(0, 160),
       panel ? getPreferencePanelSignature(panel) : '',
     ].join(' ')
   ).slice(0, 520)
@@ -5122,6 +5178,7 @@ function attemptControlledDeepCMPNavigation(panel) {
           text: getActionText(controls[0]).slice(0, 160),
           extractedText:
             getDeepCMPNavigationCandidateText(controls[0]).slice(0, 180),
+          href: controls[0]?.getAttribute?.('href') || '',
           tagName: controls[0]?.tagName?.toLowerCase?.() || '',
           intents: [
             textMatchesDictionaryCookieIntent(
