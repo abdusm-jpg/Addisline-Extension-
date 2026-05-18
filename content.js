@@ -1,5 +1,14 @@
 const DEBUG = false
-const COOKIE_DEBUG = true
+const COOKIE_DEBUG = false
+const ENABLE_CMP_FINGERPRINT_DEBUG = false
+const ENABLE_PASSIVE_COOKIE_INTELLIGENCE = false
+const ENABLE_INITIAL_MORE_OPTIONS_FLOW = false
+const ENABLE_DEEP_CMP_NAVIGATION = false
+const ENABLE_DEEP_CMP_DIAGNOSTICS = false
+const ENABLE_DEEP_PREFERENCE_TRAVERSAL = false
+const ENABLE_OPTIONAL_TOGGLE_AUTOMATION = false
+const ENABLE_MUTATION_DOM_FALLBACKS = false
+const ENABLE_SHADOW_ROOT_OBSERVATION = false
 
 let protectionEnabled = false
 let protectionMode = 'normal'
@@ -52,10 +61,10 @@ const REJECT_FALLBACK_SETTINGS_COOLDOWN_MS = 30000
 const MAX_SUPPRESSION_HIDES = 3
 const MAX_BANNER_HIDE_ATTEMPTS = 1
 const SCAN_DEBOUNCE_MS = 800
-const MIN_SCAN_INTERVAL_MS = 2000
-const MAX_SCAN_BURST = 5
+const MIN_SCAN_INTERVAL_MS = 3000
+const MAX_SCAN_BURST = 3
 const SCAN_BURST_RESET_MS = 15000
-const OBSERVER_COOLDOWN_MS = 1200
+const OBSERVER_COOLDOWN_MS = 2500
 const SHADOW_OBSERVE_COOLDOWN_MS = 5000
 const COOKIE_DEBUG_LOG_COOLDOWN_MS = 5000
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
@@ -811,6 +820,10 @@ cookieDebugLog('Content script started', {
 })
 
 function runCMPFingerprintDebugDetection(root = document) {
+  if (!ENABLE_CMP_FINGERPRINT_DEBUG) {
+    return null
+  }
+
   const detector =
     globalThis?.AddislineCMPFingerprint?.detectCMPFingerprint
 
@@ -2786,6 +2799,10 @@ function attemptInitialMoreOptionsNavigation(
   container = document,
   rootReason = 'provided_root'
 ) {
+  if (!ENABLE_INITIAL_MORE_OPTIONS_FLOW) {
+    return false
+  }
+
   const rootDiagnostics =
     getInitialCMPRootDiagnostics(
       container === document ? null : container,
@@ -6138,6 +6155,10 @@ function getDeepCMPNavigationSignature(control, panel) {
 }
 
 function attemptControlledDeepCMPNavigation(panel) {
+  if (!ENABLE_DEEP_CMP_NAVIGATION) {
+    return false
+  }
+
   if (
     !panel ||
     !shouldRunOnThisSite() ||
@@ -6290,6 +6311,10 @@ function attemptControlledDeepCMPNavigation(panel) {
 }
 
 function traceDeepCMPPanelScanning(reason, preferredRoot = null) {
+  if (!ENABLE_DEEP_CMP_DIAGNOSTICS) {
+    return null
+  }
+
   const panel =
     preferredRoot || findCookiePreferencesPanel()
   const roots =
@@ -6318,6 +6343,10 @@ function traceDeepCMPPanelScanning(reason, preferredRoot = null) {
 }
 
 function scheduleTogglePersistenceVerification(panel, controls) {
+  if (!ENABLE_OPTIONAL_TOGGLE_AUTOMATION) {
+    return
+  }
+
   const trackedControls =
     Array.from(new Set(controls || []))
       .filter(Boolean)
@@ -6382,6 +6411,7 @@ function scheduleTogglePersistenceVerification(panel, controls) {
 
 function disableOptionalPreferenceControls(panel) {
   if (
+    !ENABLE_OPTIONAL_TOGGLE_AUTOMATION ||
     !shouldRunOnThisSite() ||
     !getProtectionModeConfig().allowSettingsOpen ||
     !panel
@@ -6650,7 +6680,9 @@ function handleCookiePreferences() {
     found: Boolean(panel),
     panel: getCookieDebugElementSummary(panel),
   })
-  traceDeepCMPPanelScanning('preferences_flow', panel)
+  if (ENABLE_DEEP_CMP_DIAGNOSTICS) {
+    traceDeepCMPPanelScanning('preferences_flow', panel)
+  }
   if (isAddislineTestMode()) {
     const panelSnapshot =
       panel ? getPreferenceTraversalSnapshot(panel) : null
@@ -6673,6 +6705,7 @@ function handleCookiePreferences() {
   }
 
   if (
+    ENABLE_DEEP_CMP_NAVIGATION &&
     moreOptionsNavigationOpened &&
     !deepCMPNavigationOpened
   ) {
@@ -6708,18 +6741,25 @@ function handleCookiePreferences() {
   }
 
   if (
-    deepCMPNavigationOpened ||
-    Date.now() < deepCMPNavigationObservationUntil
+    ENABLE_DEEP_CMP_NAVIGATION &&
+    (
+      deepCMPNavigationOpened ||
+      Date.now() < deepCMPNavigationObservationUntil
+    )
   ) {
     traceDeepCMPPanelScanning('deep_navigation_observation', panel)
     return false
   }
 
-  if (attemptControlledDeepCMPNavigation(panel)) {
+  if (
+    ENABLE_DEEP_CMP_NAVIGATION &&
+    attemptControlledDeepCMPNavigation(panel)
+  ) {
     return false
   }
 
   const openedSections =
+    ENABLE_DEEP_PREFERENCE_TRAVERSAL &&
     modeConfig.allowDeepTraversal &&
     canStartPreferenceTraversal(panel)
       ? traversePreferenceCenterDepth(panel, {
@@ -6841,7 +6881,9 @@ function scanPage() {
       first: getCookieDebugElementSummary(candidates[0]),
     })
 
-    runCMPFingerprintDebugDetection(candidates[0] || document)
+    if (ENABLE_CMP_FINGERPRINT_DEBUG) {
+      runCMPFingerprintDebugDetection(candidates[0] || document)
+    }
     if (isAddislineTestMode()) {
       updateAddislineTestReport({
         event: 'scanPage:candidates',
@@ -6849,7 +6891,9 @@ function scanPage() {
         chosenCandidateSummary: getElementTestSummary(candidates[0]),
       })
     }
-    runPassiveCookieIntelligenceForCandidates(candidates)
+    if (ENABLE_PASSIVE_COOKIE_INTELLIGENCE) {
+      runPassiveCookieIntelligenceForCandidates(candidates)
+    }
 
     cookieDebugLog('Basic reject flow active', {
       candidateCount: candidates.length,
@@ -7008,6 +7052,7 @@ function scanPage() {
     }
 
     if (
+      ENABLE_INITIAL_MORE_OPTIONS_FLOW &&
       !moreOptionsNavigationOpened &&
       modeConfig.allowSettingsOpen
     ) {
@@ -7046,7 +7091,10 @@ function scanPage() {
       )
     }
 
-    if (candidates.length === 0) {
+    if (
+      ENABLE_DEEP_CMP_DIAGNOSTICS &&
+      candidates.length === 0
+    ) {
       if (Date.now() < moreOptionsNavigationOpeningUntil) {
         cookieDebugLog('cookie.deep_panel.scan_skipped', {
           reason: 'waiting_for_more_options_panel',
@@ -7238,6 +7286,10 @@ function getMutationClassificationDiagnostics(mutations) {
 }
 
 function hasVisibleCMPRootForMutationFallback() {
+  if (!ENABLE_MUTATION_DOM_FALLBACKS) {
+    return false
+  }
+
   return getInitialCMPRootCandidates()
     .some((root) =>
       root &&
@@ -7248,6 +7300,10 @@ function hasVisibleCMPRootForMutationFallback() {
 }
 
 function hasDirectVisibleCMPFallbackControl() {
+  if (!ENABLE_MUTATION_DOM_FALLBACKS) {
+    return false
+  }
+
   return Boolean(findDirectVisibleCMPFallbackControl())
 }
 
@@ -7284,12 +7340,14 @@ function scheduleScan(mutations = null) {
       !Array.isArray(mutations) ||
       mutations.some(mutationLooksCookieRelated)
     const hasCMPFallbackRoot =
+      ENABLE_MUTATION_DOM_FALLBACKS &&
       Array.isArray(mutations) &&
       mutations.length > 0 &&
       !hasMutationCookieHint &&
       hasVisibleCMPRootForMutationFallback()
     const directCMPFallbackControl =
       (
+        ENABLE_MUTATION_DOM_FALLBACKS &&
         Array.isArray(mutations) &&
         mutations.length > 0 &&
         !hasMutationCookieHint
@@ -7300,7 +7358,11 @@ function scheduleScan(mutations = null) {
     if (!shouldScanForMutations(mutations)) {
       logInitialFlowSkipped('mutation_not_cookie_related', {
         domain: getCurrentDomain(),
-        ...getMutationClassificationDiagnostics(mutations),
+        ...(
+          COOKIE_DEBUG
+            ? getMutationClassificationDiagnostics(mutations)
+            : {}
+        ),
       })
       return
     }
@@ -7315,7 +7377,11 @@ function scheduleScan(mutations = null) {
     if (hasCMPFallbackRoot) {
       cookieDebugLog('cookie.mutation_gate.fallback_allowed', {
         domain: getCurrentDomain(),
-        ...getMutationClassificationDiagnostics(mutations),
+        ...(
+          COOKIE_DEBUG
+            ? getMutationClassificationDiagnostics(mutations)
+            : {}
+        ),
       })
     }
 
@@ -7384,7 +7450,7 @@ function scheduleScan(mutations = null) {
 }
 
 function observeOpenShadowRoots() {
-  if (!observer) return
+  if (!observer || !ENABLE_SHADOW_ROOT_OBSERVATION) return
 
   const now = Date.now()
 
