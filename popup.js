@@ -921,6 +921,25 @@ reportIssueButton.addEventListener(
 issueReportsList.addEventListener(
   'click',
   async (event) => {
+    const deleteButton =
+      event.target.closest?.(
+        '[data-report-delete-index]'
+      )
+
+    if (deleteButton) {
+      const reportIndex =
+        Number.parseInt(
+          deleteButton.dataset.reportDeleteIndex,
+          10
+        )
+
+      if (Number.isInteger(reportIndex)) {
+        await removeIssueReportAtIndex(reportIndex)
+      }
+
+      return
+    }
+
     const reportLink =
       event.target.closest?.(
         '[data-report-origin]'
@@ -943,6 +962,41 @@ issueReportsList.addEventListener(
     })
   }
 )
+
+async function removeIssueReportAtIndex(reportIndex) {
+  const {
+    issueReports,
+  } =
+    await chrome.storage.local.get({
+      issueReports: [],
+    })
+
+  const reports =
+    Array.isArray(issueReports)
+      ? issueReports
+      : []
+
+  if (
+    reportIndex < 0 ||
+    reportIndex >= reports.length
+  ) {
+    return
+  }
+
+  const nextReports =
+    reports.filter((_, index) =>
+      index !== reportIndex
+    )
+
+  await chrome.storage.local.set({
+    issueReports: nextReports,
+  })
+
+  reportStatus.innerText =
+    'Reporte eliminado.'
+
+  renderIssueReports(nextReports)
+}
 
 clearReportsButton.addEventListener(
   'click',
@@ -1075,7 +1129,10 @@ function renderIssueReports(issueReports) {
 
   const sortedReports =
     reports
-      .slice()
+      .map((report, index) => ({
+        report,
+        index,
+      }))
       .reverse()
 
   const visibleReports =
@@ -1105,16 +1162,27 @@ function renderIssueReports(issueReports) {
 
   issueReportsList.innerHTML =
     visibleReports
-      .map((report) => `
+      .map(({ report, index }) => `
         <article class="reportItem">
-          <button
-            class="reportDomain"
-            type="button"
-            data-report-origin="${escapeHtml(report.origin || '')}"
-            data-report-domain="${escapeHtml(report.domain || '')}"
-          >
-            ${escapeHtml(report.domain || 'Dominio no disponible')}
-          </button>
+          <div class="reportItemHeader">
+            <button
+              class="reportDomain"
+              type="button"
+              data-report-origin="${escapeHtml(report.origin || '')}"
+              data-report-domain="${escapeHtml(report.domain || '')}"
+            >
+              ${escapeHtml(report.domain || 'Dominio no disponible')}
+            </button>
+            <button
+              class="reportDeleteButton"
+              type="button"
+              data-report-delete-index="${index}"
+              title="Remove this report"
+              aria-label="Remove this report"
+            >
+              Remove
+            </button>
+          </div>
           <span>${getIssueTypeLabel(report.problemType)}</span>
           <small>${formatReportDate(report.date)} · ${escapeHtml(report.protectionMode || 'normal')}</small>
         </article>
