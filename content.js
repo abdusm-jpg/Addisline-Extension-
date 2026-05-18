@@ -79,6 +79,11 @@ const MUTATION_SCAN_HINT_TEXTS = [
   'gdpr',
   'cmp',
   'banner',
+  'sourcepoint',
+  'sp message',
+  'sp_message',
+  'sp-message',
+  'message container',
   'preferenc',
   'privacidad',
   'cookies',
@@ -7006,6 +7011,70 @@ function mutationLooksCookieRelated(mutation) {
   return false
 }
 
+function getMutationCMPDetectionDiagnostics() {
+  const roots =
+    getInitialCMPRootCandidates()
+      .slice(0, 8)
+      .map((root) => ({
+        ...getInitialCMPRootDiagnostics(
+          root,
+          getInitialCMPRootReason(root)
+        ),
+        text: getText(root).slice(0, 160),
+      }))
+
+  return {
+    visibleCMPRootCount: roots.length,
+    visibleCMPRoots: roots,
+  }
+}
+
+function getMutationClassificationDiagnostics(mutations) {
+  const safeMutations =
+    Array.isArray(mutations) ? mutations : []
+  const previews =
+    safeMutations
+      .slice(0, 5)
+      .map((mutation) => {
+        const targetText =
+          getMutationNodeText(mutation.target)
+        const addedNodeTexts =
+          Array.from(mutation.addedNodes || [])
+            .slice(0, 4)
+            .map(getMutationNodeText)
+            .filter(Boolean)
+            .map((text) => text.slice(0, 180))
+
+        return {
+          type: mutation.type || '',
+          target: targetText.slice(0, 180),
+          targetMatched: textHasAny(targetText, MUTATION_SCAN_HINT_TEXTS),
+          addedNodeCount: mutation.addedNodes?.length || 0,
+          addedNodeTexts,
+          addedNodeMatched: addedNodeTexts.some((text) =>
+            textHasAny(text, MUTATION_SCAN_HINT_TEXTS)
+          ),
+        }
+      })
+
+  return {
+    mutationCount: safeMutations.length,
+    reason: 'no_cookie_hint_in_mutation_target_or_added_nodes',
+    previews,
+    ...getMutationCMPDetectionDiagnostics(),
+  }
+}
+
+function hasVisibleCMPRootForMutationFallback() {
+  return getInitialCMPRootCandidates()
+    .some((root) =>
+      root &&
+      root !== document.body &&
+      root !== document.documentElement &&
+      isVisible(root)
+    )
+}
+
 function shouldScanForMutations(mutations) {
   if (!Array.isArray(mutations)) {
     return true
@@ -7015,7 +7084,11 @@ function shouldScanForMutations(mutations) {
     return false
   }
 
-  return mutations.some(mutationLooksCookieRelated)
+  if (mutations.some(mutationLooksCookieRelated)) {
+    return true
+  }
+
+  return hasVisibleCMPRootForMutationFallback()
 }
 
 function scheduleScan(mutations = null) {
@@ -7027,12 +7100,28 @@ function scheduleScan(mutations = null) {
     return
   }
 
+  const hasMutationCookieHint =
+    !Array.isArray(mutations) ||
+    mutations.some(mutationLooksCookieRelated)
+  const hasCMPFallbackRoot =
+    Array.isArray(mutations) &&
+    mutations.length > 0 &&
+    !hasMutationCookieHint &&
+    hasVisibleCMPRootForMutationFallback()
+
   if (!shouldScanForMutations(mutations)) {
     logInitialFlowSkipped('mutation_not_cookie_related', {
       domain: getCurrentDomain(),
-      mutationCount: Array.isArray(mutations) ? mutations.length : null,
+      ...getMutationClassificationDiagnostics(mutations),
     })
     return
+  }
+
+  if (hasCMPFallbackRoot) {
+    cookieDebugLog('cookie.mutation_gate.fallback_allowed', {
+      domain: getCurrentDomain(),
+      ...getMutationClassificationDiagnostics(mutations),
+    })
   }
 
   const now = Date.now()
