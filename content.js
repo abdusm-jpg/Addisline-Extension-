@@ -2450,6 +2450,10 @@ function getInitialMoreOptionsButtonDiagnostics(
   }
 }
 
+function logInitialFlowSkipped(reason, details = {}) {
+  cookieDebugLog(`Initial flow skipped: ${reason}`, details)
+}
+
 function isSafeInitialMoreOptionsControl(control, container = document) {
   if (!control) return false
 
@@ -2533,11 +2537,35 @@ function getInitialMoreOptionsSignature(control, container) {
 }
 
 function attemptInitialMoreOptionsNavigation(container = document) {
-  if (
-    moreOptionsNavigationOpened ||
-    !shouldRunOnThisSite() ||
-    !getProtectionModeConfig().allowSettingsOpen
-  ) {
+  cookieDebugLog('Starting initial CMP analysis', {
+    domain: getCurrentDomain(),
+    container: getCookieDebugElementSummary(
+      container === document ? document.documentElement : container
+    ),
+    moreOptionsNavigationOpened,
+    waitingForMoreOptionsPanel: Date.now() < moreOptionsNavigationOpeningUntil,
+    allowSettingsOpen: getProtectionModeConfig().allowSettingsOpen,
+  })
+
+  if (moreOptionsNavigationOpened) {
+    logInitialFlowSkipped('more_options_already_opened', {
+      domain: getCurrentDomain(),
+    })
+    return false
+  }
+
+  if (!shouldRunOnThisSite()) {
+    logInitialFlowSkipped('site_not_enabled', {
+      domain: getCurrentDomain(),
+    })
+    return false
+  }
+
+  if (!getProtectionModeConfig().allowSettingsOpen) {
+    logInitialFlowSkipped('settings_open_disabled_by_mode', {
+      domain: getCurrentDomain(),
+      mode: getNormalizedProtectionMode(),
+    })
     return false
   }
 
@@ -2546,6 +2574,20 @@ function attemptInitialMoreOptionsNavigation(container = document) {
     findInitialMoreOptionsControl(document)
 
   if (!control) {
+    logInitialFlowSkipped('more_options_control_not_found', {
+      domain: getCurrentDomain(),
+      container: getCookieDebugElementSummary(
+        container === document ? document.documentElement : container
+      ),
+      containerDiagnostics: getInitialMoreOptionsButtonDiagnostics(
+        container,
+        getInitialMoreOptionsControls(container)
+      ),
+      documentDiagnostics: getInitialMoreOptionsButtonDiagnostics(
+        document,
+        getInitialMoreOptionsControls(document)
+      ),
+    })
     return false
   }
 
@@ -2558,6 +2600,11 @@ function attemptInitialMoreOptionsNavigation(container = document) {
     signature &&
     Date.now() - lastClickedAt < MORE_OPTIONS_NAVIGATION_COOLDOWN_MS
   ) {
+    logInitialFlowSkipped('more_options_cooldown', {
+      domain: getCurrentDomain(),
+      control: getInitialMoreOptionsCandidateDebug(control, container),
+      cooldownMs: MORE_OPTIONS_NAVIGATION_COOLDOWN_MS,
+    })
     cookieDebugLog('cookie.more_options.skipped', {
       reason: 'more_options_cooldown',
       control: getInitialMoreOptionsCandidateDebug(control, container),
@@ -2574,6 +2621,10 @@ function attemptInitialMoreOptionsNavigation(container = document) {
   })
 
   if (!canProcess) {
+    logInitialFlowSkipped('action_cooldown_or_processed', {
+      domain: getCurrentDomain(),
+      control: getInitialMoreOptionsCandidateDebug(control, container),
+    })
     return false
   }
 
@@ -2590,6 +2641,10 @@ function attemptInitialMoreOptionsNavigation(container = document) {
   })
 
   if (!clicked) {
+    logInitialFlowSkipped('click_failed', {
+      domain: getCurrentDomain(),
+      control: getInitialMoreOptionsCandidateDebug(control, container),
+    })
     cookieDebugLog('cookie.more_options.click_failed', {
       control: getCookieDebugElementSummary(control),
     })
@@ -6474,6 +6529,9 @@ function scanPage() {
       getProtectionModeConfig()
 
     if (!shouldRunOnThisSite()) {
+      logInitialFlowSkipped('site_not_enabled_before_scan', {
+        domain: getCurrentDomain(),
+      })
       updateAddislineTestReport({
         event: 'scanPage:stop',
         lastSkipReason: 'site_not_enabled',
@@ -6485,6 +6543,10 @@ function scanPage() {
     cleanupBannerSuppressions()
 
     if (shouldDeferScanForLoading()) {
+      logInitialFlowSkipped('page_loading_deferred', {
+        domain: getCurrentDomain(),
+        readyState: document.readyState,
+      })
       updateAddislineTestReport({
         event: 'scanPage:deferred',
         lastSkipReason: 'page_loading',
@@ -6513,6 +6575,17 @@ function scanPage() {
       if (attemptInitialMoreOptionsNavigation(moreOptionsContainer)) {
         return
       }
+    } else {
+      logInitialFlowSkipped(
+        moreOptionsNavigationOpened
+          ? 'more_options_already_opened_before_attempt'
+          : 'settings_open_disabled_before_attempt',
+        {
+          domain: getCurrentDomain(),
+          moreOptionsNavigationOpened,
+          allowSettingsOpen: modeConfig.allowSettingsOpen,
+        }
+      )
     }
 
     if (candidates.length === 0) {
@@ -6747,11 +6820,18 @@ function shouldScanForMutations(mutations) {
 
 function scheduleScan(mutations = null) {
   if (!shouldRunOnThisSite()) {
+    logInitialFlowSkipped('scheduler_site_not_enabled', {
+      domain: getCurrentDomain(),
+    })
     stopObserver()
     return
   }
 
   if (!shouldScanForMutations(mutations)) {
+    logInitialFlowSkipped('mutation_not_cookie_related', {
+      domain: getCurrentDomain(),
+      mutationCount: Array.isArray(mutations) ? mutations.length : null,
+    })
     return
   }
 
@@ -6761,6 +6841,10 @@ function scheduleScan(mutations = null) {
     mutations &&
     now - lastObserverScanScheduledAt < OBSERVER_COOLDOWN_MS
   ) {
+    logInitialFlowSkipped('observer_cooldown', {
+      domain: getCurrentDomain(),
+      cooldownMs: OBSERVER_COOLDOWN_MS,
+    })
     return
   }
 
@@ -6774,6 +6858,11 @@ function scheduleScan(mutations = null) {
 
   if (scanBurstCount > MAX_SCAN_BURST) {
     clearTimeout(debounceTimer)
+
+    logInitialFlowSkipped('scan_burst_delayed', {
+      domain: getCurrentDomain(),
+      maxScanBurst: MAX_SCAN_BURST,
+    })
 
     debounceTimer = setTimeout(() => {
       scanBurstCount = 0
