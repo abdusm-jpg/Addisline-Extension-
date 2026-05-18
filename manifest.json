@@ -6,10 +6,12 @@
   "permissions": [
     "activeTab",
     "storage"
-],
+  ],
   "host_permissions": [
-  "https://us-central1-addisline-sm.cloudfunctions.net/*"
-],
+    "http://*/*",
+    "https://*/*",
+    "https://us-central1-addisline-sm.cloudfunctions.net/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -18,9 +20,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
       "js": ["cookieIntentDictionary.js", "cmpFingerprint.js", "content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ]
 }
