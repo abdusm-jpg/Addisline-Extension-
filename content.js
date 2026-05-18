@@ -2548,6 +2548,46 @@ function getInitialMoreOptionsControls(container = document) {
   return controls
 }
 
+function textMatchesDirectCMPFallbackNavigation(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return (
+    textMatchesDictionaryCookieIntent(normalizedText, 'openSettings') ||
+    textMatchesDictionaryCookieIntent(normalizedText, 'manageSettings') ||
+    textHasPhrase(normalizedText, 'more options') ||
+    textHasPhrase(normalizedText, 'options') ||
+    textHasPhrase(normalizedText, 'manage settings')
+  )
+}
+
+function findDirectVisibleCMPFallbackControl() {
+  return Array.from(
+    querySelectorAllDeep(
+      [
+        'button',
+        'a',
+        '[role="button"]',
+        'input[type="button"]',
+        'input[type="submit"]',
+      ].join(',')
+    )
+  )
+    .find((control) => {
+      const text =
+        getInitialMoreOptionsControlText(control)
+
+      return (
+        isVisible(control) &&
+        getCookieDebugDisabledState(control) !== 'disabled' &&
+        !isInsideNonCookieModal(control) &&
+        !hasUnsafeAcceptText(control) &&
+        !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+        textMatchesDirectCMPFallbackNavigation(text)
+      )
+    }) || null
+}
+
 function getInitialMoreOptionsCandidateDebug(control, container = document) {
   const text =
     getInitialMoreOptionsControlText(control)
@@ -7075,6 +7115,10 @@ function hasVisibleCMPRootForMutationFallback() {
     )
 }
 
+function hasDirectVisibleCMPFallbackControl() {
+  return Boolean(findDirectVisibleCMPFallbackControl())
+}
+
 function shouldScanForMutations(mutations) {
   if (!Array.isArray(mutations)) {
     return true
@@ -7088,7 +7132,10 @@ function shouldScanForMutations(mutations) {
     return true
   }
 
-  return hasVisibleCMPRootForMutationFallback()
+  return (
+    hasDirectVisibleCMPFallbackControl() ||
+    hasVisibleCMPRootForMutationFallback()
+  )
 }
 
 function scheduleScan(mutations = null) {
@@ -7108,6 +7155,14 @@ function scheduleScan(mutations = null) {
     mutations.length > 0 &&
     !hasMutationCookieHint &&
     hasVisibleCMPRootForMutationFallback()
+  const directCMPFallbackControl =
+    (
+      Array.isArray(mutations) &&
+      mutations.length > 0 &&
+      !hasMutationCookieHint
+    )
+      ? findDirectVisibleCMPFallbackControl()
+      : null
 
   if (!shouldScanForMutations(mutations)) {
     logInitialFlowSkipped('mutation_not_cookie_related', {
@@ -7115,6 +7170,13 @@ function scheduleScan(mutations = null) {
       ...getMutationClassificationDiagnostics(mutations),
     })
     return
+  }
+
+  if (directCMPFallbackControl) {
+    cookieDebugLog('cookie.mutation_gate.direct_visible_fallback_allowed', {
+      domain: getCurrentDomain(),
+      control: getCookieDebugElementSummary(directCMPFallbackControl),
+    })
   }
 
   if (hasCMPFallbackRoot) {
