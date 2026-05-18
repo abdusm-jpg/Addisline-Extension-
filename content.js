@@ -9,6 +9,8 @@ const ENABLE_DEEP_PREFERENCE_TRAVERSAL = false
 const ENABLE_OPTIONAL_TOGGLE_AUTOMATION = false
 const ENABLE_MUTATION_DOM_FALLBACKS = false
 const ENABLE_SHADOW_ROOT_OBSERVATION = false
+const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = true
+const REJECT_FLOW_DEBUG = true
 
 let protectionEnabled = false
 let protectionMode = 'normal'
@@ -38,6 +40,7 @@ let moreOptionsNavigationOpeningUntil = 0
 let deepCMPNavigationOpened = false
 let deepCMPNavigationObservationUntil = 0
 const cookieDebugLogCooldowns = new Map()
+const rejectFlowLogCooldowns = new Map()
 const loggedCMPFingerprints = new Set()
 const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
@@ -801,6 +804,25 @@ function cookieDebugLog(event, details = {}) {
   }
 
   cookieDebugLogCooldowns.set(signature, now)
+  console.log('[Addisline]', event, details)
+}
+
+function rejectFlowLog(event, details = {}) {
+  if (!REJECT_FLOW_DEBUG) {
+    return
+  }
+
+  const now = Date.now()
+  const signature =
+    `${event}:${JSON.stringify(details).slice(0, 400)}`
+  const lastLoggedAt =
+    rejectFlowLogCooldowns.get(signature) || 0
+
+  if (now - lastLoggedAt < COOKIE_DEBUG_LOG_COOLDOWN_MS) {
+    return
+  }
+
+  rejectFlowLogCooldowns.set(signature, now)
   console.log('[Addisline]', event, details)
 }
 
@@ -2499,17 +2521,25 @@ function findDirectSafeRejectControl() {
       if (!isVisible(control)) return false
       if (isInsideNonCookieModal(control)) return false
       if (hasUnsafeAcceptText(control)) return false
-      if (isSensitiveActionControl(control, document)) return false
 
       const actionText = getActionText(control)
+      const hasExplicitRejectIntent =
+        textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
+        textHasAny(actionText, totalRejectTexts)
+      const hasRejectText =
+        textHasAny(actionText, rejectTexts)
 
       if (
-        textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
-        textHasAny(actionText, rejectTexts) ||
-        textHasAny(actionText, totalRejectTexts)
+        hasExplicitRejectIntent ||
+        hasRejectText
       ) {
         return true
       }
+
+      const container =
+        getCookieContainer(control) || document
+
+      if (isSensitiveActionControl(control, container)) return false
 
       return hasDirectSafeRejectSignal(control)
     })
@@ -4021,6 +4051,14 @@ function schedulePostActionVerification(context = {}) {
     }
 
     if (!state.active) {
+      if (context.type === 'reject') {
+        rejectFlowLog('Basic reject verification passed', {
+          bannerVisible: state.bannerVisible,
+          modalPresent: state.modalPresent,
+          overlayPresent: state.overlayPresent,
+        })
+      }
+
       cleanupCookieInteractionLeftovers(state.container || context.container)
 
       if (state.container || context.container) {
@@ -4041,6 +4079,14 @@ function schedulePostActionVerification(context = {}) {
       overlayPresent: state.overlayPresent,
       scrollRestored: state.scrollRestored,
     })
+
+    if (context.type === 'reject') {
+      rejectFlowLog('Basic reject verification failed', {
+        bannerVisible: state.bannerVisible,
+        modalPresent: state.modalPresent,
+        overlayPresent: state.overlayPresent,
+      })
+    }
 
     if (attemptRejectFallbackSettingsFlow(context, state)) {
       return
@@ -6895,7 +6941,7 @@ function scanPage() {
       runPassiveCookieIntelligenceForCandidates(candidates)
     }
 
-    cookieDebugLog('Basic reject flow active', {
+    rejectFlowLog('Basic reject flow active', {
       candidateCount: candidates.length,
       allowAutoReject: modeConfig.allowAutoReject,
     })
@@ -6907,7 +6953,7 @@ function scanPage() {
         const action = decideCookieAction(candidate)
 
         if (action.type === 'reject' && action.element) {
-          cookieDebugLog('Basic reject candidate found', {
+          rejectFlowLog('Basic reject candidate found', {
             source: 'candidate_scan',
             intent: action.intent || '',
             control: getCookieDebugElementSummary(action.element),
@@ -6916,7 +6962,7 @@ function scanPage() {
 
         if (executeCookieAction(action)) {
           if (action.type === 'reject') {
-            cookieDebugLog('Basic reject clicked', {
+            rejectFlowLog('Basic reject clicked', {
               source: 'candidate_scan',
               intent: action.intent || '',
               control: getCookieDebugElementSummary(action.element),
@@ -6932,7 +6978,7 @@ function scanPage() {
         }
 
         if (action.type === 'reject' && action.element) {
-          cookieDebugLog('Basic reject blocked: action_gate_or_click_failed', {
+          rejectFlowLog('Basic reject blocked: action_gate_or_click_failed', {
             source: 'candidate_scan',
             intent: action.intent || '',
             control: getCookieDebugElementSummary(action.element),
@@ -6947,7 +6993,7 @@ function scanPage() {
         : null
 
     if (directRejectControl) {
-      cookieDebugLog('Basic reject candidate found', {
+      rejectFlowLog('Basic reject candidate found', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
@@ -6958,7 +7004,7 @@ function scanPage() {
     }
 
     if (!directRejectControl) {
-      cookieDebugLog('Basic reject blocked: candidate_not_found', {
+      rejectFlowLog('Basic reject blocked: candidate_not_found', {
         source: 'direct_scan',
       })
     }
@@ -6967,7 +7013,7 @@ function scanPage() {
       getBasicRejectBlockReason(directRejectControl)
 
     if (directRejectBlockReason && directRejectControl) {
-      cookieDebugLog(`Basic reject blocked: ${directRejectBlockReason}`, {
+      rejectFlowLog(`Basic reject blocked: ${directRejectBlockReason}`, {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
@@ -6988,7 +7034,7 @@ function scanPage() {
       directRejectCanProcess &&
       directRejectClicked
     ) {
-      cookieDebugLog('Basic reject clicked', {
+      rejectFlowLog('Basic reject clicked', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
@@ -7034,7 +7080,7 @@ function scanPage() {
       directRejectCanProcess === false &&
       !directRejectBlockReason
     ) {
-      cookieDebugLog('Basic reject blocked: action_cooldown_or_processed', {
+      rejectFlowLog('Basic reject blocked: action_cooldown_or_processed', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
@@ -7045,7 +7091,7 @@ function scanPage() {
       directRejectCanProcess &&
       !directRejectClicked
     ) {
-      cookieDebugLog('Basic reject blocked: click_failed', {
+      rejectFlowLog('Basic reject blocked: click_failed', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
@@ -7317,6 +7363,10 @@ function shouldScanForMutations(mutations) {
   }
 
   if (mutations.some(mutationLooksCookieRelated)) {
+    return true
+  }
+
+  if (ENABLE_BASIC_REJECT_MUTATION_FALLBACK) {
     return true
   }
 
