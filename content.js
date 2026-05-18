@@ -2333,11 +2333,37 @@ function textMatchesInitialMoreOptions(text) {
 function getInitialMoreOptionsControlText(control) {
   return normalizeMatchText([
     getActionText(control),
-    control?.innerText,
     control?.textContent,
+    control?.innerText,
     control?.getAttribute?.('title'),
     control?.getAttribute?.('aria-label'),
   ].join(' '))
+}
+
+function getInitialMoreOptionsControls(container = document) {
+  const controls = []
+  const seenControls = new Set()
+  const buttonSelector =
+    'button, [role="button"], input[type="button"], input[type="submit"]'
+
+  function addControl(control) {
+    if (!control || seenControls.has(control)) return
+
+    seenControls.add(control)
+    controls.push(control)
+  }
+
+  if (container?.matches?.(buttonSelector)) {
+    addControl(container)
+  }
+
+  getDirectClickableControls(container)
+    .forEach(addControl)
+
+  querySelectorAllDeep(buttonSelector, container)
+    .forEach(addControl)
+
+  return controls
 }
 
 function getInitialMoreOptionsCandidateDebug(control, container = document) {
@@ -2394,6 +2420,36 @@ function getInitialMoreOptionsCandidateDebug(control, container = document) {
   }
 }
 
+function getInitialMoreOptionsButtonDiagnostics(
+  container = document,
+  controls = []
+) {
+  const buttons =
+    controls.filter((control) =>
+      control?.tagName?.toLowerCase?.() === 'button' ||
+      control?.getAttribute?.('role') === 'button' ||
+      control?.matches?.('input[type="button"], input[type="submit"]')
+    )
+  const matchingButton =
+    buttons.find((button) =>
+      textMatchesInitialMoreOptions(
+        getInitialMoreOptionsControlText(button)
+      )
+    )
+
+  return {
+    totalButtonsScanned: buttons.length,
+    firstMatchingButton: matchingButton
+      ? getInitialMoreOptionsCandidateDebug(matchingButton, container)
+      : null,
+    firstButtons: buttons
+      .slice(0, 8)
+      .map((button) =>
+        getInitialMoreOptionsCandidateDebug(button, container)
+      ),
+  }
+}
+
 function isSafeInitialMoreOptionsControl(control, container = document) {
   if (!control) return false
 
@@ -2413,9 +2469,25 @@ function isSafeInitialMoreOptionsControl(control, container = document) {
   )
 }
 
+function isInitialMoreOptionsSignalControl(control) {
+  if (!control) return false
+
+  const text =
+    getInitialMoreOptionsControlText(control)
+
+  return (
+    isVisible(control) &&
+    getCookieDebugDisabledState(control) !== 'disabled' &&
+    !isInsideNonCookieModal(control) &&
+    !hasUnsafeAcceptText(control) &&
+    !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+    textMatchesInitialMoreOptions(text)
+  )
+}
+
 function findInitialMoreOptionsControl(container = document) {
   const controls =
-    getDirectClickableControls(container)
+    getInitialMoreOptionsControls(container)
   const matchingCandidates =
     controls
       .filter((control) =>
@@ -2435,9 +2507,19 @@ function findInitialMoreOptionsControl(container = document) {
     })
   }
 
-  return controls.find((control) =>
+  const safeControl =
+    controls.find((control) =>
     isSafeInitialMoreOptionsControl(control, container)
   ) || null
+
+  cookieDebugLog('cookie.more_options.button_scan', {
+    controlCount: controls.length,
+    safeControlFound: Boolean(safeControl),
+    safeControl: getCookieDebugElementSummary(safeControl),
+    ...getInitialMoreOptionsButtonDiagnostics(container, controls),
+  })
+
+  return safeControl
 }
 
 function getInitialMoreOptionsSignature(control, container) {
@@ -5159,12 +5241,10 @@ function getPanelModeSignals(element) {
       actionText,
     ].join(' '))
   const controls =
-    getDirectClickableControls(element)
+    getInitialMoreOptionsControls(element)
   const hasMoreOptions =
     controls.some((control) =>
-      textMatchesInitialMoreOptions(
-        getInitialMoreOptionsControlText(control)
-      )
+      isInitialMoreOptionsSignalControl(control)
     )
   const deepNavigationCandidates =
     getDeepCMPNavigationCandidates(element)
