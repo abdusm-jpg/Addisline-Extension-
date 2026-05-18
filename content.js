@@ -1697,6 +1697,183 @@ function findCookieBannerCandidates() {
   return candidates
 }
 
+function getInitialCMPRootReason(element) {
+  if (!element) return 'none'
+
+  const signal =
+    normalizeMatchText([
+      element.id,
+      getClassNameText(element),
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('data-testid'),
+      element.getAttribute?.('data-cmp'),
+      element.getAttribute?.('data-consent'),
+      getDatasetText(element),
+    ].join(' '))
+
+  if (textHasPhrase(signal, 'sp message container')) {
+    return 'sourcepoint_message_container'
+  }
+
+  if (textHasPhrase(signal, 'sp message')) {
+    return 'sourcepoint_message'
+  }
+
+  if (hasKnownCmpSignal(element)) {
+    return 'known_cmp_signal'
+  }
+
+  if (hasCookieBannerSignal(element)) {
+    return 'cookie_banner_signal'
+  }
+
+  if (element.matches?.('dialog, [role="dialog"], [aria-modal="true"]')) {
+    return 'visible_modal_or_dialog'
+  }
+
+  return 'candidate'
+}
+
+function getInitialCMPRootDiagnostics(root, reason) {
+  return {
+    selectedRootTag: root?.tagName?.toLowerCase?.() || 'document',
+    rootId: root?.id || '',
+    rootClass: getClassNameText(root).slice(0, 160),
+    rootReason: reason,
+  }
+}
+
+function findInitialCMPRootFromControl(control) {
+  let current =
+    control?.parentElement || null
+  let depth = 0
+
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement &&
+    depth < 10
+  ) {
+    if (
+      isVisible(current) &&
+      !isLikelyNonCookieModal(current) &&
+      (
+        isPotentialCookieContainer(current) ||
+        hasKnownCmpSignal(current) ||
+        hasCookieBannerSignal(current) ||
+        textHasPhrase(
+          [
+            current.id,
+            getClassNameText(current),
+            getDatasetText(current),
+          ].join(' '),
+          'sp message'
+        )
+      )
+    ) {
+      return current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return null
+}
+
+function getInitialCMPRootCandidates() {
+  return Array.from(
+    querySelectorAllDeep(
+      [
+        '[id*="sp_message" i]',
+        '[class*="sp_message" i]',
+        '[id*="sp-message" i]',
+        '[class*="sp-message" i]',
+        '[id*="message_container" i]',
+        '[class*="message_container" i]',
+        '[id*="cookie" i]',
+        '[class*="cookie" i]',
+        '[id*="consent" i]',
+        '[class*="consent" i]',
+        '[id*="privacy" i]',
+        '[class*="privacy" i]',
+        '[id*="cmp" i]',
+        '[class*="cmp" i]',
+        '[data-cmp]',
+        '[data-consent]',
+        'dialog',
+        '[role="dialog"]',
+        '[aria-modal="true"]',
+      ].join(',')
+    )
+  )
+    .filter((candidate) =>
+      candidate &&
+      candidate !== document.body &&
+      candidate !== document.documentElement &&
+      isVisible(candidate) &&
+      !isTextFragmentOrControl(candidate) &&
+      !isLikelyNonCookieModal(candidate)
+    )
+}
+
+function selectInitialCMPRoot(candidates = []) {
+  const explicitCandidate =
+    candidates.find((candidate) =>
+      candidate &&
+      candidate !== document.body &&
+      candidate !== document.documentElement &&
+      isVisible(candidate)
+    )
+
+  if (explicitCandidate) {
+    return {
+      root: explicitCandidate,
+      reason: 'banner_candidate',
+    }
+  }
+
+  const moreOptionsControl =
+    findInitialMoreOptionsControl(document)
+
+  const controlRoot =
+    findInitialCMPRootFromControl(moreOptionsControl)
+
+  if (controlRoot) {
+    return {
+      root: controlRoot,
+      reason: getInitialCMPRootReason(controlRoot),
+    }
+  }
+
+  const rootCandidates =
+    getInitialCMPRootCandidates()
+      .filter((candidate) =>
+        (
+          moreOptionsControl &&
+          candidate.contains?.(moreOptionsControl)
+        ) ||
+        textMatchesInitialMoreOptions(getElementActionText(candidate)) ||
+        hasKnownCmpSignal(candidate) ||
+        hasCookieBannerSignal(candidate)
+      )
+      .sort((first, second) =>
+        getText(first).length - getText(second).length
+      )
+
+  if (rootCandidates[0]) {
+    return {
+      root: rootCandidates[0],
+      reason: getInitialCMPRootReason(rootCandidates[0]),
+    }
+  }
+
+  return {
+    root: document,
+    reason: 'document_fallback',
+  }
+}
+
 function hasSensitiveInput(element) {
   return Boolean(
     element.querySelector?.(
@@ -2536,12 +2713,20 @@ function getInitialMoreOptionsSignature(control, container) {
   ).slice(0, 420)
 }
 
-function attemptInitialMoreOptionsNavigation(container = document) {
+function attemptInitialMoreOptionsNavigation(
+  container = document,
+  rootReason = 'provided_root'
+) {
+  const rootDiagnostics =
+    getInitialCMPRootDiagnostics(
+      container === document ? null : container,
+      container === document ? 'document_fallback' : rootReason
+    )
+
   cookieDebugLog('Starting initial CMP analysis', {
     domain: getCurrentDomain(),
-    container: getCookieDebugElementSummary(
-      container === document ? document.documentElement : container
-    ),
+    container: getCookieDebugElementSummary(container),
+    ...rootDiagnostics,
     moreOptionsNavigationOpened,
     waitingForMoreOptionsPanel: Date.now() < moreOptionsNavigationOpeningUntil,
     allowSettingsOpen: getProtectionModeConfig().allowSettingsOpen,
@@ -2576,9 +2761,8 @@ function attemptInitialMoreOptionsNavigation(container = document) {
   if (!control) {
     logInitialFlowSkipped('more_options_control_not_found', {
       domain: getCurrentDomain(),
-      container: getCookieDebugElementSummary(
-        container === document ? document.documentElement : container
-      ),
+      container: getCookieDebugElementSummary(container),
+      ...rootDiagnostics,
       containerDiagnostics: getInitialMoreOptionsButtonDiagnostics(
         container,
         getInitialMoreOptionsControls(container)
@@ -6569,10 +6753,26 @@ function scanPage() {
       !moreOptionsNavigationOpened &&
       modeConfig.allowSettingsOpen
     ) {
+      const initialRoot =
+        selectInitialCMPRoot(candidates)
       const moreOptionsContainer =
-        candidates.find(Boolean) || document
+        initialRoot.root
 
-      if (attemptInitialMoreOptionsNavigation(moreOptionsContainer)) {
+      cookieDebugLog('cookie.initial_cmp.root_selected', {
+        domain: getCurrentDomain(),
+        candidateCount: candidates.length,
+        ...getInitialCMPRootDiagnostics(
+          moreOptionsContainer === document ? null : moreOptionsContainer,
+          initialRoot.reason
+        ),
+      })
+
+      if (
+        attemptInitialMoreOptionsNavigation(
+          moreOptionsContainer,
+          initialRoot.reason
+        )
+      ) {
         return
       }
     } else {
