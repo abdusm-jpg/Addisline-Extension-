@@ -795,6 +795,20 @@ function cookieDebugLog(event, details = {}) {
   console.log('[Addisline]', event, details)
 }
 
+function logRuntimeError(scope, error) {
+  cookieDebugLog('Runtime error', {
+    scope,
+    message: error?.message || String(error || 'unknown error'),
+    stack: String(error?.stack || '').slice(0, 500),
+  })
+}
+
+cookieDebugLog('Content script started', {
+  domain: getCurrentDomain(),
+  readyState: document.readyState,
+  hasExtensionContext: hasExtensionContext(),
+})
+
 function runCMPFingerprintDebugDetection(root = document) {
   const detector =
     globalThis?.AddislineCMPFingerprint?.detectCMPFingerprint
@@ -997,12 +1011,12 @@ function safeStorageGet(defaults, callback) {
         }
 
         callback(data || defaults)
-      } catch {
-        // Extension context may be invalidated while the callback runs.
+      } catch (error) {
+        logRuntimeError('storage_get_callback', error)
       }
     })
-  } catch {
-    // Extension context invalidated.
+  } catch (error) {
+    logRuntimeError('storage_get', error)
   }
 }
 
@@ -7139,104 +7153,116 @@ function shouldScanForMutations(mutations) {
 }
 
 function scheduleScan(mutations = null) {
-  if (!shouldRunOnThisSite()) {
-    logInitialFlowSkipped('scheduler_site_not_enabled', {
-      domain: getCurrentDomain(),
-    })
-    stopObserver()
-    return
-  }
+  try {
+    if (!shouldRunOnThisSite()) {
+      logInitialFlowSkipped('scheduler_site_not_enabled', {
+        domain: getCurrentDomain(),
+      })
+      stopObserver()
+      return
+    }
 
-  const hasMutationCookieHint =
-    !Array.isArray(mutations) ||
-    mutations.some(mutationLooksCookieRelated)
-  const hasCMPFallbackRoot =
-    Array.isArray(mutations) &&
-    mutations.length > 0 &&
-    !hasMutationCookieHint &&
-    hasVisibleCMPRootForMutationFallback()
-  const directCMPFallbackControl =
-    (
+    const hasMutationCookieHint =
+      !Array.isArray(mutations) ||
+      mutations.some(mutationLooksCookieRelated)
+    const hasCMPFallbackRoot =
       Array.isArray(mutations) &&
       mutations.length > 0 &&
-      !hasMutationCookieHint
-    )
-      ? findDirectVisibleCMPFallbackControl()
-      : null
+      !hasMutationCookieHint &&
+      hasVisibleCMPRootForMutationFallback()
+    const directCMPFallbackControl =
+      (
+        Array.isArray(mutations) &&
+        mutations.length > 0 &&
+        !hasMutationCookieHint
+      )
+        ? findDirectVisibleCMPFallbackControl()
+        : null
 
-  if (!shouldScanForMutations(mutations)) {
-    logInitialFlowSkipped('mutation_not_cookie_related', {
-      domain: getCurrentDomain(),
-      ...getMutationClassificationDiagnostics(mutations),
-    })
-    return
-  }
+    if (!shouldScanForMutations(mutations)) {
+      logInitialFlowSkipped('mutation_not_cookie_related', {
+        domain: getCurrentDomain(),
+        ...getMutationClassificationDiagnostics(mutations),
+      })
+      return
+    }
 
-  if (directCMPFallbackControl) {
-    cookieDebugLog('cookie.mutation_gate.direct_visible_fallback_allowed', {
-      domain: getCurrentDomain(),
-      control: getCookieDebugElementSummary(directCMPFallbackControl),
-    })
-  }
+    if (directCMPFallbackControl) {
+      cookieDebugLog('cookie.mutation_gate.direct_visible_fallback_allowed', {
+        domain: getCurrentDomain(),
+        control: getCookieDebugElementSummary(directCMPFallbackControl),
+      })
+    }
 
-  if (hasCMPFallbackRoot) {
-    cookieDebugLog('cookie.mutation_gate.fallback_allowed', {
-      domain: getCurrentDomain(),
-      ...getMutationClassificationDiagnostics(mutations),
-    })
-  }
+    if (hasCMPFallbackRoot) {
+      cookieDebugLog('cookie.mutation_gate.fallback_allowed', {
+        domain: getCurrentDomain(),
+        ...getMutationClassificationDiagnostics(mutations),
+      })
+    }
 
-  const now = Date.now()
+    const now = Date.now()
 
-  if (
-    mutations &&
-    now - lastObserverScanScheduledAt < OBSERVER_COOLDOWN_MS
-  ) {
-    logInitialFlowSkipped('observer_cooldown', {
-      domain: getCurrentDomain(),
-      cooldownMs: OBSERVER_COOLDOWN_MS,
-    })
-    return
-  }
+    if (
+      mutations &&
+      now - lastObserverScanScheduledAt < OBSERVER_COOLDOWN_MS
+    ) {
+      logInitialFlowSkipped('observer_cooldown', {
+        domain: getCurrentDomain(),
+        cooldownMs: OBSERVER_COOLDOWN_MS,
+      })
+      return
+    }
 
-  lastObserverScanScheduledAt = now
+    lastObserverScanScheduledAt = now
 
-  if (now - lastScanAt > SCAN_BURST_RESET_MS) {
-    scanBurstCount = 0
-  }
+    if (now - lastScanAt > SCAN_BURST_RESET_MS) {
+      scanBurstCount = 0
+    }
 
-  scanBurstCount += 1
+    scanBurstCount += 1
 
-  if (scanBurstCount > MAX_SCAN_BURST) {
+    if (scanBurstCount > MAX_SCAN_BURST) {
+      clearTimeout(debounceTimer)
+
+      logInitialFlowSkipped('scan_burst_delayed', {
+        domain: getCurrentDomain(),
+        maxScanBurst: MAX_SCAN_BURST,
+      })
+
+      debounceTimer = setTimeout(() => {
+        try {
+          scanBurstCount = 0
+          observeOpenShadowRoots()
+          scanPage()
+        } catch (error) {
+          logRuntimeError('delayed_scan_scheduler', error)
+        }
+      }, SCAN_BURST_RESET_MS)
+
+      return
+    }
+
+    const delay =
+      Math.max(
+        SCAN_DEBOUNCE_MS,
+        MIN_SCAN_INTERVAL_MS - (now - lastScanAt)
+      )
+
     clearTimeout(debounceTimer)
 
-    logInitialFlowSkipped('scan_burst_delayed', {
-      domain: getCurrentDomain(),
-      maxScanBurst: MAX_SCAN_BURST,
-    })
-
     debounceTimer = setTimeout(() => {
-      scanBurstCount = 0
-      observeOpenShadowRoots()
-      scanPage()
-    }, SCAN_BURST_RESET_MS)
-
-    return
+      try {
+        lastScanAt = Date.now()
+        observeOpenShadowRoots()
+        scanPage()
+      } catch (error) {
+        logRuntimeError('initial_scan_scheduler', error)
+      }
+    }, delay)
+  } catch (error) {
+    logRuntimeError('schedule_scan', error)
   }
-
-  const delay =
-    Math.max(
-      SCAN_DEBOUNCE_MS,
-      MIN_SCAN_INTERVAL_MS - (now - lastScanAt)
-    )
-
-  clearTimeout(debounceTimer)
-
-  debounceTimer = setTimeout(() => {
-    lastScanAt = Date.now()
-    observeOpenShadowRoots()
-    scanPage()
-  }, delay)
 }
 
 function observeOpenShadowRoots() {
@@ -7269,25 +7295,55 @@ function observeOpenShadowRoots() {
   })
 }
 
-function startObserver() {
-  if (!shouldRunOnThisSite()) {
-    stopObserver()
-    return
+function handleMutationProcessing(mutations) {
+  try {
+    scheduleScan(mutations)
+  } catch (error) {
+    logRuntimeError('mutation_processing', error)
   }
+}
 
-  if (observer) return
+function startObserver() {
+  try {
+    if (!shouldRunOnThisSite()) {
+      stopObserver()
+      return
+    }
 
-  recordProtectedSite()
+    if (observer) {
+      cookieDebugLog('Observer already attached', {
+        domain: getCurrentDomain(),
+      })
+      return
+    }
 
-  observer = new MutationObserver(scheduleScan)
+    recordProtectedSite()
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  })
+    observer = new MutationObserver(handleMutationProcessing)
 
-  observeOpenShadowRoots()
-  scheduleScan()
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    })
+
+    cookieDebugLog('Observer attached', {
+      domain: getCurrentDomain(),
+      root: getCookieDebugElementSummary(document.documentElement),
+    })
+
+    try {
+      observeOpenShadowRoots()
+    } catch (error) {
+      logRuntimeError('observer_shadow_setup', error)
+    }
+
+    cookieDebugLog('Initial scan scheduled', {
+      domain: getCurrentDomain(),
+    })
+    scheduleScan()
+  } catch (error) {
+    logRuntimeError('observer_setup', error)
+  }
 }
 
 function stopObserver() {
