@@ -8,8 +8,6 @@
     "storage"
   ],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*",
     "https://us-central1-addisline-sm.cloudfunctions.net/*"
   ],
   "background": {
@@ -20,14 +18,9 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["cookieIntentDictionary.js", "cmpFingerprint.js", "content.js"],
-      "run_at": "document_idle",
-      "all_frames": true,
-      "match_about_blank": true
+      "run_at": "document_idle"
     }
   ]
 }

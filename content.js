@@ -806,6 +806,7 @@ function logRuntimeError(scope, error) {
 cookieDebugLog('Content script started', {
   domain: getCurrentDomain(),
   readyState: document.readyState,
+  isTopFrame: isTopFrameContext(),
   hasExtensionContext: hasExtensionContext(),
 })
 
@@ -1149,6 +1150,14 @@ function getCurrentDomain() {
   return normalizeDomain(window.location.hostname)
 }
 
+function isTopFrameContext() {
+  try {
+    return window.self === window.top
+  } catch {
+    return false
+  }
+}
+
 function isDomainExcluded(domain, domains) {
   const normalizedDomain = normalizeDomain(domain || '')
 
@@ -1169,6 +1178,7 @@ function isDomainExcluded(domain, domains) {
 
 function shouldRunOnThisSite() {
   return (
+    isTopFrameContext() &&
     protectionEnabled &&
     !isDomainExcluded(getCurrentDomain(), excludedDomains)
   )
