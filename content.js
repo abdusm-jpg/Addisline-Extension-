@@ -3278,6 +3278,29 @@ function canProcessBannerAction(element) {
   return true
 }
 
+function getBasicRejectBlockReason(control) {
+  if (!shouldRunOnThisSite()) return 'site_not_enabled'
+  if (!control) return 'candidate_not_found'
+  if (!isVisible(control)) return 'not_visible'
+  if (hasUnsafeAcceptText(control)) return 'unsafe_accept_text'
+  if (processedActionElements.has(control)) return 'processed_state'
+  if (pageActionCount >= MAX_PAGE_ACTIONS) return 'page_action_budget'
+
+  const signature =
+    getBannerActionSignature(control)
+  const lastActionAt =
+    bannerActionCooldowns.get(signature) || 0
+
+  if (
+    signature &&
+    Date.now() - lastActionAt < BANNER_ACTION_COOLDOWN_MS
+  ) {
+    return 'cooldown'
+  }
+
+  return ''
+}
+
 function clickElementSafely(element, options = {}) {
   if (
     !shouldRunOnThisSite() ||
@@ -6818,6 +6841,172 @@ function scanPage() {
       first: getCookieDebugElementSummary(candidates[0]),
     })
 
+    runCMPFingerprintDebugDetection(candidates[0] || document)
+    if (isAddislineTestMode()) {
+      updateAddislineTestReport({
+        event: 'scanPage:candidates',
+        bannerCandidateCount: candidates.length,
+        chosenCandidateSummary: getElementTestSummary(candidates[0]),
+      })
+    }
+    runPassiveCookieIntelligenceForCandidates(candidates)
+
+    cookieDebugLog('Basic reject flow active', {
+      candidateCount: candidates.length,
+      allowAutoReject: modeConfig.allowAutoReject,
+    })
+
+    if (modeConfig.allowAutoReject) {
+      for (const candidate of candidates) {
+        if (!isPotentialCookieContainer(candidate)) continue
+
+        const action = decideCookieAction(candidate)
+
+        if (action.type === 'reject' && action.element) {
+          cookieDebugLog('Basic reject candidate found', {
+            source: 'candidate_scan',
+            intent: action.intent || '',
+            control: getCookieDebugElementSummary(action.element),
+          })
+        }
+
+        if (executeCookieAction(action)) {
+          if (action.type === 'reject') {
+            cookieDebugLog('Basic reject clicked', {
+              source: 'candidate_scan',
+              intent: action.intent || '',
+              control: getCookieDebugElementSummary(action.element),
+            })
+          }
+          updateAddislineTestReport({
+            event: 'scanPage:action-executed',
+            chosenActionType: action.type,
+            chosenActionIntent: action.intent || 'none',
+            lastActionResult: 'action_executed',
+          })
+          return
+        }
+
+        if (action.type === 'reject' && action.element) {
+          cookieDebugLog('Basic reject blocked: action_gate_or_click_failed', {
+            source: 'candidate_scan',
+            intent: action.intent || '',
+            control: getCookieDebugElementSummary(action.element),
+          })
+        }
+      }
+    }
+
+    const directRejectControl =
+      modeConfig.allowAutoReject
+        ? findDirectSafeRejectControl()
+        : null
+
+    if (directRejectControl) {
+      cookieDebugLog('Basic reject candidate found', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+      cookieDebugLog('cookie.reject.detected', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+    }
+
+    if (!directRejectControl) {
+      cookieDebugLog('Basic reject blocked: candidate_not_found', {
+        source: 'direct_scan',
+      })
+    }
+
+    const directRejectBlockReason =
+      getBasicRejectBlockReason(directRejectControl)
+
+    if (directRejectBlockReason && directRejectControl) {
+      cookieDebugLog(`Basic reject blocked: ${directRejectBlockReason}`, {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+    }
+
+    const directRejectCanProcess =
+      directRejectControl &&
+      !directRejectBlockReason &&
+      canProcessBannerAction(directRejectControl)
+    const directRejectClicked =
+      directRejectControl &&
+      directRejectCanProcess
+        ? clickElementSafely(directRejectControl)
+        : false
+
+    if (
+      directRejectControl &&
+      directRejectCanProcess &&
+      directRejectClicked
+    ) {
+      cookieDebugLog('Basic reject clicked', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+      cookieDebugLog('cookie.reject.clicked', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+      const directRejectContainer =
+        getCookieContainer(directRejectControl)
+      const directRejectAction = {
+        type: 'reject',
+        element: directRejectControl,
+        intent: getBestCookieIntent(
+          directRejectControl,
+          directRejectContainer || document
+        ).intent,
+        container: directRejectContainer,
+      }
+
+      incrementStat('autoRejects')
+      recordStatsFromSuccessfulCookieAction(directRejectAction, {
+        container: directRejectContainer,
+      })
+      schedulePostActionVerification({
+        type: 'reject',
+        container: directRejectContainer,
+        element: directRejectControl,
+      })
+      setLastAction('auto_reject')
+      setLastError('')
+      log('Rechazo directo prioritario ejecutado')
+      updateAddislineTestReport({
+        event: 'scanPage:direct-reject',
+        chosenActionType: 'reject',
+        chosenActionIntent: directRejectAction.intent || 'none',
+        lastActionResult: 'direct_reject_executed',
+      })
+      return
+    }
+
+    if (
+      directRejectControl &&
+      directRejectCanProcess === false &&
+      !directRejectBlockReason
+    ) {
+      cookieDebugLog('Basic reject blocked: action_cooldown_or_processed', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+    }
+
+    if (
+      directRejectControl &&
+      directRejectCanProcess &&
+      !directRejectClicked
+    ) {
+      cookieDebugLog('Basic reject blocked: click_failed', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+    }
+
     if (
       !moreOptionsNavigationOpened &&
       modeConfig.allowSettingsOpen
@@ -6870,87 +7059,6 @@ function scanPage() {
           attemptControlledDeepCMPNavigation(deepPanel)
         }
       }
-    }
-    runCMPFingerprintDebugDetection(candidates[0] || document)
-    if (isAddislineTestMode()) {
-      updateAddislineTestReport({
-        event: 'scanPage:candidates',
-        bannerCandidateCount: candidates.length,
-        chosenCandidateSummary: getElementTestSummary(candidates[0]),
-      })
-    }
-    runPassiveCookieIntelligenceForCandidates(candidates)
-
-    if (modeConfig.allowAutoReject) {
-      for (const candidate of candidates) {
-        if (!isPotentialCookieContainer(candidate)) continue
-
-        const action = decideCookieAction(candidate)
-
-        if (executeCookieAction(action)) {
-          updateAddislineTestReport({
-            event: 'scanPage:action-executed',
-            chosenActionType: action.type,
-            chosenActionIntent: action.intent || 'none',
-            lastActionResult: 'action_executed',
-          })
-          return
-        }
-      }
-    }
-
-    const directRejectControl =
-      modeConfig.allowAutoReject
-        ? findDirectSafeRejectControl()
-        : null
-
-    if (directRejectControl) {
-      cookieDebugLog('cookie.reject.detected', {
-        source: 'direct_scan',
-        control: getCookieDebugElementSummary(directRejectControl),
-      })
-    }
-
-    if (
-      directRejectControl &&
-      canProcessBannerAction(directRejectControl) &&
-      clickElementSafely(directRejectControl)
-    ) {
-      cookieDebugLog('cookie.reject.clicked', {
-        source: 'direct_scan',
-        control: getCookieDebugElementSummary(directRejectControl),
-      })
-      const directRejectContainer =
-        getCookieContainer(directRejectControl)
-      const directRejectAction = {
-        type: 'reject',
-        element: directRejectControl,
-        intent: getBestCookieIntent(
-          directRejectControl,
-          directRejectContainer || document
-        ).intent,
-        container: directRejectContainer,
-      }
-
-      incrementStat('autoRejects')
-      recordStatsFromSuccessfulCookieAction(directRejectAction, {
-        container: directRejectContainer,
-      })
-      schedulePostActionVerification({
-        type: 'reject',
-        container: directRejectContainer,
-        element: directRejectControl,
-      })
-      setLastAction('auto_reject')
-      setLastError('')
-      log('Rechazo directo prioritario ejecutado')
-      updateAddislineTestReport({
-        event: 'scanPage:direct-reject',
-        chosenActionType: 'reject',
-        chosenActionIntent: directRejectAction.intent || 'none',
-        lastActionResult: 'direct_reject_executed',
-      })
-      return
     }
 
     const directSettingsControl =
