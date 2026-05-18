@@ -10,6 +10,7 @@ const ENABLE_OPTIONAL_TOGGLE_AUTOMATION = false
 const ENABLE_MUTATION_DOM_FALLBACKS = false
 const ENABLE_SHADOW_ROOT_OBSERVATION = false
 const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = true
+const ENABLE_SETTINGS_RETRY_FLOW = false
 const REJECT_FLOW_DEBUG = true
 
 let protectionEnabled = false
@@ -20,6 +21,10 @@ let debounceTimer = null
 let preferencesTimer = null
 let preferencesRetryTimers = []
 let lastScanAt = 0
+let pageScanCount = 0
+let observerMutationScanCount = 0
+let scanBudgetExhausted = false
+let rejectFlowCompleted = false
 let lastPassiveIntelligenceAt = 0
 let scanBurstCount = 0
 let protectedDomainRecorded = false
@@ -71,6 +76,8 @@ const OBSERVER_COOLDOWN_MS = 2500
 const SHADOW_OBSERVE_COOLDOWN_MS = 5000
 const COOKIE_DEBUG_LOG_COOLDOWN_MS = 5000
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
+const MAX_SCANS_PER_PAGE = 8
+const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
 const TOGGLE_PERSISTENCE_VERIFY_MS = 650
@@ -3714,6 +3721,7 @@ function executeCookieAction(action) {
       container: action.container,
       element: action.element,
     })
+    stopObserver()
     setLastAction('auto_reject')
     setLastError('')
     log('Consentimiento rechazado de forma segura')
@@ -3887,6 +3895,10 @@ function getRejectFallbackSettingsSignature(context, container) {
 }
 
 function attemptRejectFallbackSettingsFlow(context, state) {
+  if (!ENABLE_SETTINGS_RETRY_FLOW) {
+    return false
+  }
+
   const modeConfig =
     getProtectionModeConfig()
 
@@ -4052,6 +4064,7 @@ function schedulePostActionVerification(context = {}) {
 
     if (!state.active) {
       if (context.type === 'reject') {
+        rejectFlowCompleted = true
         rejectFlowLog('Basic reject verification passed', {
           bannerVisible: state.bannerVisible,
           modalPresent: state.modalPresent,
@@ -4103,6 +4116,10 @@ function schedulePostActionVerification(context = {}) {
 }
 
 function schedulePreferencesFlow() {
+  if (!ENABLE_SETTINGS_RETRY_FLOW) {
+    return
+  }
+
   clearTimeout(preferencesTimer)
   preferencesRetryTimers.forEach(clearTimeout)
   preferencesRetryTimers = []
@@ -6885,8 +6902,31 @@ function shouldDeferScanForLoading() {
   return true
 }
 
+function canRunPageScan(source = 'scan') {
+  if (scanBudgetExhausted || rejectFlowCompleted) {
+    return false
+  }
+
+  if (pageScanCount >= MAX_SCANS_PER_PAGE) {
+    scanBudgetExhausted = true
+    rejectFlowLog('Basic reject blocked: scan_budget_exhausted', {
+      source,
+      maxScans: MAX_SCANS_PER_PAGE,
+    })
+    stopObserver()
+    return false
+  }
+
+  pageScanCount += 1
+  return true
+}
+
 function scanPage() {
   try {
+    if (!canRunPageScan('scanPage')) {
+      return
+    }
+
     const modeConfig =
       getProtectionModeConfig()
 
@@ -7063,6 +7103,7 @@ function scanPage() {
         container: directRejectContainer,
         element: directRejectControl,
       })
+      stopObserver()
       setLastAction('auto_reject')
       setLastError('')
       log('Rechazo directo prioritario ejecutado')
@@ -7156,6 +7197,7 @@ function scanPage() {
     }
 
     const directSettingsControl =
+      ENABLE_SETTINGS_RETRY_FLOW &&
       modeConfig.allowSettingsOpen
         ? findDirectSettingsControl()
         : null
@@ -7378,6 +7420,10 @@ function shouldScanForMutations(mutations) {
 
 function scheduleScan(mutations = null) {
   try {
+    if (scanBudgetExhausted || rejectFlowCompleted) {
+      return
+    }
+
     if (!shouldRunOnThisSite()) {
       logInitialFlowSkipped('scheduler_site_not_enabled', {
         domain: getCurrentDomain(),
@@ -7389,6 +7435,21 @@ function scheduleScan(mutations = null) {
     const hasMutationCookieHint =
       !Array.isArray(mutations) ||
       mutations.some(mutationLooksCookieRelated)
+
+    if (mutations) {
+      if (
+        observerMutationScanCount >= MAX_MUTATION_SCANS_PER_PAGE
+      ) {
+        scanBudgetExhausted = true
+        rejectFlowLog('Basic reject blocked: mutation_scan_budget_exhausted', {
+          maxMutationScans: MAX_MUTATION_SCANS_PER_PAGE,
+        })
+        stopObserver()
+        return
+      }
+
+      observerMutationScanCount += 1
+    }
     const hasCMPFallbackRoot =
       ENABLE_MUTATION_DOM_FALLBACKS &&
       Array.isArray(mutations) &&
