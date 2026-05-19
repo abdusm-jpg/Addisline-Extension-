@@ -2520,10 +2520,91 @@ function getDirectClickableControls(container = document) {
   )
 }
 
+function getDirectRejectDiagnostic(control) {
+  const text =
+    getActionText(control)
+  const container =
+    getCookieContainer(control) || document
+  const rejectedBy = []
+  const matchedBy = []
+
+  if (!isVisible(control)) rejectedBy.push('not_visible')
+  if (isInsideNonCookieModal(control)) rejectedBy.push('non_cookie_modal')
+  if (hasUnsafeAcceptText(control)) rejectedBy.push('unsafe_accept_text')
+
+  if (textMatchesDictionaryCookieIntent(text, 'rejectAll')) {
+    matchedBy.push('dictionary_reject_all')
+  }
+  if (textHasAny(text, totalRejectTexts)) {
+    matchedBy.push('total_reject_text')
+  }
+  if (textHasAny(text, rejectTexts)) {
+    matchedBy.push('reject_text')
+  }
+  if (hasDirectSafeRejectSignal(control)) {
+    matchedBy.push('direct_safe_signal')
+  }
+
+  if (
+    matchedBy.length === 0 &&
+    isSensitiveActionControl(control, container)
+  ) {
+    rejectedBy.push('sensitive_context')
+  }
+
+  if (matchedBy.length === 0) {
+    rejectedBy.push('no_reject_match')
+  }
+
+  return {
+    text: text.slice(0, 160),
+    tagName: control?.tagName?.toLowerCase?.() || '',
+    role: control?.getAttribute?.('role') || '',
+    matchedBy,
+    rejectedBy,
+    control: getCookieDebugElementSummary(control),
+  }
+}
+
+function traceDirectRejectExtraction(controls) {
+  const safeControls =
+    Array.isArray(controls) ? controls : []
+  const diagnostics =
+    safeControls.map(getDirectRejectDiagnostic)
+  const matchedCandidates =
+    diagnostics
+      .filter((diagnostic) =>
+        diagnostic.matchedBy.length > 0 &&
+        diagnostic.rejectedBy.length === 0
+      )
+      .slice(0, 8)
+  const rejectedCandidates =
+    diagnostics
+      .filter((diagnostic) =>
+        diagnostic.matchedBy.length > 0 &&
+        diagnostic.rejectedBy.length > 0
+      )
+      .slice(0, 8)
+
+  rejectFlowLog('Basic reject extraction trace', {
+    totalClickableControls: safeControls.length,
+    firstTexts: diagnostics
+      .slice(0, 10)
+      .map((diagnostic) => diagnostic.text),
+    matchedCandidates,
+    rejectedCandidates,
+  })
+}
+
 function findDirectSafeRejectControl() {
   if (!shouldRunOnThisSite()) return null
 
-  return getDirectClickableControls(document)
+  const controls =
+    getDirectClickableControls(document)
+
+  traceDirectRejectExtraction(controls)
+
+  return controls
     .find((control) => {
       if (!isVisible(control)) return false
       if (isInsideNonCookieModal(control)) return false
