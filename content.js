@@ -2639,6 +2639,113 @@ function traceDirectRejectExtraction(controls) {
     matchedCandidates,
     rejectedCandidates,
   })
+
+  traceNoAceptoRejectButton(safeControls)
+}
+
+function getNoAceptoSignal(element) {
+  return normalizeMatchText([
+    element?.innerText,
+    element?.textContent,
+    element?.getAttribute?.('aria-label'),
+    element?.getAttribute?.('title'),
+    element?.value,
+    element?.getAttribute?.('value'),
+    getActionText(element),
+  ]
+    .filter(Boolean)
+    .join(' ')
+  )
+}
+
+function isNoAceptoControl(element) {
+  return textHasPhrase(getNoAceptoSignal(element), 'no acepto')
+}
+
+function getNoAceptoRejectDiagnostic(control) {
+  const actionText =
+    getActionText(control)
+  const signalText =
+    getNoAceptoSignal(control)
+  const container =
+    getCookieContainer(control) || document
+  const signature =
+    getBannerActionSignature(control)
+  const lastActionAt =
+    bannerActionCooldowns.get(signature) || 0
+  const blockedByCooldown =
+    Boolean(
+      signature &&
+      Date.now() - lastActionAt < BANNER_ACTION_COOLDOWN_MS
+    )
+  const blockedByProcessedState =
+    processedActionElements.has(control)
+  const blockedByAvoidAcceptAll =
+    textMatchesDictionaryCookieIntent(actionText, 'avoidAcceptAll')
+  const blockedByUnsafeAcceptText =
+    hasUnsafeAcceptText(control)
+  const blockedByNonCookieModal =
+    isInsideNonCookieModal(control)
+  const matchedAsRejectAll =
+    textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
+    textHasAny(actionText, totalRejectTexts)
+  const matchedAsRejectText =
+    textHasAny(actionText, rejectTexts)
+  const blockedBySensitiveContext =
+    !matchedAsRejectAll &&
+    !matchedAsRejectText &&
+    isSensitiveActionControl(control, container)
+
+  return {
+    foundInDom: true,
+    visible: isVisible(control),
+    matchedAsRejectAll,
+    matchedAsRejectText,
+    blockedByAvoidAcceptAll,
+    blockedByCooldown,
+    blockedByProcessedState,
+    blockedBySafetySensitiveContext: Boolean(
+      blockedByUnsafeAcceptText ||
+      blockedByNonCookieModal ||
+      blockedBySensitiveContext
+    ),
+    safety: {
+      unsafeAcceptText: blockedByUnsafeAcceptText,
+      nonCookieModal: blockedByNonCookieModal,
+      sensitiveContext: blockedBySensitiveContext,
+    },
+    basicRejectBlockReason: getBasicRejectBlockReason(control),
+    actionText: actionText.slice(0, 180),
+    signalText: signalText.slice(0, 180),
+    control: getCookieDebugElementSummary(control),
+  }
+}
+
+function traceNoAceptoRejectButton(controls) {
+  const scannedControls =
+    Array.isArray(controls) ? controls : []
+  const noAceptoControls =
+    scannedControls
+      .filter(isNoAceptoControl)
+      .slice(0, 5)
+
+  rejectFlowLog('NO ACEPTO reject button trace', {
+    foundInDom: noAceptoControls.length > 0,
+    scannedClickableControls: scannedControls.length,
+    diagnostics: noAceptoControls.map(getNoAceptoRejectDiagnostic),
+  })
+}
+
+function logNoAceptoRejectClickOutcome(control, clicked, reason) {
+  if (!control || !isNoAceptoControl(control)) {
+    return
+  }
+
+  rejectFlowLog('NO ACEPTO reject click outcome', {
+    clicked: Boolean(clicked),
+    notClickedReason: clicked ? '' : reason || 'unknown',
+    diagnostic: getNoAceptoRejectDiagnostic(control),
+  })
 }
 
 function classifyCMPBanner(container = document) {
@@ -7377,7 +7484,18 @@ function scanPage() {
           })
         }
 
-        if (executeCookieAction(action)) {
+        const actionExecuted =
+          executeCookieAction(action)
+
+        if (action.type === 'reject' && action.element) {
+          logNoAceptoRejectClickOutcome(
+            action.element,
+            actionExecuted,
+            actionExecuted ? '' : 'candidate_action_gate_or_click_failed'
+          )
+        }
+
+        if (actionExecuted) {
           if (action.type === 'reject') {
             rejectFlowLog('Basic reject clicked', {
               source: 'candidate_scan',
@@ -7445,6 +7563,21 @@ function scanPage() {
       directRejectCanProcess
         ? clickElementSafely(directRejectControl)
         : false
+
+    if (directRejectControl) {
+      logNoAceptoRejectClickOutcome(
+        directRejectControl,
+        directRejectClicked,
+        directRejectClicked
+          ? ''
+          : directRejectBlockReason ||
+            (
+              directRejectCanProcess === false
+                ? 'action_cooldown_or_processed'
+                : 'click_failed'
+            )
+      )
+    }
 
     if (
       directRejectControl &&
