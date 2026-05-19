@@ -2600,6 +2600,110 @@ function traceDirectRejectExtraction(controls) {
   })
 }
 
+function classifyCMPBanner(container = document) {
+  const controls =
+    getDirectClickableControls(container)
+      .filter(isVisible)
+  const hasReject =
+    controls.some((control) => {
+      const text =
+        getActionText(control)
+
+      return (
+        !hasUnsafeAcceptText(control) &&
+        (
+          textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
+          textHasAny(text, totalRejectTexts) ||
+          hasDirectSafeRejectSignal(control)
+        )
+      )
+    })
+  const hasSettings =
+    controls.some((control) => {
+      const text =
+        getActionText(control)
+
+      return (
+        !hasUnsafeAcceptText(control) &&
+        !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+        textMatchesDictionaryCookieIntent(text, 'openSettings')
+      )
+    })
+  const hasSave =
+    controls.some((control) =>
+      textMatchesDictionaryCookieIntent(
+        getActionText(control),
+        'savePreferences'
+      )
+    )
+  const hasAcceptUnsafe =
+    controls.some((control) =>
+      hasUnsafeAcceptText(control) ||
+      textMatchesDictionaryCookieIntent(
+        getActionText(control),
+        'avoidAcceptAll'
+      )
+    )
+
+  let classification = 'unknownUnsafe'
+
+  if (hasReject) {
+    classification = 'directRejectAvailable'
+  } else if (hasSettings || hasSave) {
+    classification = 'settingsAvailable'
+  } else if (hasAcceptUnsafe) {
+    classification = 'acceptOnlyUnsafe'
+  }
+
+  return {
+    classification,
+    directRejectAvailable: hasReject,
+    settingsAvailable: hasSettings || hasSave,
+    acceptOnlyUnsafe: !hasReject && !hasSettings && hasAcceptUnsafe,
+    unknownUnsafe:
+      !hasReject &&
+      !hasSettings &&
+      !hasSave &&
+      !hasAcceptUnsafe,
+    controlCount: controls.length,
+  }
+}
+
+function logCMPBannerClassifications(candidates) {
+  const bannerCandidates =
+    Array.isArray(candidates) && candidates.length > 0
+      ? candidates
+      : [document]
+
+  const classifications =
+    bannerCandidates
+      .slice(0, 4)
+      .map((candidate) => ({
+        ...classifyCMPBanner(candidate),
+        candidate: getCookieDebugElementSummary(candidate),
+      }))
+
+  rejectFlowLog('Lightweight CMP banner classification', {
+    classifications,
+  })
+
+  if (isAddislineTestMode()) {
+    updateAddislineTestReport({
+      event: 'lightweight-banner-classification',
+      bannerClassification:
+        classifications[0]?.classification || 'unknownUnsafe',
+      lastSkipReason:
+        classifications[0]?.classification === 'settingsAvailable'
+          ? 'settings_required'
+          : classifications[0]?.classification === 'acceptOnlyUnsafe'
+            ? 'accept_only_unsafe'
+            : classifications[0]?.classification === 'unknownUnsafe'
+              ? 'unknown_unsafe'
+              : '',
+    })
+  }
+}
+
 function findDirectSafeRejectControl() {
   if (!shouldRunOnThisSite()) return null
 
@@ -7070,6 +7174,7 @@ function scanPage() {
       candidateCount: candidates.length,
       allowAutoReject: modeConfig.allowAutoReject,
     })
+    logCMPBannerClassifications(candidates)
 
     if (modeConfig.allowAutoReject) {
       for (const candidate of candidates) {
