@@ -12,6 +12,7 @@ const ENABLE_SHADOW_ROOT_OBSERVATION = false
 const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = false
 const ENABLE_LATE_CMP_MUTATION_WAKEUP = true
 const ENABLE_SETTINGS_RETRY_FLOW = false
+const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = true
 const REJECT_FLOW_DEBUG = true
 
 let protectionEnabled = false
@@ -28,6 +29,7 @@ let scanBudgetExhausted = false
 let rejectFlowCompleted = false
 let delayedLateScanScheduled = false
 let lateCMPMutationWakeupUsed = false
+let lightweightSettingsOpenAttempted = false
 let lastPassiveIntelligenceAt = 0
 let scanBurstCount = 0
 let protectedDomainRecorded = false
@@ -2667,6 +2669,152 @@ function classifyCMPBanner(container = document) {
       !hasAcceptUnsafe,
     controlCount: controls.length,
   }
+}
+
+function textMatchesLightweightSettingsOpen(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return (
+    textHasPhrase(normalizedText, 'more options') ||
+    textHasPhrase(normalizedText, 'settings') ||
+    textHasPhrase(normalizedText, 'manage preferences') ||
+    textHasPhrase(normalizedText, 'privacy settings')
+  )
+}
+
+function findLightweightSettingsControl(container = document) {
+  return getDirectClickableControls(container)
+    .find((control) => {
+      const text =
+        getActionText(control)
+
+      return (
+        isVisible(control) &&
+        !isInsideNonCookieModal(control) &&
+        !hasUnsafeAcceptText(control) &&
+        !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+        textMatchesLightweightSettingsOpen(text) &&
+        !isSensitiveActionControl(control, container)
+      )
+    }) || null
+}
+
+function getSettingsAvailableClassification(candidates) {
+  const bannerCandidates =
+    Array.isArray(candidates) && candidates.length > 0
+      ? candidates
+      : [document]
+
+  return bannerCandidates
+    .slice(0, 4)
+    .map((candidate) => ({
+      candidate,
+      ...classifyCMPBanner(candidate),
+    }))
+    .find((entry) =>
+      entry.classification === 'settingsAvailable' &&
+      !entry.directRejectAvailable
+    ) || null
+}
+
+function getLightweightSettingsBlockReason(control) {
+  if (!shouldRunOnThisSite()) return 'site_not_enabled'
+  if (!control) return 'candidate_not_found'
+  if (!isVisible(control)) return 'not_visible'
+  if (hasUnsafeAcceptText(control)) return 'unsafe_accept_text'
+  if (processedActionElements.has(control)) return 'processed_state'
+  if (pageActionCount >= MAX_PAGE_ACTIONS) return 'page_action_budget'
+
+  const signature =
+    getBannerActionSignature(control)
+  const lastActionAt =
+    bannerActionCooldowns.get(signature) || 0
+
+  if (
+    signature &&
+    Date.now() - lastActionAt < BANNER_ACTION_COOLDOWN_MS
+  ) {
+    return 'cooldown'
+  }
+
+  return ''
+}
+
+function attemptLightweightSettingsOpen(candidates) {
+  if (
+    !ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ||
+    lightweightSettingsOpenAttempted ||
+    !shouldRunOnThisSite() ||
+    !getProtectionModeConfig().allowSettingsOpen
+  ) {
+    return false
+  }
+
+  const settingsClassification =
+    getSettingsAvailableClassification(candidates)
+
+  if (!settingsClassification) {
+    return false
+  }
+
+  const control =
+    findLightweightSettingsControl(settingsClassification.candidate)
+
+  if (!control) {
+    rejectFlowLog('Lightweight settings blocked: candidate_not_found', {
+      classification: settingsClassification.classification,
+    })
+    return false
+  }
+
+  const blockReason =
+    getLightweightSettingsBlockReason(control)
+
+  if (blockReason) {
+    rejectFlowLog(`Lightweight settings blocked: ${blockReason}`, {
+      control: getCookieDebugElementSummary(control),
+    })
+    return false
+  }
+
+  if (!canProcessBannerAction(control)) {
+    rejectFlowLog('Lightweight settings blocked: action_gate', {
+      control: getCookieDebugElementSummary(control),
+    })
+    return false
+  }
+
+  lightweightSettingsOpenAttempted = true
+
+  if (!clickElementSafely(control)) {
+    rejectFlowLog('Lightweight settings blocked: click_failed', {
+      control: getCookieDebugElementSummary(control),
+    })
+    return false
+  }
+
+  rejectFlowLog('Lightweight settings opened', {
+    control: getCookieDebugElementSummary(control),
+  })
+  setLastAction('settings_opened')
+  setLastError('')
+
+  setTimeout(() => {
+    try {
+      if (
+        shouldRunOnThisSite() &&
+        !scanBudgetExhausted &&
+        !rejectFlowCompleted
+      ) {
+        scanPage()
+      }
+    } catch (error) {
+      logRuntimeError('lightweight_settings_classify_next_panel', error)
+    }
+  }, 900)
+
+  return true
 }
 
 function logCMPBannerClassifications(candidates) {
@@ -7326,6 +7474,10 @@ function scanPage() {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
+    }
+
+    if (attemptLightweightSettingsOpen(candidates)) {
+      return
     }
 
     if (
