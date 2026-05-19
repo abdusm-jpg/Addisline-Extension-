@@ -29,6 +29,7 @@ let scanBudgetExhausted = false
 let rejectFlowCompleted = false
 let delayedLateScanScheduled = false
 let lateCMPMutationWakeupUsed = false
+let emergencyVisibleCMPScanUsed = false
 let lightweightSettingsOpenAttempted = false
 let lastPassiveIntelligenceAt = 0
 let scanBurstCount = 0
@@ -3143,6 +3144,53 @@ function findDirectVisibleCMPFallbackControl() {
         textMatchesDirectCMPFallbackNavigation(text)
       )
     }) || null
+}
+
+function textMatchesPriorityCMPControl(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return (
+    textMatchesDictionaryCookieIntent(normalizedText, 'rejectAll') ||
+    textMatchesDictionaryCookieIntent(normalizedText, 'openSettings') ||
+    textMatchesDictionaryCookieIntent(normalizedText, 'manageSettings') ||
+    textHasAny(normalizedText, totalRejectTexts) ||
+    textHasAny(normalizedText, rejectTexts) ||
+    textHasPhrase(normalizedText, 'more options') ||
+    textHasPhrase(normalizedText, 'manage settings')
+  )
+}
+
+function findVisiblePriorityCMPControl() {
+  return Array.from(
+    querySelectorAllDeep(
+      [
+        'button',
+        'a',
+        '[role="button"]',
+        'input[type="button"]',
+        'input[type="submit"]',
+      ].join(',')
+    )
+  )
+    .find((control) => {
+      const text =
+        getInitialMoreOptionsControlText(control) ||
+        getActionText(control)
+
+      return (
+        isVisible(control) &&
+        getCookieDebugDisabledState(control) !== 'disabled' &&
+        !isInsideNonCookieModal(control) &&
+        !hasUnsafeAcceptText(control) &&
+        !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+        textMatchesPriorityCMPControl(text)
+      )
+    }) || null
+}
+
+function hasVisiblePriorityCMPRoot() {
+  return getInitialCMPRootCandidates().length > 0
 }
 
 function getInitialMoreOptionsCandidateDebug(control, container = document) {
@@ -7985,6 +8033,84 @@ function shouldScanForMutations(mutations) {
   )
 }
 
+function getMutationScanPriority(mutations) {
+  if (!Array.isArray(mutations)) {
+    return {
+      shouldScan: true,
+      reason: 'scheduled_scan',
+      control: null,
+    }
+  }
+
+  if (mutations.length === 0) {
+    return {
+      shouldScan: false,
+      reason: 'empty_mutations',
+      control: null,
+    }
+  }
+
+  if (mutations.some(mutationLooksCookieRelated)) {
+    return {
+      shouldScan: true,
+      reason: 'cookie_mutation_hint',
+      control: null,
+    }
+  }
+
+  if (ENABLE_BASIC_REJECT_MUTATION_FALLBACK) {
+    return {
+      shouldScan: true,
+      reason: 'basic_reject_mutation_fallback',
+      control: null,
+    }
+  }
+
+  if (mutationHasVisibleLateCMPWakeup(mutations)) {
+    return {
+      shouldScan: true,
+      reason: 'visible_overlay_or_cmp_mutation',
+      control: null,
+    }
+  }
+
+  const priorityControl =
+    findVisiblePriorityCMPControl()
+
+  if (priorityControl) {
+    return {
+      shouldScan: true,
+      reason: 'visible_reject_or_settings_control',
+      control: priorityControl,
+    }
+  }
+
+  if (hasVisiblePriorityCMPRoot()) {
+    return {
+      shouldScan: true,
+      reason: 'visible_cmp_keyword_root',
+      control: null,
+    }
+  }
+
+  if (
+    hasDirectVisibleCMPFallbackControl() ||
+    hasVisibleCMPRootForMutationFallback()
+  ) {
+    return {
+      shouldScan: true,
+      reason: 'visible_cmp_fallback',
+      control: null,
+    }
+  }
+
+  return {
+    shouldScan: false,
+    reason: 'low_confidence_mutation',
+    control: null,
+  }
+}
+
 function scheduleScan(mutations = null) {
   try {
     if (scanBudgetExhausted || rejectFlowCompleted) {
@@ -7999,25 +8125,52 @@ function scheduleScan(mutations = null) {
       return
     }
 
+    const mutationPriority =
+      getMutationScanPriority(mutations)
     const hasMutationCookieHint =
-      !Array.isArray(mutations) ||
-      mutations.some(mutationLooksCookieRelated)
+      mutationPriority.reason === 'scheduled_scan' ||
+      mutationPriority.reason === 'cookie_mutation_hint'
     const hasLateCMPMutationWakeup =
-      mutationHasVisibleLateCMPWakeup(mutations)
+      mutationPriority.reason === 'visible_overlay_or_cmp_mutation'
+
+    if (!mutationPriority.shouldScan) {
+      logInitialFlowSkipped('mutation_not_cookie_related', {
+        domain: getCurrentDomain(),
+        priorityReason: mutationPriority.reason,
+        ...(
+          COOKIE_DEBUG
+            ? getMutationClassificationDiagnostics(mutations)
+            : {}
+        ),
+      })
+      return
+    }
 
     if (mutations) {
       if (
         observerMutationScanCount >= MAX_MUTATION_SCANS_PER_PAGE
       ) {
-        scanBudgetExhausted = true
-        rejectFlowLog('Basic reject blocked: mutation_scan_budget_exhausted', {
-          maxMutationScans: MAX_MUTATION_SCANS_PER_PAGE,
-        })
-        stopObserver()
-        return
+        if (
+          mutationPriority.control &&
+          !emergencyVisibleCMPScanUsed
+        ) {
+          emergencyVisibleCMPScanUsed = true
+          rejectFlowLog('Basic reject emergency visible CMP recovery scan', {
+            reason: mutationPriority.reason,
+            control: getCookieDebugElementSummary(mutationPriority.control),
+          })
+        } else {
+          rejectFlowLog('Basic reject blocked: mutation_scan_budget_exhausted', {
+            maxMutationScans: MAX_MUTATION_SCANS_PER_PAGE,
+            priorityReason: mutationPriority.reason,
+            emergencyVisibleCMPScanUsed,
+          })
+          stopObserver()
+          return
+        }
+      } else {
+        observerMutationScanCount += 1
       }
-
-      observerMutationScanCount += 1
     }
 
     if (hasLateCMPMutationWakeup) {
@@ -8043,16 +8196,11 @@ function scheduleScan(mutations = null) {
         ? findDirectVisibleCMPFallbackControl()
         : null
 
-    if (!shouldScanForMutations(mutations)) {
-      logInitialFlowSkipped('mutation_not_cookie_related', {
-        domain: getCurrentDomain(),
-        ...(
-          COOKIE_DEBUG
-            ? getMutationClassificationDiagnostics(mutations)
-            : {}
-        ),
+    if (mutationPriority.control) {
+      rejectFlowLog('Basic reject visible CMP priority scan', {
+        reason: mutationPriority.reason,
+        control: getCookieDebugElementSummary(mutationPriority.control),
       })
-      return
     }
 
     if (directCMPFallbackControl) {
