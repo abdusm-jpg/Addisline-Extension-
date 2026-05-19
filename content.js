@@ -9,7 +9,8 @@ const ENABLE_DEEP_PREFERENCE_TRAVERSAL = false
 const ENABLE_OPTIONAL_TOGGLE_AUTOMATION = false
 const ENABLE_MUTATION_DOM_FALLBACKS = false
 const ENABLE_SHADOW_ROOT_OBSERVATION = false
-const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = true
+const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = false
+const ENABLE_LATE_CMP_MUTATION_WAKEUP = true
 const ENABLE_SETTINGS_RETRY_FLOW = false
 const REJECT_FLOW_DEBUG = true
 
@@ -25,6 +26,8 @@ let pageScanCount = 0
 let observerMutationScanCount = 0
 let scanBudgetExhausted = false
 let rejectFlowCompleted = false
+let delayedLateScanScheduled = false
+let lateCMPMutationWakeupUsed = false
 let lastPassiveIntelligenceAt = 0
 let scanBurstCount = 0
 let protectedDomainRecorded = false
@@ -76,6 +79,7 @@ const OBSERVER_COOLDOWN_MS = 2500
 const SHADOW_OBSERVE_COOLDOWN_MS = 5000
 const COOKIE_DEBUG_LOG_COOLDOWN_MS = 5000
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
+const LATE_CMP_RESCAN_DELAY_MS = 3500
 const MAX_SCANS_PER_PAGE = 8
 const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_PAGE_ACTIONS = 16
@@ -7400,6 +7404,55 @@ function mutationLooksCookieRelated(mutation) {
   return false
 }
 
+function isVisibleFixedOrStickyCMPElement(element) {
+  if (
+    !element ||
+    element.nodeType !== Node.ELEMENT_NODE ||
+    !isVisible(element) ||
+    isLikelyNonCookieModal(element)
+  ) {
+    return false
+  }
+
+  const style =
+    window.getComputedStyle(element)
+  const isOverlayPosition =
+    style.position === 'fixed' ||
+    style.position === 'sticky'
+
+  return (
+    isPotentialCookieContainer(element) ||
+    (
+      isOverlayPosition &&
+      (
+        hasCookieBannerSignal(element) ||
+        hasKnownCmpSignal(element)
+      )
+    )
+  )
+}
+
+function mutationHasVisibleLateCMPWakeup(mutations) {
+  if (
+    !ENABLE_LATE_CMP_MUTATION_WAKEUP ||
+    lateCMPMutationWakeupUsed ||
+    !Array.isArray(mutations)
+  ) {
+    return false
+  }
+
+  return mutations.some((mutation) => {
+    if (isVisibleFixedOrStickyCMPElement(mutation.target)) {
+      return true
+    }
+
+    return Array.from(mutation.addedNodes || [])
+      .some((node) =>
+        isVisibleFixedOrStickyCMPElement(node)
+      )
+  })
+}
+
 function getMutationCMPDetectionDiagnostics() {
   const roots =
     getInitialCMPRootCandidates()
@@ -7493,6 +7546,10 @@ function shouldScanForMutations(mutations) {
     return true
   }
 
+  if (mutationHasVisibleLateCMPWakeup(mutations)) {
+    return true
+  }
+
   return (
     hasDirectVisibleCMPFallbackControl() ||
     hasVisibleCMPRootForMutationFallback()
@@ -7516,6 +7573,8 @@ function scheduleScan(mutations = null) {
     const hasMutationCookieHint =
       !Array.isArray(mutations) ||
       mutations.some(mutationLooksCookieRelated)
+    const hasLateCMPMutationWakeup =
+      mutationHasVisibleLateCMPWakeup(mutations)
 
     if (mutations) {
       if (
@@ -7531,6 +7590,14 @@ function scheduleScan(mutations = null) {
 
       observerMutationScanCount += 1
     }
+
+    if (hasLateCMPMutationWakeup) {
+      lateCMPMutationWakeupUsed = true
+      rejectFlowLog('Basic reject late CMP wakeup', {
+        source: 'visible_overlay_or_cmp_mutation',
+      })
+    }
+
     const hasCMPFallbackRoot =
       ENABLE_MUTATION_DOM_FALLBACKS &&
       Array.isArray(mutations) &&
@@ -7679,6 +7746,33 @@ function handleMutationProcessing(mutations) {
   }
 }
 
+function scheduleDelayedLateCMPRescan() {
+  if (delayedLateScanScheduled) {
+    return
+  }
+
+  delayedLateScanScheduled = true
+
+  setTimeout(() => {
+    try {
+      if (
+        !shouldRunOnThisSite() ||
+        scanBudgetExhausted ||
+        rejectFlowCompleted
+      ) {
+        return
+      }
+
+      rejectFlowLog('Basic reject late CMP rescan', {
+        delayMs: LATE_CMP_RESCAN_DELAY_MS,
+      })
+      scheduleScan()
+    } catch (error) {
+      logRuntimeError('late_cmp_rescan', error)
+    }
+  }, LATE_CMP_RESCAN_DELAY_MS)
+}
+
 function startObserver() {
   try {
     if (!shouldRunOnThisSite()) {
@@ -7717,6 +7811,7 @@ function startObserver() {
       domain: getCurrentDomain(),
     })
     scheduleScan()
+    scheduleDelayedLateCMPRescan()
   } catch (error) {
     logRuntimeError('observer_setup', error)
   }
