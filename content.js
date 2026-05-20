@@ -56,6 +56,7 @@ const loggedCMPFingerprints = new Set()
 const providerInfoModalSignatures = new Map()
 const processedActionElements = new WeakSet()
 const bannerActionCooldowns = new Map()
+const successfulCookieActionCooldowns = new Map()
 const hiddenBannerCooldowns = new Map()
 const dismissedBannerSuppressions = new Map()
 const rejectFallbackSettingsCooldowns = new Map()
@@ -69,6 +70,7 @@ const observedShadowRoots = new WeakSet()
 const STATS_KEY = 'stats'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
+const COOKIE_ACTION_SUCCESS_COOLDOWN_MS = 60000
 const BANNER_HIDE_COOLDOWN_MS = 60000
 const BANNER_SUPPRESSION_TTL_MS = 45000
 const REJECT_FALLBACK_SETTINGS_COOLDOWN_MS = 30000
@@ -2867,6 +2869,7 @@ function getSettingsAvailableClassification(candidates) {
 
 function getLightweightSettingsBlockReason(control) {
   if (!shouldRunOnThisSite()) return 'site_not_enabled'
+  if (hasSuccessfulCookieActionCooldown()) return 'success_cooldown'
   if (!control) return 'candidate_not_found'
   if (!isVisible(control)) return 'not_visible'
   if (hasUnsafeAcceptText(control)) return 'unsafe_accept_text'
@@ -2948,6 +2951,7 @@ function attemptLightweightSettingsOpen(candidates) {
   rejectFlowLog('Lightweight settings opened', {
     control: getCookieDebugElementSummary(control),
   })
+  stopObserver()
   setLastAction('settings_opened')
   setLastError('')
 
@@ -3650,6 +3654,55 @@ function getBannerActionSignature(element) {
   ).slice(0, 360)
 }
 
+function getDomainActionCooldownKey() {
+  return normalizeMatchText(getCurrentDomain())
+}
+
+function hasSuccessfulCookieActionCooldown() {
+  const key =
+    getDomainActionCooldownKey()
+
+  if (!key) return false
+
+  const expiresAt =
+    successfulCookieActionCooldowns.get(key) || 0
+
+  if (expiresAt <= Date.now()) {
+    successfulCookieActionCooldowns.delete(key)
+    return false
+  }
+
+  return true
+}
+
+function markSuccessfulCookieActionCooldown(element = null) {
+  const domainKey =
+    getDomainActionCooldownKey()
+  const actionSignature =
+    element ? getBannerActionSignature(element) : ''
+  const expiresAt =
+    Date.now() + COOKIE_ACTION_SUCCESS_COOLDOWN_MS
+
+  if (domainKey) {
+    successfulCookieActionCooldowns.set(domainKey, expiresAt)
+  }
+
+  if (actionSignature) {
+    bannerActionCooldowns.set(actionSignature, Date.now())
+  }
+}
+
+function finalizeCookieActionSuccess(context = {}) {
+  markSuccessfulCookieActionCooldown(context.element)
+  rejectFlowCompleted = true
+  scanBudgetExhausted = true
+  clearTimeout(debounceTimer)
+  clearTimeout(preferencesTimer)
+  preferencesRetryTimers.forEach(clearTimeout)
+  preferencesRetryTimers = []
+  stopObserver()
+}
+
 function getBannerHideSignature(element) {
   const container =
     getCookieContainer(element) || element
@@ -3843,6 +3896,10 @@ function canHideCookieBanner(element) {
 function canProcessBannerAction(element) {
   if (!element) return false
 
+  if (hasSuccessfulCookieActionCooldown()) {
+    return false
+  }
+
   if (processedActionElements.has(element)) {
     return false
   }
@@ -3869,6 +3926,7 @@ function canProcessBannerAction(element) {
 
 function getBasicRejectBlockReason(control) {
   if (!shouldRunOnThisSite()) return 'site_not_enabled'
+  if (hasSuccessfulCookieActionCooldown()) return 'success_cooldown'
   if (!control) return 'candidate_not_found'
   if (!isVisible(control)) return 'not_visible'
   if (hasUnsafeAcceptText(control)) return 'unsafe_accept_text'
@@ -4599,7 +4657,6 @@ function schedulePostActionVerification(context = {}) {
 
     if (!state.active) {
       if (context.type === 'reject') {
-        rejectFlowCompleted = true
         rejectFlowLog('Basic reject verification passed', {
           bannerVisible: state.bannerVisible,
           modalPresent: state.modalPresent,
@@ -4615,6 +4672,10 @@ function schedulePostActionVerification(context = {}) {
           context.type || 'verified'
         )
       }
+      finalizeCookieActionSuccess({
+        ...context,
+        container: state.container || context.container,
+      })
       return
     }
 
