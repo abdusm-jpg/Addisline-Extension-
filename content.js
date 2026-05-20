@@ -2932,6 +2932,10 @@ function attemptLightweightSettingsOpen(candidates) {
     return false
   }
 
+  rejectFlowLog('Priority selected: settings', {
+    control: getCookieDebugElementSummary(control),
+  })
+
   lightweightSettingsOpenAttempted = true
 
   if (!clickElementSafely(control)) {
@@ -7530,10 +7534,17 @@ function scanPage() {
             intent: action.intent || '',
             control: getCookieDebugElementSummary(action.element),
           })
+          rejectFlowLog('Priority selected: directReject', {
+            source: 'candidate_scan',
+            intent: action.intent || '',
+            control: getCookieDebugElementSummary(action.element),
+          })
         }
 
         const actionExecuted =
-          executeCookieAction(action)
+          action.type === 'reject'
+            ? executeCookieAction(action)
+            : false
 
         if (action.type === 'reject' && action.element) {
           logNoAceptoRejectClickOutcome(
@@ -7577,6 +7588,10 @@ function scanPage() {
 
     if (directRejectControl) {
       rejectFlowLog('Basic reject candidate found', {
+        source: 'direct_scan',
+        control: getCookieDebugElementSummary(directRejectControl),
+      })
+      rejectFlowLog('Priority selected: directReject', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
