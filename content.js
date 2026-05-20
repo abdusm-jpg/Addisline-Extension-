@@ -2576,6 +2576,10 @@ function hasDirectSettingsSignal(element) {
     return true
   }
 
+  if (textMatchesLightweightSettingsOpen(getActionText(element))) {
+    return true
+  }
+
   return getCookieIntentScore(element, null, 'managePreferences') >= 8
 }
 
@@ -2611,18 +2615,47 @@ function hasVisibleRejectIntent(control) {
   )
 }
 
+function hasVisibleSettingsIntent(control) {
+  if (
+    !control ||
+    !isVisible(control) ||
+    isInsideNonCookieModal(control) ||
+    hasUnsafeAcceptText(control)
+  ) {
+    return false
+  }
+
+  const text =
+    getActionText(control)
+
+  return (
+    !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+    (
+      textMatchesDictionaryCookieIntent(text, 'openSettings') ||
+      textMatchesLightweightSettingsOpen(text)
+    )
+  )
+}
+
 function prioritizeControlsBeforeCap(controls, limit) {
   const uniqueControls =
     uniqueElements(controls)
   const rejectControls =
     uniqueControls.filter(hasVisibleRejectIntent)
+  const settingsControls =
+    uniqueControls.filter((control) =>
+      !rejectControls.includes(control) &&
+      hasVisibleSettingsIntent(control)
+    )
   const remainingControls =
     uniqueControls.filter((control) =>
-      !rejectControls.includes(control)
+      !rejectControls.includes(control) &&
+      !settingsControls.includes(control)
     )
 
   return [
     ...rejectControls,
+    ...settingsControls,
     ...remainingControls,
   ].slice(0, limit)
 }
@@ -2859,7 +2892,10 @@ function classifyCMPBanner(container = document) {
       return (
         !hasUnsafeAcceptText(control) &&
         !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
-        textMatchesDictionaryCookieIntent(text, 'openSettings')
+        (
+          textMatchesDictionaryCookieIntent(text, 'openSettings') ||
+          textMatchesLightweightSettingsOpen(text)
+        )
       )
     })
   const hasSave =
@@ -2908,6 +2944,7 @@ function textMatchesLightweightSettingsOpen(text) {
 
   return (
     textHasPhrase(normalizedText, 'more options') ||
+    textHasPhrase(normalizedText, 'manage options') ||
     textHasPhrase(normalizedText, 'settings') ||
     textHasPhrase(normalizedText, 'manage preferences') ||
     textHasPhrase(normalizedText, 'privacy settings')
