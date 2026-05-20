@@ -31,8 +31,10 @@ let delayedLateScanScheduled = false
 let lateCMPMutationWakeupUsed = false
 let emergencyVisibleCMPScanUsed = false
 let lightweightSettingsOpenAttempted = false
+let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
 let scanBurstCount = 0
+let noCMPScanCount = 0
 let protectedDomainRecorded = false
 let lastDiagnosticAction = ''
 let lastDiagnosticError = ''
@@ -87,6 +89,10 @@ const PAGE_LOADING_SCAN_DELAY_MS = 1500
 const LATE_CMP_RESCAN_DELAY_MS = 3500
 const MAX_SCANS_PER_PAGE = 8
 const MAX_MUTATION_SCANS_PER_PAGE = 5
+const MAX_NO_CMP_SCANS = 3
+const MAX_DOM_QUERY_RESULTS = 350
+const MAX_COOKIE_CANDIDATES_PER_SCAN = 12
+const MAX_CLICKABLE_CONTROLS_PER_SCAN = 80
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
 const TOGGLE_PERSISTENCE_VERIFY_MS = 650
@@ -1504,6 +1510,17 @@ function textMatchesDictionaryCookieIntent(text, intentName) {
   }
 }
 
+function runWhenIdle(callback, timeout = 1200) {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => {
+      callback()
+    }, { timeout })
+    return
+  }
+
+  setTimeout(callback, Math.min(timeout, 250))
+}
+
 function querySelectorAllDeep(selector, root = document) {
   const results = []
   const visitedRoots = new WeakSet()
@@ -1523,12 +1540,23 @@ function querySelectorAllDeep(selector, root = document) {
       results.push(
         ...Array.from(currentRoot.querySelectorAll(selector))
       )
+      if (results.length >= MAX_DOM_QUERY_RESULTS) {
+        results.length = MAX_DOM_QUERY_RESULTS
+        return
+      }
     } catch {
+      return
+    }
+
+    if (!ENABLE_SHADOW_ROOT_OBSERVATION) {
       return
     }
 
     try {
       currentRoot.querySelectorAll('*').forEach((element) => {
+        if (results.length >= MAX_DOM_QUERY_RESULTS) {
+          return
+        }
         if (element.shadowRoot) {
           collect(element.shadowRoot)
         }
@@ -1813,7 +1841,7 @@ function findCookieBannerCandidates() {
     })
   }
 
-  return candidates
+  return candidates.slice(0, MAX_COOKIE_CANDIDATES_PER_SCAN)
 }
 
 function getInitialCMPRootReason(element) {
@@ -1925,7 +1953,7 @@ function getInitialCMPRootCandidates() {
         '[aria-modal="true"]',
       ].join(',')
     )
-  )
+  ).slice(0, MAX_COOKIE_CANDIDATES_PER_SCAN)
     .filter((candidate) =>
       candidate &&
       candidate !== document.body &&
@@ -2565,7 +2593,7 @@ function getDirectClickableControls(container = document) {
       ,
       container
     )
-  )
+  ).slice(0, MAX_CLICKABLE_CONTROLS_PER_SCAN)
 }
 
 function getDirectRejectDiagnostic(control) {
@@ -2962,7 +2990,9 @@ function attemptLightweightSettingsOpen(candidates) {
         !scanBudgetExhausted &&
         !rejectFlowCompleted
       ) {
-        scanPage()
+        runWhenIdle(() => {
+          scanPage()
+        })
       }
     } catch (error) {
       logRuntimeError('lightweight_settings_classify_next_panel', error)
@@ -7776,6 +7806,21 @@ function scanPage() {
       return
     }
 
+    if (candidates.length === 0 && !directRejectControl) {
+      noCMPScanCount += 1
+
+      if (noCMPScanCount >= MAX_NO_CMP_SCANS) {
+        scanBudgetExhausted = true
+        rejectFlowLog('Basic reject blocked: no_cmp_after_bounded_scans', {
+          maxNoCMPScans: MAX_NO_CMP_SCANS,
+        })
+        stopObserver()
+        return
+      }
+    } else {
+      noCMPScanCount = 0
+    }
+
     if (
       ENABLE_INITIAL_MORE_OPTIONS_FLOW &&
       !moreOptionsNavigationOpened &&
@@ -8201,6 +8246,19 @@ function scheduleScan(mutations = null) {
       return
     }
 
+    const now = Date.now()
+
+    if (
+      mutations &&
+      now - lastObserverScanScheduledAt < OBSERVER_COOLDOWN_MS
+    ) {
+      logInitialFlowSkipped('observer_cooldown', {
+        domain: getCurrentDomain(),
+        cooldownMs: OBSERVER_COOLDOWN_MS,
+      })
+      return
+    }
+
     const mutationPriority =
       getMutationScanPriority(mutations)
     const hasMutationCookieHint =
@@ -8297,19 +8355,6 @@ function scheduleScan(mutations = null) {
       })
     }
 
-    const now = Date.now()
-
-    if (
-      mutations &&
-      now - lastObserverScanScheduledAt < OBSERVER_COOLDOWN_MS
-    ) {
-      logInitialFlowSkipped('observer_cooldown', {
-        domain: getCurrentDomain(),
-        cooldownMs: OBSERVER_COOLDOWN_MS,
-      })
-      return
-    }
-
     lastObserverScanScheduledAt = now
 
     if (now - lastScanAt > SCAN_BURST_RESET_MS) {
@@ -8329,8 +8374,10 @@ function scheduleScan(mutations = null) {
       debounceTimer = setTimeout(() => {
         try {
           scanBurstCount = 0
-          observeOpenShadowRoots()
-          scanPage()
+          runWhenIdle(() => {
+            observeOpenShadowRoots()
+            scanPage()
+          })
         } catch (error) {
           logRuntimeError('delayed_scan_scheduler', error)
         }
@@ -8350,8 +8397,10 @@ function scheduleScan(mutations = null) {
     debounceTimer = setTimeout(() => {
       try {
         lastScanAt = Date.now()
-        observeOpenShadowRoots()
-        scanPage()
+        runWhenIdle(() => {
+          observeOpenShadowRoots()
+          scanPage()
+        })
       } catch (error) {
         logRuntimeError('initial_scan_scheduler', error)
       }
@@ -8393,7 +8442,13 @@ function observeOpenShadowRoots() {
 
 function handleMutationProcessing(mutations) {
   try {
-    scheduleScan(mutations)
+    setTimeout(() => {
+      try {
+        scheduleScan(mutations)
+      } catch (error) {
+        logRuntimeError('mutation_processing_deferred', error)
+      }
+    }, 0)
   } catch (error) {
     logRuntimeError('mutation_processing', error)
   }
@@ -8424,6 +8479,43 @@ function scheduleDelayedLateCMPRescan() {
       logRuntimeError('late_cmp_rescan', error)
     }
   }, LATE_CMP_RESCAN_DELAY_MS)
+}
+
+function scheduleInitialObserverStartup() {
+  if (startupScanScheduled) {
+    return
+  }
+
+  startupScanScheduled = true
+
+  const startWhenIdle = () => {
+    runWhenIdle(() => {
+      startupScanScheduled = false
+      startObserver()
+    }, 1800)
+  }
+
+  if (
+    document.readyState === 'interactive' ||
+    document.readyState === 'complete'
+  ) {
+    setTimeout(startWhenIdle, 250)
+    return
+  }
+
+  const handleReadyState = () => {
+    if (
+      document.readyState !== 'interactive' &&
+      document.readyState !== 'complete'
+    ) {
+      return
+    }
+
+    document.removeEventListener('readystatechange', handleReadyState)
+    setTimeout(startWhenIdle, 250)
+  }
+
+  document.addEventListener('readystatechange', handleReadyState)
 }
 
 function startObserver() {
@@ -8486,7 +8578,7 @@ function stopObserver() {
 
 function applyRuntimeState() {
   if (shouldRunOnThisSite()) {
-    startObserver()
+    scheduleInitialObserverStartup()
   } else {
     stopObserver()
 
@@ -12016,6 +12108,7 @@ function extractSafeActionCandidates(container) {
   }
 
   return candidates
+    .slice(0, MAX_COOKIE_CANDIDATES_PER_SCAN)
 }
 
 function getContextTextForCandidate(element) {
