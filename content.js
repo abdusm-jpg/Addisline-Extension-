@@ -2487,22 +2487,32 @@ function findBestActionByIntent(container, intent, minimumScore = 8) {
     .sort((first, second) => second.score - first.score)[0]?.control || null
 }
 
+function findBestExplicitRejectActionByIntent(container, intent, minimumScore = 8) {
+  return getActionControls(container)
+    .filter((control) =>
+      hasVisibleRejectIntent(control) &&
+      !isSensitiveActionControl(control, container)
+    )
+    .map((control) => ({
+      control,
+      score: getCookieIntentScore(control, container, intent),
+    }))
+    .filter((candidate) => candidate.score >= minimumScore)
+    .sort((first, second) => second.score - first.score)[0]?.control || null
+}
+
 function findBestActionByKeywords(container, keywords, minimumScore = 8) {
   return getActionControls(container)
     .filter((control) =>
       isVisible(control) &&
       !hasUnsafeAcceptText(control) &&
+      !hasVisibleSettingsIntent(control) &&
       !isSensitiveActionControl(control, container)
     )
     .map((control) => ({
       control,
       score:
-        scoreTextAgainstKeywords(getActionText(control), keywords, 8) +
-        scoreTextAgainstKeywords(
-          getNearbyActionContext(control, container).nearby,
-          keywords,
-          3
-        ),
+        scoreTextAgainstKeywords(getActionText(control), keywords, 8),
     }))
     .filter((candidate) => candidate.score >= minimumScore)
     .sort((first, second) => second.score - first.score)[0]?.control || null
@@ -2564,7 +2574,7 @@ function hasDirectSafeRejectSignal(element) {
     return true
   }
 
-  return getCookieIntentScore(element, null, 'rejectAll') >= 8
+  return false
 }
 
 function hasDirectSettingsSignal(element) {
@@ -2608,10 +2618,13 @@ function hasVisibleRejectIntent(control) {
     getActionText(control)
 
   return (
-    textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
-    textHasAny(text, totalRejectTexts) ||
-    textHasAny(text, rejectTexts) ||
-    isNoAceptoControl(control)
+    !hasVisibleSettingsIntent(control) &&
+    (
+      textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
+      textHasAny(text, totalRejectTexts) ||
+      textHasAny(text, rejectTexts) ||
+      isNoAceptoControl(control)
+    )
   )
 }
 
@@ -2877,6 +2890,7 @@ function classifyCMPBanner(container = document) {
 
       return (
         !hasUnsafeAcceptText(control) &&
+        !hasVisibleSettingsIntent(control) &&
         (
           textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
           textHasAny(text, totalRejectTexts) ||
@@ -3193,6 +3207,7 @@ function findDirectSafeRejectControl() {
       if (!isVisible(control)) return false
       if (isInsideNonCookieModal(control)) return false
       if (hasUnsafeAcceptText(control)) return false
+      if (hasVisibleSettingsIntent(control)) return false
 
       const actionText = getActionText(control)
       const hasExplicitRejectIntent =
@@ -4240,7 +4255,8 @@ function decideCookieAction(container) {
     })
   }
 
-  const totalReject = findBestActionByIntent(container, 'rejectAll')
+  const totalReject =
+    findBestExplicitRejectActionByIntent(container, 'rejectAll')
 
   if (totalReject) {
     cookieDebugLog('cookie.reject.detected', {
@@ -4257,7 +4273,8 @@ function decideCookieAction(container) {
     })
   }
 
-  const necessaryOnly = findBestActionByIntent(container, 'essentialOnly')
+  const necessaryOnly =
+    findBestExplicitRejectActionByIntent(container, 'essentialOnly')
 
   if (necessaryOnly) {
     cookieDebugLog('cookie.reject.detected', {
@@ -4281,7 +4298,9 @@ function decideCookieAction(container) {
       'personalizationReject',
       'trackingReject',
     ]
-      .map((intent) => findBestActionByIntent(container, intent, 10))
+      .map((intent) =>
+        findBestExplicitRejectActionByIntent(container, intent, 10)
+      )
       .find(Boolean)
 
   if (rejectCategory) {
@@ -4305,19 +4324,16 @@ function decideCookieAction(container) {
   const reject = findBestActionByKeywords(container, rejectTexts)
 
   if (reject) {
-    const rejectIntent =
-      getBestCookieIntent(reject, container).intent
-
     cookieDebugLog('cookie.reject.detected', {
       source: 'legacy_keywords',
-      intent: rejectIntent,
+      intent: 'rejectAll',
       control: getCookieDebugElementSummary(reject),
     })
 
     return finish({
       type: 'reject',
       element: reject,
-      intent: rejectIntent,
+      intent: 'rejectAll',
       container,
     })
   }
