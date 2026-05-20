@@ -2258,27 +2258,39 @@ function getActionControls(container) {
     return []
   }
 
-  return Array.from(
+  const primaryControls =
     querySelectorAllDeep(
       [
         'button',
         'a',
+        '[role="button"]',
+        'input',
+        'input[type="button"]',
+        'input[type="submit"]',
+      ].join(','),
+      container
+    )
+  const secondaryControls =
+    querySelectorAllDeep(
+      [
         'span',
         'strong',
         'div',
-        '[role="button"]',
         '[aria-controls]',
         '[aria-expanded]',
         '[data-action]',
         '[onclick]',
         '[tabindex]',
-        'input',
-        'input[type="button"]',
-        'input[type="submit"]',
-      ].join(',')
-      ,
+      ].join(','),
       container
     )
+
+  return prioritizeControlsBeforeCap(
+    [
+      ...primaryControls,
+      ...secondaryControls,
+    ],
+    MAX_CLICKABLE_CONTROLS_PER_SCAN
   )
 }
 
@@ -2571,29 +2583,85 @@ function findActionByTexts(container, texts) {
   return findBestActionByKeywords(container, texts)
 }
 
+function uniqueElements(elements) {
+  return Array.from(new Set(
+    (Array.isArray(elements) ? elements : [])
+      .filter(Boolean)
+  ))
+}
+
+function hasVisibleRejectIntent(control) {
+  if (
+    !control ||
+    !isVisible(control) ||
+    isInsideNonCookieModal(control) ||
+    hasUnsafeAcceptText(control)
+  ) {
+    return false
+  }
+
+  const text =
+    getActionText(control)
+
+  return (
+    textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
+    textHasAny(text, totalRejectTexts) ||
+    textHasAny(text, rejectTexts) ||
+    isNoAceptoControl(control)
+  )
+}
+
+function prioritizeControlsBeforeCap(controls, limit) {
+  const uniqueControls =
+    uniqueElements(controls)
+  const rejectControls =
+    uniqueControls.filter(hasVisibleRejectIntent)
+  const remainingControls =
+    uniqueControls.filter((control) =>
+      !rejectControls.includes(control)
+    )
+
+  return [
+    ...rejectControls,
+    ...remainingControls,
+  ].slice(0, limit)
+}
+
 function getDirectClickableControls(container = document) {
-  return Array.from(
+  const primaryControls =
     querySelectorAllDeep(
       [
         'button',
         'a',
+        '[role="button"]',
+        'input',
+        'input[type="button"]',
+        'input[type="submit"]',
+      ].join(','),
+      container
+    )
+  const secondaryControls =
+    querySelectorAllDeep(
+      [
         'span',
         'strong',
         'div',
-        '[role="button"]',
         '[aria-controls]',
         '[aria-expanded]',
         '[data-action]',
         '[onclick]',
         '[tabindex]',
-        'input',
-        'input[type="button"]',
-        'input[type="submit"]',
-      ].join(',')
-      ,
+      ].join(','),
       container
     )
-  ).slice(0, MAX_CLICKABLE_CONTROLS_PER_SCAN)
+
+  return prioritizeControlsBeforeCap(
+    [
+      ...primaryControls,
+      ...secondaryControls,
+    ],
+    MAX_CLICKABLE_CONTROLS_PER_SCAN
+  )
 }
 
 function getDirectRejectDiagnostic(control) {
@@ -2645,31 +2713,6 @@ function getDirectRejectDiagnostic(control) {
 function traceDirectRejectExtraction(controls) {
   const safeControls =
     Array.isArray(controls) ? controls : []
-  const diagnostics =
-    safeControls.map(getDirectRejectDiagnostic)
-  const matchedCandidates =
-    diagnostics
-      .filter((diagnostic) =>
-        diagnostic.matchedBy.length > 0 &&
-        diagnostic.rejectedBy.length === 0
-      )
-      .slice(0, 8)
-  const rejectedCandidates =
-    diagnostics
-      .filter((diagnostic) =>
-        diagnostic.matchedBy.length > 0 &&
-        diagnostic.rejectedBy.length > 0
-      )
-      .slice(0, 8)
-
-  rejectFlowLog('Basic reject extraction trace', {
-    totalClickableControls: safeControls.length,
-    firstTexts: diagnostics
-      .slice(0, 10)
-      .map((diagnostic) => diagnostic.text),
-    matchedCandidates,
-    rejectedCandidates,
-  })
 
   traceNoAceptoRejectButton(safeControls)
 }
@@ -2760,10 +2803,13 @@ function traceNoAceptoRejectButton(controls) {
       .filter(isNoAceptoControl)
       .slice(0, 5)
 
-  rejectFlowLog('NO ACEPTO reject button trace', {
+  if (noAceptoControls.length === 0) {
+    return
+  }
+
+  rejectFlowLog('NO ACEPTO found', {
     foundInDom: noAceptoControls.length > 0,
-    scannedClickableControls: scannedControls.length,
-    diagnostics: noAceptoControls.map(getNoAceptoRejectDiagnostic),
+    control: getCookieDebugElementSummary(noAceptoControls[0]),
   })
 }
 
@@ -2772,10 +2818,18 @@ function logNoAceptoRejectClickOutcome(control, clicked, reason) {
     return
   }
 
-  rejectFlowLog('NO ACEPTO reject click outcome', {
-    clicked: Boolean(clicked),
-    notClickedReason: clicked ? '' : reason || 'unknown',
-    diagnostic: getNoAceptoRejectDiagnostic(control),
+  if (clicked) {
+    rejectFlowLog('NO ACEPTO clicked', {
+      control: getCookieDebugElementSummary(control),
+    })
+    return
+  }
+
+  rejectFlowLog('NO ACEPTO blocked', {
+    reason: reason || 'unknown',
+    blockReason:
+      getNoAceptoRejectDiagnostic(control).basicRejectBlockReason,
+    control: getCookieDebugElementSummary(control),
   })
 }
 
