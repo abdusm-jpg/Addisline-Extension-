@@ -2968,22 +2968,58 @@ function findLightweightSettingsControl(container = document) {
     }) || null
 }
 
+function getLightweightSettingsDiagnostics(container = document) {
+  const controls =
+    getDirectClickableControls(container)
+  const settingControls =
+    controls
+      .filter((control) =>
+        hasVisibleSettingsIntent(control)
+      )
+      .slice(0, 8)
+
+  return {
+    scannedControlCount: controls.length,
+    settingControlCount: settingControls.length,
+    firstMatchingSettingsControl:
+      getCookieDebugElementSummary(settingControls[0]),
+    firstSettingControls:
+      settingControls.map(getCookieDebugElementSummary),
+  }
+}
+
 function getSettingsAvailableClassification(candidates) {
   const bannerCandidates =
     Array.isArray(candidates) && candidates.length > 0
       ? candidates
       : [document]
 
-  return bannerCandidates
+  const classifications =
+    bannerCandidates
     .slice(0, 4)
     .map((candidate) => ({
       candidate,
       ...classifyCMPBanner(candidate),
     }))
-    .find((entry) =>
+
+  const selected =
+    classifications.find((entry) =>
       entry.classification === 'settingsAvailable' &&
       !entry.directRejectAvailable
     ) || null
+
+  rejectFlowLog('Lightweight settings classification', {
+    selected: selected?.classification || 'none',
+    classifications: classifications.map((entry) => ({
+      classification: entry.classification,
+      directRejectAvailable: entry.directRejectAvailable,
+      settingsAvailable: entry.settingsAvailable,
+      controlCount: entry.controlCount,
+      candidate: getCookieDebugElementSummary(entry.candidate),
+    })),
+  })
+
+  return selected
 }
 
 function getLightweightSettingsBlockReason(control) {
@@ -3024,8 +3060,19 @@ function attemptLightweightSettingsOpen(candidates) {
     getSettingsAvailableClassification(candidates)
 
   if (!settingsClassification) {
+    rejectFlowLog('Lightweight settings blocked: no_settings_available', {
+      candidateCount: Array.isArray(candidates) ? candidates.length : 0,
+    })
     return false
   }
+
+  const settingsDiagnostics =
+    getLightweightSettingsDiagnostics(settingsClassification.candidate)
+
+  rejectFlowLog('Lightweight settings controls scanned', {
+    classification: settingsClassification.classification,
+    ...settingsDiagnostics,
+  })
 
   const control =
     findLightweightSettingsControl(settingsClassification.candidate)
@@ -3033,6 +3080,7 @@ function attemptLightweightSettingsOpen(candidates) {
   if (!control) {
     rejectFlowLog('Lightweight settings blocked: candidate_not_found', {
       classification: settingsClassification.classification,
+      ...settingsDiagnostics,
     })
     return false
   }
@@ -3042,6 +3090,7 @@ function attemptLightweightSettingsOpen(candidates) {
 
   if (blockReason) {
     rejectFlowLog(`Lightweight settings blocked: ${blockReason}`, {
+      reason: blockReason,
       control: getCookieDebugElementSummary(control),
     })
     return false
@@ -3049,6 +3098,7 @@ function attemptLightweightSettingsOpen(candidates) {
 
   if (!canProcessBannerAction(control)) {
     rejectFlowLog('Lightweight settings blocked: action_gate', {
+      reason: 'action_gate',
       control: getCookieDebugElementSummary(control),
     })
     return false
@@ -3062,12 +3112,14 @@ function attemptLightweightSettingsOpen(candidates) {
 
   if (!clickElementSafely(control)) {
     rejectFlowLog('Lightweight settings blocked: click_failed', {
+      reason: 'click_failed',
       control: getCookieDebugElementSummary(control),
     })
     return false
   }
 
   rejectFlowLog('Lightweight settings opened', {
+    clicked: true,
     control: getCookieDebugElementSummary(control),
   })
   stopObserver()
