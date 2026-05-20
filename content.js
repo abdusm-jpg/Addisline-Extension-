@@ -93,6 +93,7 @@ const MAX_NO_CMP_SCANS = 3
 const MAX_DOM_QUERY_RESULTS = 350
 const MAX_COOKIE_CANDIDATES_PER_SCAN = 12
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 80
+const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 5
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
 const TOGGLE_PERSISTENCE_VERIFY_MS = 650
@@ -3060,6 +3061,120 @@ function getLightweightSettingsBlockReason(control) {
   return ''
 }
 
+function isElementInViewport(element) {
+  if (!element || !isVisible(element)) return false
+
+  const rect =
+    element.getBoundingClientRect()
+
+  return (
+    rect.bottom >= 0 &&
+    rect.right >= 0 &&
+    rect.top <= (
+      window.innerHeight ||
+      document.documentElement.clientHeight
+    ) &&
+    rect.left <= (
+      window.innerWidth ||
+      document.documentElement.clientWidth
+    )
+  )
+}
+
+function isProviderOrVendorToggleContext(control) {
+  const text =
+    normalizeMatchText(getPreferenceDecisionText(control))
+
+  return textHasAny(text, [
+    'vendor',
+    'vendors',
+    'provider',
+    'providers',
+    'partner',
+    'partners',
+    'third party',
+    'third-party',
+    'terceros',
+    'proveedores',
+    'socios',
+  ])
+}
+
+function isLightweightVisibleOptionalToggle(control) {
+  if (
+    !control ||
+    !isElementInViewport(control) ||
+    !isExplicitToggleControl(control) ||
+    isSensitiveActionControl(control, getCookieContainer(control) || document)
+  ) {
+    return false
+  }
+
+  if (isProviderOrVendorToggleContext(control)) {
+    return false
+  }
+
+  if (classifyToggleContext(control) !== 'optional') {
+    return false
+  }
+
+  return isConsentToggleEnabled(control) || isToggleEnabled(control)
+}
+
+function disableVisibleTopLevelConsentToggles(panel) {
+  if (
+    !shouldRunOnThisSite() ||
+    !panel ||
+    !getProtectionModeConfig().allowSettingsOpen
+  ) {
+    return 0
+  }
+
+  let disabledCount = 0
+
+  getToggleControls(panel)
+    .filter(isLightweightVisibleOptionalToggle)
+    .slice(0, MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS)
+    .forEach((control) => {
+      if (!shouldRunOnThisSite()) return
+      if (!isLightweightVisibleOptionalToggle(control)) return
+
+      if (clickElementSafely(control)) {
+        disabledCount += 1
+        incrementStat('trackersReduced')
+      }
+    })
+
+  return disabledCount
+}
+
+function runLightweightVisibleTogglePass(panel) {
+  if (
+    !shouldRunOnThisSite() ||
+    !panel ||
+    rejectFlowCompleted
+  ) {
+    return false
+  }
+
+  const disabledCount =
+    disableVisibleTopLevelConsentToggles(panel)
+  const saveAttempted =
+    saveCookiePreferences(panel)
+
+  rejectFlowLog('Lightweight visible toggle pass', {
+    disabledCount,
+    saveAttempted,
+    panel: getCookieDebugElementSummary(panel),
+  })
+
+  if (saveAttempted) {
+    return true
+  }
+
+  return disabledCount > 0
+}
+
 function attemptLightweightSettingsOpen(candidates) {
   if (
     !ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ||
@@ -3147,6 +3262,15 @@ function attemptLightweightSettingsOpen(candidates) {
         !scanBudgetExhausted &&
         !rejectFlowCompleted
       ) {
+        const panel =
+          findCookiePreferencesPanel() ||
+          getCookieContainer(control) ||
+          document
+
+        if (runLightweightVisibleTogglePass(panel)) {
+          return
+        }
+
         runWhenIdle(() => {
           scanPage()
         })
