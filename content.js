@@ -1,4 +1,5 @@
 const DEBUG = false
+const ENABLE_ALL_AUTOMATION = false
 const COOKIE_DEBUG = false
 const ENABLE_CMP_FINGERPRINT_DEBUG = false
 const ENABLE_PASSIVE_COOKIE_INTELLIGENCE = false
@@ -24,6 +25,7 @@ let observer = null
 let debounceTimer = null
 let preferencesTimer = null
 let preferencesRetryTimers = []
+let readyStateStartupListener = null
 let lastScanAt = 0
 let pageScanCount = 0
 let observerMutationScanCount = 0
@@ -70,6 +72,8 @@ const moreOptionsNavigationCooldowns = new Map()
 const deepCMPNavigationCooldowns = new Map()
 const unstablePreferenceToggleSignatures = new Map()
 const observedShadowRoots = new WeakSet()
+const pendingAutomationTimers = new Set()
+const pendingIdleCallbacks = new Set()
 
 const STATS_KEY = 'stats'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
@@ -1277,6 +1281,7 @@ function isDomainExcluded(domain, domains) {
 
 function shouldRunOnThisSite() {
   return (
+    ENABLE_ALL_AUTOMATION &&
     isTopFrameContext() &&
     protectionEnabled &&
     !isDomainExcluded(getCurrentDomain(), excludedDomains)
@@ -1513,15 +1518,46 @@ function textMatchesDictionaryCookieIntent(text, intentName) {
   }
 }
 
-function runWhenIdle(callback, timeout = 1200) {
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(() => {
-      callback()
-    }, { timeout })
-    return
+function scheduleAutomationTimeout(callback, delay) {
+  if (!ENABLE_ALL_AUTOMATION) {
+    return null
   }
 
-  setTimeout(callback, Math.min(timeout, 250))
+  const timerId = setTimeout(() => {
+    pendingAutomationTimers.delete(timerId)
+
+    if (!shouldRunOnThisSite()) {
+      return
+    }
+
+    callback()
+  }, delay)
+
+  pendingAutomationTimers.add(timerId)
+  return timerId
+}
+
+function runWhenIdle(callback, timeout = 1200) {
+  if (!ENABLE_ALL_AUTOMATION) {
+    return null
+  }
+
+  if (typeof requestIdleCallback === 'function') {
+    const idleId = requestIdleCallback(() => {
+      pendingIdleCallbacks.delete(idleId)
+
+      if (!shouldRunOnThisSite()) {
+        return
+      }
+
+      callback()
+    }, { timeout })
+
+    pendingIdleCallbacks.add(idleId)
+    return idleId
+  }
+
+  return scheduleAutomationTimeout(callback, Math.min(timeout, 250))
 }
 
 function querySelectorAllDeep(selector, root = document) {
@@ -2129,12 +2165,20 @@ function hasPageScrollLock() {
   })
 }
 
-function restorePageInteractionForCookieBanner(element) {
+function restorePageInteractionForCookieBanner(element, options = {}) {
+  const force =
+    Boolean(options.force)
+
   if (
-    !shouldRunOnThisSite() ||
+    (!force && !shouldRunOnThisSite()) ||
     !element ||
-    !isPotentialCookieContainer(element) ||
-    !hasCookieBannerSignal(element) ||
+    (
+      !force &&
+      (
+        !isPotentialCookieContainer(element) ||
+        !hasCookieBannerSignal(element)
+      )
+    ) ||
     !hasPageScrollLock()
   ) {
     return
@@ -2150,12 +2194,15 @@ function restorePageInteractionForCookieBanner(element) {
   })
 }
 
-function cleanupCookieInteractionLeftovers(element) {
-  if (!shouldRunOnThisSite()) return false
+function cleanupCookieInteractionLeftovers(element, options = {}) {
+  const force =
+    Boolean(options.force)
 
-  restorePageInteractionForCookieBanner(element)
+  if (!force && !shouldRunOnThisSite()) return false
 
-  if (hasActiveCookieOverlay()) {
+  restorePageInteractionForCookieBanner(element, { force })
+
+  if (!force && hasActiveCookieOverlay()) {
     return false
   }
 
@@ -9429,7 +9476,7 @@ function scheduleScan(mutations = null) {
         maxScanBurst: MAX_SCAN_BURST,
       })
 
-      debounceTimer = setTimeout(() => {
+      debounceTimer = scheduleAutomationTimeout(() => {
         try {
           scanBurstCount = 0
           runWhenIdle(() => {
@@ -9452,7 +9499,7 @@ function scheduleScan(mutations = null) {
 
     clearTimeout(debounceTimer)
 
-    debounceTimer = setTimeout(() => {
+    debounceTimer = scheduleAutomationTimeout(() => {
       try {
         lastScanAt = Date.now()
         runWhenIdle(() => {
@@ -9500,7 +9547,7 @@ function observeOpenShadowRoots() {
 
 function handleMutationProcessing(mutations) {
   try {
-    setTimeout(() => {
+    scheduleAutomationTimeout(() => {
       try {
         scheduleScan(mutations)
       } catch (error) {
@@ -9519,7 +9566,7 @@ function scheduleDelayedLateCMPRescan() {
 
   delayedLateScanScheduled = true
 
-  setTimeout(() => {
+  scheduleAutomationTimeout(() => {
     try {
       if (
         !shouldRunOnThisSite() ||
@@ -9540,6 +9587,11 @@ function scheduleDelayedLateCMPRescan() {
 }
 
 function scheduleInitialObserverStartup() {
+  if (!ENABLE_ALL_AUTOMATION) {
+    stopObserver()
+    return
+  }
+
   if (startupScanScheduled) {
     return
   }
@@ -9557,7 +9609,7 @@ function scheduleInitialObserverStartup() {
     document.readyState === 'interactive' ||
     document.readyState === 'complete'
   ) {
-    setTimeout(startWhenIdle, 250)
+    scheduleAutomationTimeout(startWhenIdle, 250)
     return
   }
 
@@ -9570,9 +9622,11 @@ function scheduleInitialObserverStartup() {
     }
 
     document.removeEventListener('readystatechange', handleReadyState)
-    setTimeout(startWhenIdle, 250)
+    readyStateStartupListener = null
+    scheduleAutomationTimeout(startWhenIdle, 250)
   }
 
+  readyStateStartupListener = handleReadyState
   document.addEventListener('readystatechange', handleReadyState)
 }
 
@@ -9624,9 +9678,35 @@ function stopObserver() {
   clearTimeout(debounceTimer)
   clearTimeout(preferencesTimer)
   preferencesRetryTimers.forEach(clearTimeout)
+  pendingAutomationTimers.forEach(clearTimeout)
+  pendingAutomationTimers.clear()
+  pendingIdleCallbacks.forEach((idleId) => {
+    if (typeof cancelIdleCallback === 'function') {
+      cancelIdleCallback(idleId)
+    }
+  })
+  pendingIdleCallbacks.clear()
+
+  if (readyStateStartupListener) {
+    document.removeEventListener(
+      'readystatechange',
+      readyStateStartupListener
+    )
+    readyStateStartupListener = null
+  }
+
   preferencesRetryTimers = []
   debounceTimer = null
   preferencesTimer = null
+  startupScanScheduled = false
+  loadingScanDeferred = false
+  scanBurstCount = 0
+  lastObserverScanScheduledAt = 0
+
+  cleanupCookieInteractionLeftovers(
+    activeCookieContainer || document.body || document.documentElement,
+    { force: true }
+  )
 
   if (!observer) return
 
