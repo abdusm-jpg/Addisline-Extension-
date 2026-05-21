@@ -3149,6 +3149,49 @@ function getLightweightToggleSkipReason(control) {
   return ''
 }
 
+function getVisibleToggleDebugSummary(control) {
+  const labelText =
+    normalizeMatchText([
+      getAssociatedLabelText(control),
+      getElementReferenceText(control, 'aria-labelledby'),
+      getElementReferenceText(control, 'aria-describedby'),
+    ].join(' '))
+  const decisionText =
+    normalizeMatchText(getPreferenceDecisionText(control))
+  const consentState =
+    getConsentToggleState(control)
+  const legacyActiveState =
+    isToggleEnabled(control)
+
+  return {
+    labelText: labelText.slice(0, 180),
+    decisionText: decisionText.slice(0, 220),
+    ariaChecked: control?.getAttribute?.('aria-checked') || '',
+    ariaPressed: control?.getAttribute?.('aria-pressed') || '',
+    role: control?.getAttribute?.('role') || '',
+    className: getClassNameText(control).slice(0, 180),
+    computedActiveState: consentState,
+    legacyActiveState,
+    control: getCookieDebugElementSummary(control),
+  }
+}
+
+function isConsentOrLegitimateInterestToggle(control) {
+  const text =
+    normalizeMatchText([
+      getAssociatedLabelText(control),
+      getPreferenceDecisionText(control),
+      getActionText(control),
+    ].join(' '))
+
+  return (
+    textHasPhrase(text, 'consent') ||
+    textHasPhrase(text, 'legitimate interest') ||
+    textHasPhrase(text, 'interes legitimo') ||
+    textHasPhrase(text, 'intereses legitimos')
+  )
+}
+
 function getVisibleTogglePassDiagnostics(panel) {
   const toggles =
     panel ? getToggleControls(panel) : []
@@ -3164,10 +3207,19 @@ function getVisibleTogglePassDiagnostics(panel) {
     visibleToggles
       .map((control) => ({
         reason: getLightweightToggleSkipReason(control),
-        control: getCookieDebugElementSummary(control),
+        ...getVisibleToggleDebugSummary(control),
       }))
       .filter((entry) => entry.reason)
       .slice(0, 8)
+  const watchedSkippedToggles =
+    visibleToggles
+      .filter(isConsentOrLegitimateInterestToggle)
+      .map((control) => ({
+        reason: getLightweightToggleSkipReason(control),
+        ...getVisibleToggleDebugSummary(control),
+      }))
+      .filter((entry) => entry.reason)
+      .slice(0, 6)
   const saveControl =
     findFinalConfirmationControl(panel)
 
@@ -3177,6 +3229,7 @@ function getVisibleTogglePassDiagnostics(panel) {
     activeToggleCandidatesCount: activeToggles.length,
     eligibleToggleCandidatesCount: eligibleToggles.length,
     skippedToggleReasons: skippedToggles,
+    watchedSkippedConsentToggles: watchedSkippedToggles,
     saveButtonFound: Boolean(saveControl),
     saveButton: getCookieDebugElementSummary(saveControl),
   }
