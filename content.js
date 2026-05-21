@@ -1,5 +1,5 @@
 const DEBUG = false
-const ENABLE_ALL_AUTOMATION = false
+const ENABLE_ALL_AUTOMATION = true
 const COOKIE_DEBUG = false
 const ENABLE_CMP_FINGERPRINT_DEBUG = false
 const ENABLE_PASSIVE_COOKIE_INTELLIGENCE = false
@@ -13,7 +13,7 @@ const ENABLE_SHADOW_ROOT_OBSERVATION = false
 const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = false
 const ENABLE_LATE_CMP_MUTATION_WAKEUP = true
 const ENABLE_SETTINGS_RETRY_FLOW = false
-const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = true
+const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = false
 const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
 const REJECT_FLOW_DEBUG = true
@@ -8907,7 +8907,10 @@ function scanPage() {
       return
     }
 
-    if (attemptLightweightSettingsOpen(candidates)) {
+    if (
+      ENABLE_LIGHTWEIGHT_SETTINGS_OPEN &&
+      attemptLightweightSettingsOpen(candidates)
+    ) {
       return
     }
 
@@ -9044,6 +9047,8 @@ function scanPage() {
         lastActionResult: 'no_safe_action',
         lastSkipReason: 'no_safe_action',
       })
+      scanBudgetExhausted = true
+      stopObserver()
     } else {
       updateAddislineTestReport({
         event: 'scanPage:complete',
@@ -9051,6 +9056,10 @@ function scanPage() {
           ? 'candidate_hidden'
           : 'no_candidates',
       })
+      if (hiddenCandidate) {
+        scanBudgetExhausted = true
+        stopObserver()
+      }
     }
   } catch (error) {
     setLastError(error?.message || 'Error en content script')
