@@ -13,6 +13,7 @@ const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = false
 const ENABLE_LATE_CMP_MUTATION_WAKEUP = true
 const ENABLE_SETTINGS_RETRY_FLOW = false
 const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = true
+const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
 const REJECT_FLOW_DEBUG = true
 
@@ -3292,6 +3293,10 @@ function runLightweightVisibleTogglePass(panel) {
     return false
   }
 
+  if (!ENABLE_CMP_SPECIFIC_HELPERS) {
+    return false
+  }
+
   const cmpSpecificResult =
     runLightweightCMPSpecificPanelPass(panel)
 
@@ -3528,6 +3533,7 @@ function clickCMPSpecificControl(control) {
 
 function attemptCMPSpecificReject(root = document) {
   if (
+    !ENABLE_CMP_SPECIFIC_HELPERS ||
     !shouldRunOnThisSite() ||
     !getProtectionModeConfig().allowAutoReject
   ) {
@@ -3574,6 +3580,7 @@ function attemptCMPSpecificReject(root = document) {
 
 function attemptCMPSpecificSettingsOpen(root = document) {
   if (
+    !ENABLE_CMP_SPECIFIC_HELPERS ||
     !shouldRunOnThisSite() ||
     !getProtectionModeConfig().allowSettingsOpen ||
     lightweightSettingsOpenAttempted
@@ -3625,6 +3632,10 @@ function attemptCMPSpecificSettingsOpen(root = document) {
 }
 
 function runLightweightCMPSpecificPanelPass(panel) {
+  if (!ENABLE_CMP_SPECIFIC_HELPERS) {
+    return false
+  }
+
   const cmpName =
     getDetectedCMPName(panel)
 
