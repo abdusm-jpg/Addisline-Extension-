@@ -91,6 +91,7 @@ const COOKIE_INTENT_DICTIONARY = Object.freeze({
     'reject non-essential cookies',
     'reject unnecessary cookies',
     'decline',
+    'disagree and close',
     'decline all',
     'decline optional cookies',
     'decline non-essential cookies',
