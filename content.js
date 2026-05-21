@@ -93,7 +93,7 @@ const MAX_NO_CMP_SCANS = 3
 const MAX_DOM_QUERY_RESULTS = 350
 const MAX_COOKIE_CANDIDATES_PER_SCAN = 12
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 80
-const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 8
+const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 5
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
 const TOGGLE_PERSISTENCE_VERIFY_MS = 650
@@ -3114,7 +3114,10 @@ function isLightweightVisibleOptionalToggle(control) {
     return false
   }
 
-  if (classifyToggleContext(control) !== 'optional') {
+  if (
+    classifyToggleContext(control) !== 'optional' &&
+    !isConsentOrLegitimateInterestToggle(control)
+  ) {
     return false
   }
 
@@ -3136,7 +3139,10 @@ function getLightweightToggleSkipReason(control) {
   const toggleContext =
     classifyToggleContext(control)
 
-  if (toggleContext !== 'optional') {
+  if (
+    toggleContext !== 'optional' &&
+    !isConsentOrLegitimateInterestToggle(control)
+  ) {
     return `context_${toggleContext}`
   }
   if (
@@ -3184,22 +3190,28 @@ function isConsentOrLegitimateInterestToggle(control) {
       getActionText(control),
     ].join(' '))
 
-  return (
-    textHasPhrase(text, 'consent') ||
-    textHasPhrase(text, 'legitimate interest') ||
-    textHasPhrase(text, 'interes legitimo') ||
-    textHasPhrase(text, 'intereses legitimos')
-  )
+  return hasConsentOrLegitimateInterestText(text)
 }
 
 function getVisibleTogglePassDiagnostics(panel) {
   const toggles =
     panel ? getToggleControls(panel) : []
+  const customToggles =
+    panel ? getCustomVisualToggleControls(panel) : []
   const visibleToggles =
     toggles.filter(isVisible)
   const activeToggles =
     visibleToggles.filter((control) =>
       isConsentToggleEnabled(control) || isToggleEnabled(control)
+    )
+  const activeCustomToggles =
+    customToggles.filter((control) =>
+      isVisible(control) &&
+      (
+        isConsentToggleEnabled(control) ||
+        isToggleEnabled(control) ||
+        hasVisualEnabledState(control)
+      )
     )
   const eligibleToggles =
     activeToggles.filter(isLightweightVisibleOptionalToggle)
@@ -3227,6 +3239,8 @@ function getVisibleTogglePassDiagnostics(panel) {
     totalToggleCount: toggles.length,
     visibleToggleCandidatesCount: visibleToggles.length,
     activeToggleCandidatesCount: activeToggles.length,
+    customToggleCandidatesFound: customToggles.length,
+    activeCustomTogglesFound: activeCustomToggles.length,
     eligibleToggleCandidatesCount: eligibleToggles.length,
     skippedToggleReasons: skippedToggles,
     watchedSkippedConsentToggles: watchedSkippedToggles,
@@ -5193,8 +5207,250 @@ function runCookiePreferencesRetries() {
   })
 }
 
+function parseRGBColor(value) {
+  const match =
+    String(value || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i)
+
+  if (!match) return null
+
+  return {
+    red: Number(match[1]),
+    green: Number(match[2]),
+    blue: Number(match[3]),
+  }
+}
+
+function isBlueEnabledColor(value) {
+  const color =
+    parseRGBColor(value)
+
+  if (!color) return false
+
+  return (
+    color.blue >= 120 &&
+    color.blue > color.red + 25 &&
+    color.blue > color.green - 10
+  )
+}
+
+function hasVisualEnabledState(control) {
+  if (!control || !isVisible(control)) return false
+
+  const style =
+    window.getComputedStyle(control)
+  const classText =
+    normalizeMatchText(getClassNameText(control))
+  const stateText =
+    normalizeMatchText([
+      control.getAttribute?.('data-state'),
+      control.getAttribute?.('data-checked'),
+      control.getAttribute?.('data-enabled'),
+      control.getAttribute?.('aria-checked'),
+      control.getAttribute?.('aria-pressed'),
+      classText,
+    ].join(' '))
+
+  if (
+    textHasAny(stateText, [
+      'active',
+      'checked',
+      'enabled',
+      'selected',
+      'switch on',
+      'toggle on',
+      'is on',
+      'is active',
+      'is checked',
+    ])
+  ) {
+    return true
+  }
+
+  if (
+    isBlueEnabledColor(style.backgroundColor) ||
+    isBlueEnabledColor(style.borderColor) ||
+    isBlueEnabledColor(style.color)
+  ) {
+    return true
+  }
+
+  const hasTranslatedKnob =
+    isSwitchSizedElement(control) &&
+    Array.from(control.children || [])
+      .slice(0, 4)
+      .some((child) => {
+        if (!isVisible(child)) return false
+        const transform =
+          window.getComputedStyle(child).transform
+        const matrixMatch =
+          String(transform || '').match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([-.\d]+)/)
+
+        return matrixMatch && Number(matrixMatch[1]) > 4
+      })
+
+  if (hasTranslatedKnob) {
+    return true
+  }
+
+  return Array.from(control.children || [])
+    .slice(0, 4)
+    .some((child) => {
+      if (!isVisible(child)) return false
+      const childStyle =
+        window.getComputedStyle(child)
+
+      return (
+        isBlueEnabledColor(childStyle.backgroundColor) ||
+        isBlueEnabledColor(childStyle.borderColor) ||
+        isBlueEnabledColor(childStyle.color)
+      )
+    })
+}
+
+function hasConsentOrLegitimateInterestText(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return (
+    textHasPhrase(normalizedText, 'consent') ||
+    textHasPhrase(normalizedText, 'legitimate interest') ||
+    textHasPhrase(normalizedText, 'interes legitimo') ||
+    textHasPhrase(normalizedText, 'intereses legitimos')
+  )
+}
+
+function isSwitchSizedElement(element) {
+  if (!element || !isVisible(element)) return false
+
+  const rect =
+    element.getBoundingClientRect()
+
+  return (
+    rect.width >= 22 &&
+    rect.width <= 96 &&
+    rect.height >= 12 &&
+    rect.height <= 52 &&
+    rect.width / Math.max(rect.height, 1) >= 1.15
+  )
+}
+
+function isLikelyCustomVisualSwitchControl(element) {
+  if (
+    !element ||
+    !isVisible(element) ||
+    hasUnsafeAcceptText(element)
+  ) {
+    return false
+  }
+
+  const classText =
+    normalizeMatchText(getClassNameText(element))
+  const actionText =
+    normalizeMatchText(getActionText(element))
+  const ariaState =
+    normalizeMatchText([
+      element.getAttribute?.('aria-checked'),
+      element.getAttribute?.('aria-pressed'),
+      element.getAttribute?.('role'),
+      element.getAttribute?.('data-state'),
+      element.getAttribute?.('data-checked'),
+      element.getAttribute?.('data-enabled'),
+    ].join(' '))
+
+  return (
+    element.matches?.(
+      '[aria-checked], [aria-pressed], [role="switch"], [role="checkbox"], [data-state], [data-checked], [data-enabled], [class*="switch" i], [class*="toggle" i], [class*="slider" i], button'
+    ) ||
+    textHasAny(classText, ['switch', 'toggle', 'slider', 'knob', 'thumb']) ||
+    textHasAny(actionText, ['switch', 'toggle']) ||
+    textHasAny(ariaState, ['true', 'false', 'switch', 'checkbox', 'on', 'off']) ||
+    isSwitchSizedElement(element)
+  )
+}
+
+function getNearbyCustomSwitchRows(container) {
+  return querySelectorAllDeep(
+    [
+      'label',
+      'li',
+      'p',
+      'div',
+      'section',
+      '[role="group"]',
+      '[class*="row" i]',
+      '[class*="item" i]',
+      '[class*="purpose" i]',
+      '[class*="category" i]',
+      '[class*="preference" i]',
+    ].join(','),
+    container
+  )
+    .filter((element) =>
+      isVisible(element) &&
+      hasConsentOrLegitimateInterestText(getText(element).slice(0, 500))
+    )
+    .slice(0, 16)
+}
+
+function getCustomVisualToggleControls(container) {
+  const rows =
+    getNearbyCustomSwitchRows(container)
+  const controls = []
+
+  rows.forEach((row) => {
+    const searchRoots =
+      uniqueElements([
+        row,
+        row.parentElement,
+        row.nextElementSibling,
+        row.previousElementSibling,
+      ])
+
+    searchRoots.forEach((root) => {
+      if (!root || !isVisible(root)) return
+
+      const candidates =
+        root.matches?.('*')
+          ? [
+              root,
+              ...querySelectorAllDeep(
+                [
+                  'button',
+                  'span',
+                  'div',
+                  '[role="switch"]',
+                  '[role="checkbox"]',
+                  '[aria-checked]',
+                  '[aria-pressed]',
+                  '[data-state]',
+                  '[data-checked]',
+                  '[data-enabled]',
+                  '[class*="switch" i]',
+                  '[class*="toggle" i]',
+                  '[class*="slider" i]',
+                ].join(','),
+                root
+              ),
+            ]
+          : []
+
+      candidates
+        .filter(isLikelyCustomVisualSwitchControl)
+        .forEach((candidate) => controls.push(candidate))
+    })
+  })
+
+  return uniqueElements(controls)
+    .filter((control) =>
+      isVisible(control) &&
+      isElementInViewport(control) &&
+      !isProviderOrVendorToggleContext(control)
+    )
+    .slice(0, MAX_CLICKABLE_CONTROLS_PER_SCAN)
+}
+
 function getToggleControls(container) {
-  return Array.from(
+  const standardControls = Array.from(
     querySelectorAllDeep(
       [
         'input[type="checkbox"]',
@@ -5229,6 +5485,11 @@ function getToggleControls(container) {
       container
     )
   )
+
+  return uniqueElements([
+    ...standardControls,
+    ...getCustomVisualToggleControls(container),
+  ])
 }
 
 function getNearbyPreferenceText(control) {
@@ -6174,6 +6435,10 @@ function getConsentToggleState(control) {
       'is checked',
     ])
   ) {
+    return 'enabled'
+  }
+
+  if (hasVisualEnabledState(control)) {
     return 'enabled'
   }
 
