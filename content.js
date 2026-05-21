@@ -3121,6 +3121,67 @@ function isLightweightVisibleOptionalToggle(control) {
   return isConsentToggleEnabled(control) || isToggleEnabled(control)
 }
 
+function getLightweightToggleSkipReason(control) {
+  if (!control) return 'missing_control'
+  if (!isVisible(control)) return 'not_visible'
+  if (!isElementInViewport(control)) return 'outside_viewport'
+  if (!isExplicitToggleControl(control)) return 'not_toggle_control'
+  if (
+    isSensitiveActionControl(control, getCookieContainer(control) || document)
+  ) {
+    return 'sensitive_context'
+  }
+  if (isProviderOrVendorToggleContext(control)) return 'provider_or_vendor'
+
+  const toggleContext =
+    classifyToggleContext(control)
+
+  if (toggleContext !== 'optional') {
+    return `context_${toggleContext}`
+  }
+  if (
+    !isConsentToggleEnabled(control) &&
+    !isToggleEnabled(control)
+  ) {
+    return 'not_active'
+  }
+
+  return ''
+}
+
+function getVisibleTogglePassDiagnostics(panel) {
+  const toggles =
+    panel ? getToggleControls(panel) : []
+  const visibleToggles =
+    toggles.filter(isVisible)
+  const activeToggles =
+    visibleToggles.filter((control) =>
+      isConsentToggleEnabled(control) || isToggleEnabled(control)
+    )
+  const eligibleToggles =
+    activeToggles.filter(isLightweightVisibleOptionalToggle)
+  const skippedToggles =
+    visibleToggles
+      .map((control) => ({
+        reason: getLightweightToggleSkipReason(control),
+        control: getCookieDebugElementSummary(control),
+      }))
+      .filter((entry) => entry.reason)
+      .slice(0, 8)
+  const saveControl =
+    findFinalConfirmationControl(panel)
+
+  return {
+    totalToggleCount: toggles.length,
+    visibleToggleCandidatesCount: visibleToggles.length,
+    activeToggleCandidatesCount: activeToggles.length,
+    eligibleToggleCandidatesCount: eligibleToggles.length,
+    skippedToggleReasons: skippedToggles,
+    saveButtonFound: Boolean(saveControl),
+    saveButton: getCookieDebugElementSummary(saveControl),
+  }
+}
+
 function disableVisibleTopLevelConsentToggles(panel) {
   if (
     !shouldRunOnThisSite() ||
@@ -3157,14 +3218,26 @@ function runLightweightVisibleTogglePass(panel) {
     return false
   }
 
+  const beforeDiagnostics =
+    getVisibleTogglePassDiagnostics(panel)
+
+  rejectFlowLog('Lightweight visible toggle pass started', {
+    panel: getCookieDebugElementSummary(panel),
+    ...beforeDiagnostics,
+  })
+
   const disabledCount =
     disableVisibleTopLevelConsentToggles(panel)
+  const saveControlBeforeClick =
+    findFinalConfirmationControl(panel)
   const saveAttempted =
     saveCookiePreferences(panel)
 
   rejectFlowLog('Lightweight visible toggle pass', {
-    disabledCount,
-    saveAttempted,
+    togglesClickedCount: disabledCount,
+    saveButtonFound: Boolean(saveControlBeforeClick),
+    saveClicked: saveAttempted,
+    saveButton: getCookieDebugElementSummary(saveControlBeforeClick),
     panel: getCookieDebugElementSummary(panel),
   })
 
