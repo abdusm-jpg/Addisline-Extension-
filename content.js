@@ -13,6 +13,7 @@ const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = false
 const ENABLE_LATE_CMP_MUTATION_WAKEUP = true
 const ENABLE_SETTINGS_RETRY_FLOW = false
 const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = true
+const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
 const REJECT_FLOW_DEBUG = true
 
 let protectionEnabled = false
@@ -3197,7 +3198,11 @@ function getVisibleTogglePassDiagnostics(panel) {
   const toggles =
     panel ? getToggleControls(panel) : []
   const customToggles =
-    panel ? getCustomVisualToggleControls(panel) : []
+    (
+      ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION && panel
+    )
+      ? getCustomVisualToggleControls(panel)
+      : []
   const visibleToggles =
     toggles.filter(isVisible)
   const activeToggles =
@@ -3205,14 +3210,16 @@ function getVisibleTogglePassDiagnostics(panel) {
       isConsentToggleEnabled(control) || isToggleEnabled(control)
     )
   const activeCustomToggles =
-    customToggles.filter((control) =>
-      isVisible(control) &&
-      (
-        isConsentToggleEnabled(control) ||
-        isToggleEnabled(control) ||
-        hasVisualEnabledState(control)
-      )
-    )
+    ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION
+      ? customToggles.filter((control) =>
+          isVisible(control) &&
+          (
+            isConsentToggleEnabled(control) ||
+            isToggleEnabled(control) ||
+            hasVisualEnabledState(control)
+          )
+        )
+      : []
   const eligibleToggles =
     activeToggles.filter(isLightweightVisibleOptionalToggle)
   const skippedToggles =
@@ -5234,6 +5241,7 @@ function isBlueEnabledColor(value) {
 }
 
 function hasVisualEnabledState(control) {
+  if (!ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION) return false
   if (!control || !isVisible(control)) return false
 
   const style =
@@ -5369,6 +5377,8 @@ function isLikelyCustomVisualSwitchControl(element) {
 }
 
 function getNearbyCustomSwitchRows(container) {
+  if (!ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION) return []
+
   return querySelectorAllDeep(
     [
       'label',
@@ -5393,6 +5403,8 @@ function getNearbyCustomSwitchRows(container) {
 }
 
 function getCustomVisualToggleControls(container) {
+  if (!ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION) return []
+
   const rows =
     getNearbyCustomSwitchRows(container)
   const controls = []
