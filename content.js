@@ -3292,6 +3292,13 @@ function runLightweightVisibleTogglePass(panel) {
     return false
   }
 
+  const cmpSpecificResult =
+    runLightweightCMPSpecificPanelPass(panel)
+
+  if (cmpSpecificResult) {
+    return true
+  }
+
   const beforeDiagnostics =
     getVisibleTogglePassDiagnostics(panel)
 
@@ -3320,6 +3327,349 @@ function runLightweightVisibleTogglePass(panel) {
   }
 
   return disabledCount > 0
+}
+
+const LIGHTWEIGHT_CMP_SELECTORS = Object.freeze({
+  sourcepoint: Object.freeze({
+    roots: Object.freeze([
+      '[id*="sp_message" i]',
+      '[class*="sp_message" i]',
+      '[id*="sp-message" i]',
+      '[class*="sp-message" i]',
+      '[class*="sp_message_container" i]',
+      '[class*="sp-message-container" i]',
+    ]),
+    reject: Object.freeze([
+      'button[title*="reject" i]',
+      'button[aria-label*="reject" i]',
+      '[role="button"][title*="reject" i]',
+      '[role="button"][aria-label*="reject" i]',
+    ]),
+    settings: Object.freeze([
+      'button[title*="more options" i]',
+      'button[aria-label*="more options" i]',
+      '[role="button"][title*="more options" i]',
+      '[role="button"][aria-label*="more options" i]',
+    ]),
+    toggles: Object.freeze([
+      '[aria-checked="true"]',
+      '[role="switch"][aria-checked="true"]',
+      'input[type="checkbox"]:checked',
+    ]),
+    save: Object.freeze([
+      'button[title*="save" i]',
+      'button[aria-label*="save" i]',
+      'button[title*="confirm" i]',
+      'button[aria-label*="confirm" i]',
+      '[role="button"][title*="save" i]',
+      '[role="button"][aria-label*="confirm" i]',
+    ]),
+  }),
+  onetrust: Object.freeze({
+    roots: Object.freeze([
+      '#onetrust-banner-sdk',
+      '#onetrust-pc-sdk',
+      '[id*="onetrust" i]',
+      '[class*="onetrust" i]',
+      '[id*="ot-sdk" i]',
+      '[class*="ot-sdk" i]',
+    ]),
+    reject: Object.freeze([
+      '#onetrust-reject-all-handler',
+      'button[id*="reject" i]',
+      'button[class*="reject" i]',
+    ]),
+    settings: Object.freeze([
+      '#onetrust-pc-btn-handler',
+      'button[id*="pc-btn" i]',
+      'button[class*="settings" i]',
+    ]),
+    toggles: Object.freeze([
+      '#onetrust-pc-sdk input[type="checkbox"]:checked',
+      '#onetrust-pc-sdk [aria-checked="true"]',
+      '#onetrust-pc-sdk [role="switch"][aria-checked="true"]',
+    ]),
+    save: Object.freeze([
+      '.save-preference-btn-handler',
+      '#save-preference-btn-handler',
+      '#onetrust-pc-sdk button[class*="save" i]',
+    ]),
+  }),
+  didomi: Object.freeze({
+    roots: Object.freeze([
+      '#didomi-host',
+      '#didomi-popup',
+      '#didomi-notice',
+      '[id*="didomi" i]',
+      '[class*="didomi" i]',
+    ]),
+    reject: Object.freeze([
+      '#didomi-notice-disagree-button',
+      'button[id*="disagree" i]',
+      'button[class*="disagree" i]',
+      'button[class*="decline" i]',
+    ]),
+    settings: Object.freeze([
+      '#didomi-notice-learn-more-button',
+      'button[id*="learn-more" i]',
+      'button[class*="preferences" i]',
+      'button[class*="settings" i]',
+    ]),
+    toggles: Object.freeze([
+      '#didomi-host input[type="checkbox"]:checked',
+      '#didomi-host [aria-checked="true"]',
+      '#didomi-host [role="switch"][aria-checked="true"]',
+    ]),
+    save: Object.freeze([
+      '#didomi-save-button',
+      '#didomi-host button[id*="save" i]',
+      '#didomi-host button[class*="save" i]',
+      '#didomi-host button[class*="agree" i]',
+    ]),
+  }),
+})
+
+function normalizeCMPName(value) {
+  const normalized =
+    normalizeMatchText(value)
+
+  if (textHasPhrase(normalized, 'sourcepoint')) return 'sourcepoint'
+  if (textHasPhrase(normalized, 'one trust') || textHasPhrase(normalized, 'onetrust')) return 'onetrust'
+  if (textHasPhrase(normalized, 'didomi')) return 'didomi'
+
+  return normalized
+}
+
+function getDetectedCMPName(root = document) {
+  try {
+    const detector =
+      globalThis?.AddislineCMPFingerprint?.detectCMPFingerprint
+
+    if (typeof detector === 'function') {
+      const result =
+        detector(root)
+      const cmpName =
+        normalizeCMPName(result?.cmpName || '')
+
+      if (LIGHTWEIGHT_CMP_SELECTORS[cmpName]) {
+        return cmpName
+      }
+    }
+  } catch {
+    // Fall back to local lightweight detector below.
+  }
+
+  const localResult =
+    detectCMPFingerprint(root)
+  const localName =
+    normalizeCMPName(localResult?.cmp || '')
+
+  return LIGHTWEIGHT_CMP_SELECTORS[localName]
+    ? localName
+    : ''
+}
+
+function queryCMPSelectorList(root, selectors, limit = 12) {
+  const searchRoot =
+    root || document
+  const controls = []
+
+  selectors.forEach((selector) => {
+    try {
+      controls.push(
+        ...Array.from(searchRoot.querySelectorAll(selector))
+      )
+    } catch {
+      // Ignore unsupported selectors from third-party CMP variants.
+    }
+  })
+
+  return uniqueElements(controls)
+    .slice(0, limit)
+}
+
+function getCMPRoot(cmpName, root = document) {
+  const selectors =
+    LIGHTWEIGHT_CMP_SELECTORS[cmpName]?.roots || []
+
+  return queryCMPSelectorList(document, selectors, 8)
+    .find((candidate) =>
+      isVisible(candidate) &&
+      (
+        root === document ||
+        candidate === root ||
+        candidate.contains(root) ||
+        root.contains?.(candidate)
+      )
+    ) || root || document
+}
+
+function getCMPSpecificControls(cmpName, type, root = document) {
+  const selectors =
+    LIGHTWEIGHT_CMP_SELECTORS[cmpName]?.[type] || []
+  const cmpRoot =
+    getCMPRoot(cmpName, root)
+
+  return queryCMPSelectorList(cmpRoot, selectors, 16)
+    .filter((control) =>
+      isVisible(control) &&
+      !hasUnsafeAcceptText(control) &&
+      !isSensitiveActionControl(control, cmpRoot)
+    )
+}
+
+function clickCMPSpecificControl(control) {
+  return Boolean(
+    control &&
+    canProcessBannerAction(control) &&
+    clickElementSafely(control)
+  )
+}
+
+function attemptCMPSpecificReject(root = document) {
+  if (
+    !shouldRunOnThisSite() ||
+    !getProtectionModeConfig().allowAutoReject
+  ) {
+    return false
+  }
+
+  const cmpName =
+    getDetectedCMPName(root)
+
+  if (!cmpName) return false
+
+  const rejectControl =
+    getCMPSpecificControls(cmpName, 'reject', root)
+      .find((control) =>
+        hasVisibleRejectIntent(control) ||
+        textMatchesDictionaryCookieIntent(getActionText(control), 'rejectAll')
+      )
+
+  if (!rejectControl) return false
+
+  if (!clickCMPSpecificControl(rejectControl)) {
+    rejectFlowLog('CMP-specific reject blocked', {
+      cmpName,
+      control: getCookieDebugElementSummary(rejectControl),
+    })
+    return false
+  }
+
+  rejectFlowLog('CMP-specific reject clicked', {
+    cmpName,
+    control: getCookieDebugElementSummary(rejectControl),
+  })
+  incrementStat('autoRejects')
+  schedulePostActionVerification({
+    type: 'reject',
+    container: getCMPRoot(cmpName, root),
+    element: rejectControl,
+  })
+  stopObserver()
+  setLastAction('auto_reject')
+  setLastError('')
+  return true
+}
+
+function attemptCMPSpecificSettingsOpen(root = document) {
+  if (
+    !shouldRunOnThisSite() ||
+    !getProtectionModeConfig().allowSettingsOpen ||
+    lightweightSettingsOpenAttempted
+  ) {
+    return false
+  }
+
+  const cmpName =
+    getDetectedCMPName(root)
+
+  if (!cmpName) return false
+
+  const settingsControl =
+    getCMPSpecificControls(cmpName, 'settings', root)
+      .find(hasVisibleSettingsIntent)
+
+  if (!settingsControl) return false
+
+  if (!clickCMPSpecificControl(settingsControl)) {
+    rejectFlowLog('CMP-specific settings blocked', {
+      cmpName,
+      control: getCookieDebugElementSummary(settingsControl),
+    })
+    return false
+  }
+
+  lightweightSettingsOpenAttempted = true
+  rejectFlowLog('CMP-specific settings opened', {
+    cmpName,
+    control: getCookieDebugElementSummary(settingsControl),
+  })
+  stopObserver()
+  setLastAction('settings_opened')
+  setLastError('')
+
+  setTimeout(() => {
+    try {
+      if (!shouldRunOnThisSite() || rejectFlowCompleted) return
+
+      runLightweightVisibleTogglePass(
+        getCMPRoot(cmpName, document)
+      )
+    } catch (error) {
+      logRuntimeError('cmp_specific_settings_followup', error)
+    }
+  }, 900)
+
+  return true
+}
+
+function runLightweightCMPSpecificPanelPass(panel) {
+  const cmpName =
+    getDetectedCMPName(panel)
+
+  if (!cmpName) return false
+
+  const cmpRoot =
+    getCMPRoot(cmpName, panel)
+  let togglesClicked = 0
+
+  getCMPSpecificControls(cmpName, 'toggles', cmpRoot)
+    .filter((control) =>
+      !isProviderOrVendorToggleContext(control) &&
+      (isConsentToggleEnabled(control) || isToggleEnabled(control))
+    )
+    .slice(0, MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS)
+    .forEach((control) => {
+      if (clickCMPSpecificControl(control)) {
+        togglesClicked += 1
+        incrementStat('trackersReduced')
+      }
+    })
+
+  const saveControl =
+    getCMPSpecificControls(cmpName, 'save', cmpRoot)[0] ||
+    findFinalConfirmationControl(cmpRoot)
+  const saveClicked =
+    clickCMPSpecificControl(saveControl)
+
+  rejectFlowLog('CMP-specific panel pass', {
+    cmpName,
+    togglesClicked,
+    saveClicked,
+    saveControl: getCookieDebugElementSummary(saveControl),
+  })
+
+  if (saveClicked) {
+    schedulePostActionVerification({
+      type: 'save',
+      container: cmpRoot,
+      element: saveControl,
+    })
+    return true
+  }
+
+  return togglesClicked > 0
 }
 
 function attemptLightweightSettingsOpen(candidates) {
@@ -8299,6 +8649,13 @@ function scanPage() {
     })
     logCMPBannerClassifications(candidates)
 
+    if (
+      modeConfig.allowAutoReject &&
+      attemptCMPSpecificReject(candidates[0] || document)
+    ) {
+      return
+    }
+
     if (modeConfig.allowAutoReject) {
       for (const candidate of candidates) {
         if (!isPotentialCookieContainer(candidate)) continue
@@ -8486,6 +8843,10 @@ function scanPage() {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
       })
+    }
+
+    if (attemptCMPSpecificSettingsOpen(candidates[0] || document)) {
+      return
     }
 
     if (attemptLightweightSettingsOpen(candidates)) {

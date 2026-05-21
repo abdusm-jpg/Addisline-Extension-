@@ -24,6 +24,14 @@ const CMP_FINGERPRINTS = Object.freeze({
     'didomi-notice',
     'sdk.privacy-center.org',
   ]),
+  Sourcepoint: Object.freeze([
+    'sourcepoint',
+    'sp_message',
+    'sp-message',
+    'sp message',
+    'sourcepoint.mgr',
+    'privacy-manager',
+  ]),
   Cookiebot: Object.freeze([
     'cookiebot',
     'cybotcookiebot',
@@ -55,6 +63,10 @@ const CMP_GLOBALS = Object.freeze({
   Didomi: Object.freeze([
     'Didomi',
     'DidomiEventListeners',
+  ]),
+  Sourcepoint: Object.freeze([
+    '_sp_',
+    'Sourcepoint',
   ]),
   Cookiebot: Object.freeze([
     'Cookiebot',
