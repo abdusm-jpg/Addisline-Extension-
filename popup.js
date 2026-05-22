@@ -53,6 +53,16 @@ const excludedDomainsCount =
     'excludedDomainsCount'
   )
 
+const cookieAuditStatus =
+  document.getElementById(
+    'cookieAuditStatus'
+  )
+
+const cookieAuditList =
+  document.getElementById(
+    'cookieAuditList'
+  )
+
 const protectionMode =
   document.getElementById(
     'protectionMode'
@@ -195,7 +205,7 @@ const reportsDropdown =
 
 const authProtectedSections =
   document.querySelectorAll(
-    '.statusPanel, .sitePanel, .diagnosticPanel, .stats, .actions'
+    '.statusPanel, .sitePanel, .diagnosticPanel, .stats, .cookieAuditPanel, .actions'
   )
 
 const DEV_SHOW_FULL_POPUP_WITHOUT_AUTH =
@@ -207,6 +217,7 @@ const DEFAULT_STATE = {
   cloudSyncEnabled: false,
   excludedDomains: [],
   issueReports: [],
+  lastCookieAudit: null,
   lastAction: '',
   lastError: '',
   stats: {
@@ -234,6 +245,33 @@ const EMPTY_STATS = {
   legitimateInterestsDisabled: 0,
   protectedSites: 0,
 }
+
+const COOKIE_AUDIT_CATEGORIES = [
+  {
+    key: 'essentialSessionSecurity',
+    label: 'essentialSessionSecurity',
+  },
+  {
+    key: 'consentPreference',
+    label: 'consentPreference',
+  },
+  {
+    key: 'analytics',
+    label: 'analytics',
+  },
+  {
+    key: 'advertisingMarketing',
+    label: 'advertisingMarketing',
+  },
+  {
+    key: 'trackingSocial',
+    label: 'trackingSocial',
+  },
+  {
+    key: 'unknown',
+    label: 'unknown',
+  },
+]
 
 let currentDomain =
   ''
@@ -433,6 +471,7 @@ function renderState({
   lastAction,
   lastError,
   issueReports,
+  lastCookieAudit,
   displayName,
   authStatus,
 }) {
@@ -569,6 +608,8 @@ function renderState({
 
   diagnosticLastError.innerText =
     lastError || 'Sin errores'
+
+  renderCookieAudit(lastCookieAudit)
 
   const connected = authStatus === 'connected'
   const safeDisplayName =
@@ -1057,6 +1098,7 @@ chrome.storage.onChanged.addListener(
       changes.protectedDomains ||
       changes.lastAction ||
       changes.lastError ||
+      changes.lastCookieAudit ||
       changes.issueReports ||
       changes.authStatus ||
       changes.email ||
@@ -1116,6 +1158,50 @@ function getActionLabel(action) {
   }
 
   return 'Sin datos'
+}
+
+function renderCookieAudit(audit) {
+  const hasAudit =
+    audit &&
+    typeof audit === 'object' &&
+    audit.categories &&
+    typeof audit.categories === 'object'
+
+  if (!hasAudit) {
+    cookieAuditStatus.innerText =
+      'No audit available yet'
+    cookieAuditList.innerHTML = ''
+    return
+  }
+
+  const domain =
+    normalizeDomain(audit.domain || '')
+  const readableCount =
+    Number.isFinite(audit.readableCookieCount)
+      ? audit.readableCookieCount
+      : 0
+  const auditedAt =
+    formatReportDate(audit.auditedAt)
+
+  cookieAuditStatus.innerText =
+    `${readableCount} readable cookies after last action${domain ? ` on ${domain}` : ''} · ${auditedAt}`
+
+  cookieAuditList.innerHTML =
+    COOKIE_AUDIT_CATEGORIES
+      .map(({ key, label }) => {
+        const count =
+          Number.isFinite(audit.categories[key])
+            ? audit.categories[key]
+            : 0
+
+        return `
+          <div>
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${count}</dd>
+          </div>
+        `
+      })
+      .join('')
 }
 
 function renderIssueReports(issueReports) {
