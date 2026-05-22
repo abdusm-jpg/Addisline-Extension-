@@ -385,6 +385,22 @@ function isDomainExcluded(domain, excludedDomains) {
     )
 }
 
+function getStoredDomainValue(entry) {
+  return normalizeDomain(
+    typeof entry === 'string'
+      ? entry
+      : entry?.domain
+  )
+}
+
+function getUniqueDomainCount(entries) {
+  return new Set(
+    (Array.isArray(entries) ? entries : [])
+      .map(getStoredDomainValue)
+      .filter(Boolean)
+  ).size
+}
+
 function getSafeOriginFromUrl(value) {
   if (!value) return ''
 
@@ -412,6 +428,94 @@ function getSafeOriginFromDomain(domain) {
   if (!normalizedDomain) return ''
 
   return `https://${normalizedDomain}`
+}
+
+function normalizeIssueReport(report) {
+  if (!report || typeof report !== 'object') {
+    return null
+  }
+
+  const domain =
+    normalizeDomain(report.domain)
+
+  if (!domain) return null
+
+  const date =
+    String(
+      report.date ||
+        report.lastActionAt ||
+        report.lastReportedAt ||
+        ''
+    )
+
+  return {
+    ...report,
+    domain,
+    origin:
+      getSafeOriginFromUrl(report.origin) ||
+      getSafeOriginFromDomain(domain),
+    problemType:
+      String(report.problemType || 'other'),
+    date,
+    lastActionAt:
+      String(report.lastActionAt || date || ''),
+    actionCount:
+      Math.max(1, Number(report.actionCount) || 1),
+  }
+}
+
+function getReportActivityTime(report) {
+  const date =
+    new Date(
+      report?.lastActionAt ||
+        report?.lastRejectAt ||
+        report?.date ||
+        0
+    )
+
+  return Number.isNaN(date.getTime())
+    ? 0
+    : date.getTime()
+}
+
+function getUniqueRecentIssueReports(issueReports) {
+  const recordsByDomain =
+    new Map()
+
+  ;(Array.isArray(issueReports) ? issueReports : [])
+    .map(normalizeIssueReport)
+    .filter(Boolean)
+    .forEach((report) => {
+      const existing =
+        recordsByDomain.get(report.domain)
+      const actionCount =
+        (Number(existing?.actionCount) || 0) +
+        (Number(report.actionCount) || 1)
+
+      const latestReport =
+        !existing ||
+        getReportActivityTime(report) >=
+          getReportActivityTime(existing)
+          ? {
+              ...(existing || {}),
+              ...report,
+            }
+          : {
+              ...report,
+              ...existing,
+            }
+
+      recordsByDomain.set(report.domain, {
+        ...latestReport,
+        actionCount,
+      })
+    })
+
+  return Array.from(recordsByDomain.values())
+    .sort((first, second) =>
+      getReportActivityTime(second) -
+      getReportActivityTime(first)
+    )
 }
 
 async function getCurrentDomain() {
@@ -569,7 +673,7 @@ function renderState({
 
   protectedSites.innerText =
     String(
-      protectedDomains?.length ||
+      getUniqueDomainCount(protectedDomains) ||
         stats?.protectedSites ||
         0
     )
@@ -921,37 +1025,50 @@ reportIssueButton.addEventListener(
       })
 
     const reports =
-      Array.isArray(issueReports)
-        ? issueReports
-        : []
+      getUniqueRecentIssueReports(issueReports)
+    const domain =
+      currentDomainScope ||
+      currentDomain
+    const now =
+      new Date().toISOString()
+    const existingReport =
+      reports.find((storedReport) =>
+        storedReport.domain === domain
+      )
 
     const report = {
-      domain:
-        currentDomainScope ||
-        currentDomain,
+      ...(existingReport || {}),
+      domain,
       origin:
         currentOrigin ||
         getSafeOriginFromDomain(
-          currentDomainScope ||
-            currentDomain
+          domain
         ),
       problemType:
         issueType.value,
       date:
-        new Date().toISOString(),
+        now,
+      lastActionAt:
+        now,
+      actionCount:
+        (existingReport?.actionCount || 0) + 1,
       protectionMode:
         storedMode || 'normal',
     }
 
     await chrome.storage.local.set({
       issueReports: [
-        ...reports,
         report,
-      ],
+        ...reports.filter((storedReport) =>
+          storedReport.domain !== domain
+        ),
+      ].slice(0, 100),
     })
 
     reportStatus.innerText =
-      'Reporte guardado localmente.'
+      existingReport
+        ? 'Reporte actualizado.'
+        : 'Reporte guardado localmente.'
 
     if (cloudSyncEnabled) {
       sendIssueReportToBackground(report)
@@ -968,13 +1085,19 @@ issueReportsList.addEventListener(
       )
 
     if (deleteButton) {
+      const reportDomain =
+        normalizeDomain(
+          deleteButton.dataset.reportDeleteDomain
+        )
       const reportIndex =
         Number.parseInt(
           deleteButton.dataset.reportDeleteIndex,
           10
         )
 
-      if (Number.isInteger(reportIndex)) {
+      if (reportDomain) {
+        await removeIssueReportByDomain(reportDomain)
+      } else if (Number.isInteger(reportIndex)) {
         await removeIssueReportAtIndex(reportIndex)
       }
 
@@ -1003,6 +1126,34 @@ issueReportsList.addEventListener(
     })
   }
 )
+
+async function removeIssueReportByDomain(reportDomain) {
+  const {
+    issueReports,
+  } =
+    await chrome.storage.local.get({
+      issueReports: [],
+    })
+
+  const reports =
+    Array.isArray(issueReports)
+      ? issueReports
+      : []
+
+  const nextReports =
+    reports.filter((report) =>
+      normalizeDomain(report?.domain) !== reportDomain
+    )
+
+  await chrome.storage.local.set({
+    issueReports: nextReports,
+  })
+
+  reportStatus.innerText =
+    'Reporte eliminado.'
+
+  renderIssueReports(nextReports)
+}
 
 async function removeIssueReportAtIndex(reportIndex) {
   const {
@@ -1206,9 +1357,7 @@ function renderCookieAudit(audit) {
 
 function renderIssueReports(issueReports) {
   const reports =
-    Array.isArray(issueReports)
-      ? issueReports
-      : []
+    getUniqueRecentIssueReports(issueReports)
 
   latestIssueReports =
     reports
@@ -1219,7 +1368,6 @@ function renderIssueReports(issueReports) {
         report,
         index,
       }))
-      .reverse()
 
   const visibleReports =
     sortedReports.slice(
@@ -1263,6 +1411,7 @@ function renderIssueReports(issueReports) {
               class="reportDeleteButton"
               type="button"
               data-report-delete-index="${index}"
+              data-report-delete-domain="${escapeHtml(report.domain || '')}"
               title="Remove this report"
               aria-label="Remove this report"
             >
@@ -1270,7 +1419,7 @@ function renderIssueReports(issueReports) {
             </button>
           </div>
           <span>${getIssueTypeLabel(report.problemType)}</span>
-          <small>${formatReportDate(report.date)} · ${escapeHtml(report.protectionMode || 'normal')}</small>
+          <small>${formatReportDate(report.lastActionAt || report.date)} · ${escapeHtml(report.protectionMode || 'normal')} · ${Math.max(1, Number(report.actionCount) || 1)} actividad(es)</small>
         </article>
       `)
       .join('')

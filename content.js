@@ -1579,9 +1579,54 @@ async function setStatValue(statName, value) {
   })
 }
 
-function recordProtectedSite() {
+function normalizeProtectedDomainRecord(record) {
+  if (typeof record === 'string') {
+    const domain =
+      normalizeDomain(record)
+
+    return domain
+      ? {
+          domain,
+          firstSeenAt: '',
+          lastActionAt: '',
+          lastRejectAt: '',
+          actionCount: 0,
+        }
+      : null
+  }
+
+  if (!record || typeof record !== 'object') {
+    return null
+  }
+
+  const domain =
+    normalizeDomain(record.domain)
+
+  if (!domain) return null
+
+  return {
+    domain,
+    firstSeenAt: String(record.firstSeenAt || ''),
+    lastActionAt: String(record.lastActionAt || ''),
+    lastRejectAt: String(record.lastRejectAt || ''),
+    actionCount: Math.max(0, Number(record.actionCount) || 0),
+  }
+}
+
+function getProtectedDomainRecordDomain(record) {
+  return normalizeDomain(
+    typeof record === 'string'
+      ? record
+      : record?.domain
+  )
+}
+
+function recordProtectedSite(actionType = 'visit', forceUpdate = false) {
   if (
-    protectedDomainRecorded ||
+    (
+      protectedDomainRecorded &&
+      !forceUpdate
+    ) ||
     !shouldRunOnThisSite()
   ) {
     return
@@ -1591,30 +1636,73 @@ function recordProtectedSite() {
 
   if (!currentDomain) return
 
-  protectedDomainRecorded = true
+  if (!forceUpdate) {
+    protectedDomainRecorded = true
+  }
 
   safeStorageGet(
     {
       [PROTECTED_DOMAINS_KEY]: [],
     },
     (stored) => {
-      const protectedDomains = Array.isArray(stored[PROTECTED_DOMAINS_KEY])
-        ? stored[PROTECTED_DOMAINS_KEY].map(normalizeDomain).filter(Boolean)
-        : []
+      const now =
+        new Date().toISOString()
+      const records =
+        (Array.isArray(stored[PROTECTED_DOMAINS_KEY])
+          ? stored[PROTECTED_DOMAINS_KEY]
+          : [])
+          .map(normalizeProtectedDomainRecord)
+          .filter(Boolean)
+      const existingRecord =
+        records.find((record) =>
+          record.domain === currentDomain
+        )
+      const hasAction =
+        actionType && actionType !== 'visit'
 
-      if (protectedDomains.includes(currentDomain)) {
+      if (
+        existingRecord &&
+        !forceUpdate &&
+        !hasAction
+      ) {
         return
       }
 
+      const nextRecord = {
+        ...(existingRecord || {
+          domain: currentDomain,
+          firstSeenAt: now,
+          actionCount: 0,
+        }),
+        lastActionAt: hasAction
+          ? now
+          : existingRecord?.lastActionAt || '',
+        lastRejectAt: actionType === 'reject'
+          ? now
+          : existingRecord?.lastRejectAt || '',
+        actionCount: hasAction
+          ? (existingRecord?.actionCount || 0) + 1
+          : existingRecord?.actionCount || 0,
+      }
       const nextProtectedDomains = [
-        ...new Set([...protectedDomains, currentDomain]),
-      ]
+        nextRecord,
+        ...records.filter((record) =>
+          record.domain !== currentDomain
+        ),
+      ].slice(0, 100)
 
       safeStorageSet({
         [PROTECTED_DOMAINS_KEY]: nextProtectedDomains,
       })
 
-      setStatValue('protectedSites', nextProtectedDomains.length)
+      setStatValue(
+        'protectedSites',
+        new Set(
+          nextProtectedDomains
+            .map(getProtectedDomainRecordDomain)
+            .filter(Boolean)
+        ).size
+      )
     }
   )
 }
@@ -4811,6 +4899,7 @@ function markSuccessfulCookieActionCooldown(element = null) {
 }
 
 function finalizeCookieActionSuccess(context = {}) {
+  recordProtectedSite(context.type || 'action', true)
   markSuccessfulCookieActionCooldown(context.element)
   rejectFlowCompleted = true
   scanBudgetExhausted = true
