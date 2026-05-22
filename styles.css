@@ -129,6 +129,7 @@ h1 {
 .statusPanel,
 .sitePanel,
 .diagnosticPanel,
+.currentSiteDiagnosticPanel,
 .accountPanel {
   margin-bottom: 14px;
   padding: 14px;

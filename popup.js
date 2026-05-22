@@ -128,6 +128,36 @@ const diagnosticLastError =
     'diagnosticLastError'
   )
 
+const currentSiteDiagnosticStatus =
+  document.getElementById(
+    'currentSiteDiagnosticStatus'
+  )
+
+const currentSiteDiagnosticState =
+  document.getElementById(
+    'currentSiteDiagnosticState'
+  )
+
+const currentSiteDiagnosticReason =
+  document.getElementById(
+    'currentSiteDiagnosticReason'
+  )
+
+const currentSiteDiagnosticControls =
+  document.getElementById(
+    'currentSiteDiagnosticControls'
+  )
+
+const currentSiteDiagnosticReject =
+  document.getElementById(
+    'currentSiteDiagnosticReject'
+  )
+
+const currentSiteDiagnosticBlocked =
+  document.getElementById(
+    'currentSiteDiagnosticBlocked'
+  )
+
 const accountStatus =
   document.getElementById(
     'accountStatus'
@@ -205,7 +235,7 @@ const reportsDropdown =
 
 const authProtectedSections =
   document.querySelectorAll(
-    '.statusPanel, .sitePanel, .diagnosticPanel, .stats, .cookieAuditPanel, .actions'
+    '.statusPanel, .sitePanel, .diagnosticPanel, .currentSiteDiagnosticPanel, .stats, .cookieAuditPanel, .actions'
   )
 
 const DEV_SHOW_FULL_POPUP_WITHOUT_AUTH =
@@ -218,6 +248,7 @@ const DEFAULT_STATE = {
   excludedDomains: [],
   issueReports: [],
   lastCookieAudit: null,
+  currentSiteDiagnostic: null,
   lastAction: '',
   lastError: '',
   stats: {
@@ -576,6 +607,7 @@ function renderState({
   lastError,
   issueReports,
   lastCookieAudit,
+  currentSiteDiagnostic,
   displayName,
   authStatus,
 }) {
@@ -714,6 +746,7 @@ function renderState({
     lastError || 'Sin errores'
 
   renderCookieAudit(lastCookieAudit)
+  renderCurrentSiteDiagnostic(currentSiteDiagnostic)
 
   const connected = authStatus === 'connected'
   const safeDisplayName =
@@ -1250,6 +1283,7 @@ chrome.storage.onChanged.addListener(
       changes.lastAction ||
       changes.lastError ||
       changes.lastCookieAudit ||
+      changes.currentSiteDiagnostic ||
       changes.issueReports ||
       changes.authStatus ||
       changes.email ||
@@ -1353,6 +1387,53 @@ function renderCookieAudit(audit) {
         `
       })
       .join('')
+}
+
+function renderCurrentSiteDiagnostic(diagnostic) {
+  const hasDiagnostic =
+    diagnostic &&
+    typeof diagnostic === 'object' &&
+    normalizeDomain(diagnostic.domain) === currentDomain
+
+  if (!hasDiagnostic) {
+    currentSiteDiagnosticStatus.innerText =
+      'No diagnostic available yet'
+    currentSiteDiagnosticState.innerText =
+      'Sin datos'
+    currentSiteDiagnosticReason.innerText =
+      'Sin datos'
+    currentSiteDiagnosticControls.innerText =
+      'Sin datos'
+    currentSiteDiagnosticReject.innerText =
+      'Sin datos'
+    currentSiteDiagnosticBlocked.innerText =
+      'Sin datos'
+    return
+  }
+
+  const controls =
+    Array.isArray(diagnostic.detectedControls)
+      ? diagnostic.detectedControls
+          .filter(Boolean)
+          .slice(0, 5)
+      : []
+
+  currentSiteDiagnosticStatus.innerText =
+    diagnostic.lastUpdatedAt
+      ? `Actualizado ${formatReportDate(diagnostic.lastUpdatedAt)}`
+      : 'Diagnostico disponible'
+  currentSiteDiagnosticState.innerText =
+    String(diagnostic.status || 'skipped')
+  currentSiteDiagnosticReason.innerText =
+    String(diagnostic.reason || 'Sin datos')
+  currentSiteDiagnosticControls.innerText =
+    controls.length > 0
+      ? controls.join(', ')
+      : 'Sin datos'
+  currentSiteDiagnosticReject.innerText =
+    String(diagnostic.matchedRejectText || 'Sin datos')
+  currentSiteDiagnosticBlocked.innerText =
+    String(diagnostic.blockedReason || 'Sin datos')
 }
 
 function renderIssueReports(issueReports) {

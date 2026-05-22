@@ -77,6 +77,7 @@ const pendingIdleCallbacks = new Set()
 
 const STATS_KEY = 'stats'
 const COOKIE_AUDIT_KEY = 'lastCookieAudit'
+const CURRENT_SITE_DIAGNOSTIC_KEY = 'currentSiteDiagnostic'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
 const COOKIE_ACTION_SUCCESS_COOLDOWN_MS = 60000
@@ -102,6 +103,7 @@ const MAX_NO_CMP_SCANS = 3
 const MAX_DOM_QUERY_RESULTS = 300
 const MAX_COOKIE_CANDIDATES_PER_SCAN = 10
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
+const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 5
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
@@ -1263,6 +1265,71 @@ function setLastError(error) {
 
   safeStorageSet({
     lastError: safeError,
+  })
+}
+
+function getDiagnosticControlTexts(candidates = [], extraControls = []) {
+  const texts = []
+  const seen = new Set()
+  const addControlText = (control) => {
+    const text =
+      normalizeMatchText(getActionText(control))
+
+    if (!text || seen.has(text)) return
+
+    seen.add(text)
+    texts.push(text.slice(0, 80))
+  }
+
+  extraControls
+    .filter(Boolean)
+    .forEach(addControlText)
+
+  ;(Array.isArray(candidates) ? candidates : [])
+    .slice(0, 2)
+    .forEach((candidate) => {
+      getDirectClickableControls(candidate)
+        .slice(0, 8)
+        .forEach(addControlText)
+    })
+
+  return texts.slice(0, MAX_DIAGNOSTIC_CONTROLS)
+}
+
+function recordCurrentSiteDiagnostic({
+  status = 'skipped',
+  reason = '',
+  candidates = [],
+  detectedControls = null,
+  matchedRejectElement = null,
+  matchedRejectText = '',
+  blockedReason = '',
+} = {}) {
+  if (!hasExtensionContext()) return
+
+  const diagnostic = {
+    domain: getCurrentDomain(),
+    status,
+    reason: String(reason || '').slice(0, 120),
+    detectedControls:
+      Array.isArray(detectedControls)
+        ? detectedControls.slice(0, MAX_DIAGNOSTIC_CONTROLS)
+        : getDiagnosticControlTexts(candidates, [matchedRejectElement]),
+    matchedRejectText:
+      String(
+        matchedRejectText ||
+          (
+            matchedRejectElement
+              ? getActionText(matchedRejectElement)
+              : ''
+          )
+      ).slice(0, 120),
+    blockedReason: String(blockedReason || '').slice(0, 120),
+    lastUpdatedAt: new Date().toISOString(),
+  }
+
+  safeStorageSet({
+    [CURRENT_SITE_DIAGNOSTIC_KEY]: diagnostic,
   })
 }
 
@@ -4174,6 +4241,12 @@ function attemptLightweightSettingsOpen(candidates) {
     clicked: true,
     control: getCookieDebugElementSummary(control),
   })
+  recordCurrentSiteDiagnostic({
+    status: 'settingsOpened',
+    reason: 'settings_control_clicked',
+    candidates,
+    detectedControls: getDiagnosticControlTexts(candidates, [control]),
+  })
   stopObserver()
   scanBudgetExhausted = true
   rejectFlowCompleted = true
@@ -5901,6 +5974,17 @@ function schedulePostActionVerification(context = {}) {
 
     if (!state.active) {
       if (context.type === 'reject') {
+        recordCurrentSiteDiagnostic({
+          status: 'rejected',
+          reason: 'reject_verified',
+          candidates: state.container || context.container
+            ? [state.container || context.container]
+            : [],
+          matchedRejectElement: context.element,
+          matchedRejectText: context.element
+            ? getActionText(context.element)
+            : '',
+        })
         rejectFlowLog('Basic reject verification passed', {
           bannerVisible: state.bannerVisible,
           modalPresent: state.modalPresent,
@@ -5937,6 +6021,16 @@ function schedulePostActionVerification(context = {}) {
     })
 
     if (context.type === 'reject') {
+      recordCurrentSiteDiagnostic({
+        status: 'failed',
+        reason: 'reject_verification_failed',
+        candidates: context.container ? [context.container] : [],
+        matchedRejectElement: context.element,
+        matchedRejectText: context.element
+          ? getActionText(context.element)
+          : '',
+        blockedReason: 'banner_still_visible',
+      })
       rejectFlowLog('Basic reject verification failed', {
         bannerVisible: state.bannerVisible,
         modalPresent: state.modalPresent,
@@ -9024,6 +9118,11 @@ function canRunPageScan(source = 'scan') {
 
   if (pageScanCount >= MAX_SCANS_PER_PAGE) {
     scanBudgetExhausted = true
+    recordCurrentSiteDiagnostic({
+      status: 'skipped',
+      reason: 'scan_budget_exhausted',
+      blockedReason: source,
+    })
     rejectFlowLog('Basic reject blocked: scan_budget_exhausted', {
       source,
       maxScans: MAX_SCANS_PER_PAGE,
@@ -9049,6 +9148,10 @@ function scanPage() {
       logInitialFlowSkipped('site_not_enabled_before_scan', {
         domain: getCurrentDomain(),
       })
+      recordCurrentSiteDiagnostic({
+        status: 'skipped',
+        reason: 'site_not_enabled',
+      })
       updateAddislineTestReport({
         event: 'scanPage:stop',
         lastSkipReason: 'site_not_enabled',
@@ -9068,6 +9171,10 @@ function scanPage() {
         event: 'scanPage:deferred',
         lastSkipReason: 'page_loading',
         budgetOrCooldownBlockedWork: true,
+      })
+      recordCurrentSiteDiagnostic({
+        status: 'skipped',
+        reason: 'page_loading',
       })
       return
     }
@@ -9142,6 +9249,13 @@ function scanPage() {
         }
 
         if (actionExecuted) {
+          recordCurrentSiteDiagnostic({
+            status: 'rejected',
+            reason: 'candidate_reject_clicked',
+            candidates,
+            matchedRejectElement: action.element,
+            matchedRejectText: getActionText(action.element),
+          })
           if (action.type === 'reject') {
             rejectFlowLog('Basic reject clicked', {
               source: 'candidate_scan',
@@ -9159,6 +9273,14 @@ function scanPage() {
         }
 
         if (action.type === 'reject' && action.element) {
+          recordCurrentSiteDiagnostic({
+            status: 'failed',
+            reason: 'candidate_reject_not_clicked',
+            candidates,
+            matchedRejectElement: action.element,
+            matchedRejectText: getActionText(action.element),
+            blockedReason: 'action_gate_or_click_failed',
+          })
           rejectFlowLog('Basic reject blocked: action_gate_or_click_failed', {
             source: 'candidate_scan',
             intent: action.intent || '',
@@ -9189,6 +9311,11 @@ function scanPage() {
     }
 
     if (!directRejectControl) {
+      recordCurrentSiteDiagnostic({
+        status: 'skipped',
+        reason: 'reject_candidate_not_found',
+        candidates,
+      })
       rejectFlowLog('Basic reject blocked: candidate_not_found', {
         source: 'direct_scan',
       })
@@ -9198,6 +9325,14 @@ function scanPage() {
       getBasicRejectBlockReason(directRejectControl)
 
     if (directRejectBlockReason && directRejectControl) {
+      recordCurrentSiteDiagnostic({
+        status: 'failed',
+        reason: 'direct_reject_blocked',
+        candidates,
+        matchedRejectElement: directRejectControl,
+        matchedRejectText: getActionText(directRejectControl),
+        blockedReason: directRejectBlockReason,
+      })
       rejectFlowLog(`Basic reject blocked: ${directRejectBlockReason}`, {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
@@ -9236,6 +9371,13 @@ function scanPage() {
       directRejectCanProcess &&
       directRejectClicked
     ) {
+      recordCurrentSiteDiagnostic({
+        status: 'rejected',
+        reason: 'direct_reject_clicked',
+        candidates,
+        matchedRejectElement: directRejectControl,
+        matchedRejectText: getActionText(directRejectControl),
+      })
       rejectFlowLog('Basic reject clicked', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
@@ -9283,6 +9425,14 @@ function scanPage() {
       directRejectCanProcess === false &&
       !directRejectBlockReason
     ) {
+      recordCurrentSiteDiagnostic({
+        status: 'failed',
+        reason: 'direct_reject_blocked',
+        candidates,
+        matchedRejectElement: directRejectControl,
+        matchedRejectText: getActionText(directRejectControl),
+        blockedReason: 'action_cooldown_or_processed',
+      })
       rejectFlowLog('Basic reject blocked: action_cooldown_or_processed', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
@@ -9294,6 +9444,14 @@ function scanPage() {
       directRejectCanProcess &&
       !directRejectClicked
     ) {
+      recordCurrentSiteDiagnostic({
+        status: 'failed',
+        reason: 'direct_reject_click_failed',
+        candidates,
+        matchedRejectElement: directRejectControl,
+        matchedRejectText: getActionText(directRejectControl),
+        blockedReason: 'click_failed',
+      })
       rejectFlowLog('Basic reject blocked: click_failed', {
         source: 'direct_scan',
         control: getCookieDebugElementSummary(directRejectControl),
@@ -9316,6 +9474,12 @@ function scanPage() {
 
       if (noCMPScanCount >= MAX_NO_CMP_SCANS) {
         scanBudgetExhausted = true
+        recordCurrentSiteDiagnostic({
+          status: 'skipped',
+          reason: 'no_cmp_after_bounded_scans',
+          candidates,
+          blockedReason: 'scan_budget_exhausted',
+        })
         rejectFlowLog('Basic reject blocked: no_cmp_after_bounded_scans', {
           maxNoCMPScans: MAX_NO_CMP_SCANS,
         })
@@ -9439,6 +9603,11 @@ function scanPage() {
     ) {
       setLastAction('no_safe_action')
       setLastError('')
+      recordCurrentSiteDiagnostic({
+        status: 'skipped',
+        reason: 'no_safe_action',
+        candidates,
+      })
       updateAddislineTestReport({
         event: 'scanPage:no-safe-action',
         lastActionResult: 'no_safe_action',
