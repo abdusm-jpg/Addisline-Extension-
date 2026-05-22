@@ -16,7 +16,7 @@ const ENABLE_SETTINGS_RETRY_FLOW = false
 const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = false
 const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
-const REJECT_FLOW_DEBUG = true
+const REJECT_FLOW_DEBUG = false
 
 let protectionEnabled = false
 let protectionMode = 'normal'
@@ -99,9 +99,9 @@ const LATE_CMP_RESCAN_DELAY_MS = 3500
 const MAX_SCANS_PER_PAGE = 8
 const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_NO_CMP_SCANS = 3
-const MAX_DOM_QUERY_RESULTS = 350
-const MAX_COOKIE_CANDIDATES_PER_SCAN = 12
-const MAX_CLICKABLE_CONTROLS_PER_SCAN = 80
+const MAX_DOM_QUERY_RESULTS = 300
+const MAX_COOKIE_CANDIDATES_PER_SCAN = 10
+const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 5
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
@@ -907,6 +907,15 @@ function rejectFlowLog(event, details = {}) {
 }
 
 function logRuntimeError(scope, error) {
+  try {
+    console.error('[Addisline] Runtime error', {
+      scope,
+      message: error?.message || String(error || 'unknown error'),
+    })
+  } catch {
+    // Console access should never affect page behavior.
+  }
+
   cookieDebugLog('Runtime error', {
     scope,
     message: error?.message || String(error || 'unknown error'),
@@ -1488,6 +1497,14 @@ function isTopFrameContext() {
   }
 }
 
+function isPageActiveForAutomation() {
+  try {
+    return document.visibilityState !== 'hidden'
+  } catch {
+    return true
+  }
+}
+
 function isDomainExcluded(domain, domains) {
   const normalizedDomain = normalizeDomain(domain || '')
 
@@ -1510,6 +1527,7 @@ function shouldRunOnThisSite() {
   return (
     ENABLE_ALL_AUTOMATION &&
     isTopFrameContext() &&
+    isPageActiveForAutomation() &&
     protectionEnabled &&
     !isDomainExcluded(getCurrentDomain(), excludedDomains)
   )
@@ -9007,6 +9025,10 @@ function shouldDeferScanForLoading() {
 }
 
 function canRunPageScan(source = 'scan') {
+  if (!isPageActiveForAutomation()) {
+    return false
+  }
+
   if (scanBudgetExhausted || rejectFlowCompleted) {
     return false
   }
@@ -9942,6 +9964,10 @@ function observeOpenShadowRoots() {
 
 function handleMutationProcessing(mutations) {
   try {
+    if (!isPageActiveForAutomation()) {
+      return
+    }
+
     scheduleAutomationTimeout(() => {
       try {
         scheduleScan(mutations)
@@ -9965,6 +9991,7 @@ function scheduleDelayedLateCMPRescan() {
     try {
       if (
         !shouldRunOnThisSite() ||
+        !isPageActiveForAutomation() ||
         scanBudgetExhausted ||
         rejectFlowCompleted
       ) {
@@ -9982,7 +10009,10 @@ function scheduleDelayedLateCMPRescan() {
 }
 
 function scheduleInitialObserverStartup() {
-  if (!ENABLE_ALL_AUTOMATION) {
+  if (
+    !ENABLE_ALL_AUTOMATION ||
+    !isPageActiveForAutomation()
+  ) {
     stopObserver()
     return
   }
@@ -10027,7 +10057,10 @@ function scheduleInitialObserverStartup() {
 
 function startObserver() {
   try {
-    if (!shouldRunOnThisSite()) {
+    if (
+      !shouldRunOnThisSite() ||
+      !isPageActiveForAutomation()
+    ) {
       stopObserver()
       return
     }
@@ -10182,6 +10215,15 @@ if (hasExtensionContext()) {
     // Extension context invalidated.
   }
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!isPageActiveForAutomation()) {
+    stopObserver()
+    return
+  }
+
+  applyRuntimeState()
+})
 
 function getClassNameText(element) {
   if (!element) return ''
