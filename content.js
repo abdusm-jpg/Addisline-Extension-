@@ -34,6 +34,10 @@ let rejectFlowCompleted = false
 let delayedLateScanScheduled = false
 let lateCMPMutationWakeupUsed = false
 let emergencyVisibleCMPScanUsed = false
+let lateBannerRecoveryScanUsed = false
+let lateBannerRecoveryScanActive = false
+let lateBannerRecoveryCheckScheduled = false
+let lastScanDetectedControlCount = 0
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -97,6 +101,7 @@ const MAX_COOKIE_AUDIT_NAMES = 120
 const MAX_COOKIE_AUDIT_SAMPLES_PER_CATEGORY = 6
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
 const LATE_CMP_RESCAN_DELAY_MS = 3500
+const LATE_BANNER_RECOVERY_CHECK_DELAY_MS = 4000
 const MAX_SCANS_PER_PAGE = 8
 const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_NO_CMP_SCANS = 3
@@ -4485,6 +4490,80 @@ function findVisiblePriorityCMPControl() {
 
 function hasVisiblePriorityCMPRoot() {
   return getInitialCMPRootCandidates().length > 0
+}
+
+function getVisibleLateBannerRecoveryRoots() {
+  return getInitialCMPRootCandidates()
+    .filter((root) =>
+      root &&
+      root !== document.body &&
+      root !== document.documentElement &&
+      isVisible(root)
+    )
+    .slice(0, 2)
+}
+
+function triggerLateBannerRecoveryScan(reason = 'scan_budget_exhausted') {
+  if (
+    lateBannerRecoveryScanUsed ||
+    lateBannerRecoveryScanActive ||
+    rejectFlowCompleted ||
+    !isPageActiveForAutomation() ||
+    !shouldRunOnThisSite() ||
+    lastScanDetectedControlCount > 0
+  ) {
+    return false
+  }
+
+  const recoveryRoots =
+    getVisibleLateBannerRecoveryRoots()
+
+  if (recoveryRoots.length === 0) {
+    return false
+  }
+
+  lateBannerRecoveryScanUsed = true
+  lateBannerRecoveryScanActive = true
+  scanBudgetExhausted = false
+
+  recordCurrentSiteDiagnostic({
+    status: 'skipped',
+    reason: 'recovery_scan_triggered',
+    candidates: recoveryRoots,
+    detectedControls: [],
+    blockedReason: reason,
+  })
+
+  scheduleAutomationTimeout(() => {
+    runWhenIdle(() => {
+      scanPage()
+    })
+  }, 0)
+
+  return true
+}
+
+function scheduleLateBannerRecoveryCheck(reason = 'scan_budget_exhausted') {
+  if (
+    lateBannerRecoveryCheckScheduled ||
+    lateBannerRecoveryScanUsed ||
+    rejectFlowCompleted ||
+    lastScanDetectedControlCount > 0
+  ) {
+    return false
+  }
+
+  lateBannerRecoveryCheckScheduled = true
+
+  scheduleAutomationTimeout(() => {
+    lateBannerRecoveryCheckScheduled = false
+
+    if (!triggerLateBannerRecoveryScan(reason)) {
+      stopObserver()
+    }
+  }, LATE_BANNER_RECOVERY_CHECK_DELAY_MS)
+
+  return true
 }
 
 function getInitialMoreOptionsCandidateDebug(control, container = document) {
@@ -9112,6 +9191,12 @@ function canRunPageScan(source = 'scan') {
     return false
   }
 
+  if (lateBannerRecoveryScanActive) {
+    lateBannerRecoveryScanActive = false
+    pageScanCount += 1
+    return true
+  }
+
   if (scanBudgetExhausted || rejectFlowCompleted) {
     return false
   }
@@ -9123,6 +9208,9 @@ function canRunPageScan(source = 'scan') {
       reason: 'scan_budget_exhausted',
       blockedReason: source,
     })
+    if (triggerLateBannerRecoveryScan(source)) {
+      return false
+    }
     rejectFlowLog('Basic reject blocked: scan_budget_exhausted', {
       source,
       maxScans: MAX_SCANS_PER_PAGE,
@@ -9184,6 +9272,9 @@ function scanPage() {
         !modeConfig.allowSuppression ||
         !suppressReRenderedBanner(candidate)
       )
+    lastScanDetectedControlCount =
+      getDiagnosticControlTexts(candidates).length
+
     cookieDebugLog('cookie.scan.candidates', {
       count: candidates.length,
       first: getCookieDebugElementSummary(candidates[0]),
@@ -9480,6 +9571,9 @@ function scanPage() {
           candidates,
           blockedReason: 'scan_budget_exhausted',
         })
+        if (scheduleLateBannerRecoveryCheck('no_cmp_after_bounded_scans')) {
+          return
+        }
         rejectFlowLog('Basic reject blocked: no_cmp_after_bounded_scans', {
           maxNoCMPScans: MAX_NO_CMP_SCANS,
         })
@@ -9915,6 +10009,16 @@ function getMutationScanPriority(mutations) {
 function scheduleScan(mutations = null) {
   try {
     if (scanBudgetExhausted || rejectFlowCompleted) {
+      if (
+        scanBudgetExhausted &&
+        !rejectFlowCompleted &&
+        Array.isArray(mutations) &&
+        mutationHasVisibleLateCMPWakeup(mutations) &&
+        triggerLateBannerRecoveryScan('scan_budget_exhausted')
+      ) {
+        return
+      }
+
       return
     }
 
@@ -10286,6 +10390,7 @@ function stopObserver() {
   preferencesTimer = null
   startupScanScheduled = false
   loadingScanDeferred = false
+  lateBannerRecoveryCheckScheduled = false
   scanBurstCount = 0
   lastObserverScanScheduledAt = 0
 
