@@ -13,7 +13,7 @@ const ENABLE_SHADOW_ROOT_OBSERVATION = false
 const ENABLE_BASIC_REJECT_MUTATION_FALLBACK = false
 const ENABLE_LATE_CMP_MUTATION_WAKEUP = true
 const ENABLE_SETTINGS_RETRY_FLOW = false
-const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = false
+const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = true
 const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
 const REJECT_FLOW_DEBUG = false
@@ -242,14 +242,19 @@ const settingsTexts = [
   'manage settings',
   'cookie settings',
   'privacy settings',
+  'manage options',
+  'more options',
   'show purposes',
   'manage purposes',
   'purpose settings',
   'view purposes',
   'configurar cookies',
+  'gestionar configuracion',
   'gestionar opciones',
   'gestionar preferencias',
   'gestion de opciones',
+  'personalizar opciones',
+  'mas informacion y personalizacion',
   'opciones',
   'configurar opciones',
   'administrar opciones',
@@ -3364,9 +3369,13 @@ function textMatchesLightweightSettingsOpen(text) {
   return (
     textHasPhrase(normalizedText, 'more options') ||
     textHasPhrase(normalizedText, 'manage options') ||
-    textHasPhrase(normalizedText, 'settings') ||
+    textHasPhrase(normalizedText, 'cookie settings') ||
+    textHasPhrase(normalizedText, 'privacy settings') ||
+    textHasPhrase(normalizedText, 'gestionar configuracion') ||
+    textHasPhrase(normalizedText, 'personalizar opciones') ||
+    textHasPhrase(normalizedText, 'mas informacion y personalizacion') ||
     textHasPhrase(normalizedText, 'manage preferences') ||
-    textHasPhrase(normalizedText, 'privacy settings')
+    textMatchesDictionaryCookieIntent(normalizedText, 'openSettings')
   )
 }
 
@@ -4164,33 +4173,11 @@ function attemptLightweightSettingsOpen(candidates) {
     control: getCookieDebugElementSummary(control),
   })
   stopObserver()
+  scanBudgetExhausted = true
+  rejectFlowCompleted = true
+  markSuccessfulCookieActionCooldown(control)
   setLastAction('settings_opened')
   setLastError('')
-
-  setTimeout(() => {
-    try {
-      if (
-        shouldRunOnThisSite() &&
-        !scanBudgetExhausted &&
-        !rejectFlowCompleted
-      ) {
-        const panel =
-          findCookiePreferencesPanel() ||
-          getCookieContainer(control) ||
-          document
-
-        if (runLightweightVisibleTogglePass(panel)) {
-          return
-        }
-
-        runWhenIdle(() => {
-          scanPage()
-        })
-      }
-    } catch (error) {
-      logRuntimeError('lightweight_settings_classify_next_panel', error)
-    }
-  }, 900)
 
   return true
 }
