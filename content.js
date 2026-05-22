@@ -150,6 +150,7 @@ const safeRejectTexts = [
   'denegar',
   'no acepto',
   'no acepto cookies',
+  'continuar sin aceptar',
   'reject',
   'reject all',
   'reject optional cookies',
@@ -184,6 +185,7 @@ const totalRejectTexts = [
   'rechazar cookies no esenciales',
   'no acepto',
   'no acepto cookies',
+  'continuar sin aceptar',
   'decline all',
   'decline all btn',
   'declineall',
@@ -220,6 +222,7 @@ const rejectTexts = [
   'denegar',
   'decline',
   'disagree and close',
+  'continuar sin aceptar',
   'refuser',
   'ablehnen',
   'rifiuta',
@@ -5086,6 +5089,31 @@ function clickElementSafely(element, options = {}) {
 
   processedActionElements.add(element)
   try {
+    if (
+      options.includePointerEvents &&
+      typeof PointerEvent === 'function'
+    ) {
+      element.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+
+      element.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+    }
+
     element.dispatchEvent(
       new MouseEvent('mousedown', {
         bubbles: true,
@@ -5407,7 +5435,11 @@ function executeCookieAction(action) {
     return false
   }
 
-  if (!clickElementSafely(action.element)) {
+  if (
+    !clickElementSafely(action.element, {
+      includePointerEvents: action.type === 'reject',
+    })
+  ) {
     cookieDebugLog('cookie.action.click_failed', {
       type: action.type,
       intent: action.intent || '',
@@ -9079,7 +9111,9 @@ function scanPage() {
     const directRejectClicked =
       directRejectControl &&
       directRejectCanProcess
-        ? clickElementSafely(directRejectControl)
+        ? clickElementSafely(directRejectControl, {
+            includePointerEvents: true,
+          })
         : false
 
     if (directRejectControl) {

@@ -116,6 +116,7 @@ const COOKIE_INTENT_DICTIONARY = Object.freeze({
     'rechazar cookies no esenciales',
     'no acepto',
     'no acepto cookies',
+    'continuar sin aceptar',
     'no doy mi consentimiento',
     'no consentir',
     'denegar',
