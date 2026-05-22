@@ -1312,8 +1312,13 @@ function recordCurrentSiteDiagnostic({
 } = {}) {
   if (!hasExtensionContext()) return
 
+  const now =
+    new Date().toISOString()
   const diagnostic = {
     domain: getCurrentDomain(),
+    url: String(window.location.href || '').slice(0, 500),
+    tabId: null,
+    source: 'content-script',
     status,
     reason: String(reason || '').slice(0, 120),
     detectedControls:
@@ -1330,11 +1335,28 @@ function recordCurrentSiteDiagnostic({
           )
       ).slice(0, 120),
     blockedReason: String(blockedReason || '').slice(0, 120),
-    lastUpdatedAt: new Date().toISOString(),
+    lastUpdatedAt: now,
   }
 
   safeStorageSet({
     [CURRENT_SITE_DIAGNOSTIC_KEY]: diagnostic,
+  })
+}
+
+function clearCurrentSiteDiagnostic(reason = 'stale') {
+  safeStorageSet({
+    [CURRENT_SITE_DIAGNOSTIC_KEY]: {
+      domain: getCurrentDomain(),
+      url: String(window.location.href || '').slice(0, 500),
+      tabId: null,
+      source: 'content-script',
+      status: 'skipped',
+      reason,
+      detectedControls: [],
+      matchedRejectText: '',
+      blockedReason: '',
+      lastUpdatedAt: new Date().toISOString(),
+    },
   })
 }
 
@@ -10410,6 +10432,7 @@ function applyRuntimeState() {
     scheduleInitialObserverStartup()
   } else {
     stopObserver()
+    clearCurrentSiteDiagnostic('site_not_active')
 
     if (
       protectionEnabled &&

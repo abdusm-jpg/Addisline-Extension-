@@ -328,6 +328,9 @@ let latestIssueReports =
 const REPORTS_PAGE_SIZE =
   5
 
+const CURRENT_SITE_DIAGNOSTIC_TTL_MS =
+  10 * 60 * 1000
+
 let accountPanelExpanded =
   false
 
@@ -1390,14 +1393,40 @@ function renderCookieAudit(audit) {
 }
 
 function renderCurrentSiteDiagnostic(diagnostic) {
+  const updatedAt =
+    new Date(diagnostic?.lastUpdatedAt || 0)
+  const diagnosticUrl =
+    getSafeOriginFromUrl(diagnostic?.url || '')
+  const diagnosticDomain =
+    normalizeDomain(diagnostic?.domain)
+  const diagnosticMatchesDomain =
+    Boolean(
+      currentDomain &&
+        diagnosticDomain &&
+        diagnosticDomain === currentDomain
+    )
+  const diagnosticMatchesUrl =
+    !diagnosticUrl ||
+    diagnosticUrl === currentOrigin
+  const diagnosticMatchesTab =
+    !Number.isInteger(diagnostic?.tabId) ||
+    diagnostic.tabId === currentTabId
+  const diagnosticIsFresh =
+    !Number.isNaN(updatedAt.getTime()) &&
+    Date.now() - updatedAt.getTime() <=
+      CURRENT_SITE_DIAGNOSTIC_TTL_MS
   const hasDiagnostic =
     diagnostic &&
     typeof diagnostic === 'object' &&
-    normalizeDomain(diagnostic.domain) === currentDomain
+    diagnostic.source === 'content-script' &&
+    diagnosticMatchesDomain &&
+    diagnosticMatchesUrl &&
+    diagnosticMatchesTab &&
+    diagnosticIsFresh
 
   if (!hasDiagnostic) {
     currentSiteDiagnosticStatus.innerText =
-      'No diagnostic available yet'
+      'No current diagnostic yet'
     currentSiteDiagnosticState.innerText =
       'Sin datos'
     currentSiteDiagnosticReason.innerText =
@@ -1420,7 +1449,7 @@ function renderCurrentSiteDiagnostic(diagnostic) {
 
   currentSiteDiagnosticStatus.innerText =
     diagnostic.lastUpdatedAt
-      ? `Actualizado ${formatReportDate(diagnostic.lastUpdatedAt)}`
+      ? `Actualizado ${formatReportDate(diagnostic.lastUpdatedAt)} · ${diagnostic.lastUpdatedAt}`
       : 'Diagnostico disponible'
   currentSiteDiagnosticState.innerText =
     String(diagnostic.status || 'skipped')
