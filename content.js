@@ -1009,7 +1009,7 @@ function getElementTestSummary(element) {
   if (!element) return null
 
   const rect =
-    element.getBoundingClientRect?.()
+    getSafeClientRect(element)
 
   return {
     tag: String(element.tagName || '').toLowerCase(),
@@ -1661,20 +1661,40 @@ function getActionText(element) {
 }
 
 function isVisible(element) {
-  if (!element) return false
+  if (!isGeometryElement(element)) return false
 
-  const rect = element.getBoundingClientRect()
+  const rect = getSafeClientRect(element)
+  if (!rect) return false
+
   const style = window.getComputedStyle(element)
 
   return (
-    (element.offsetWidth > 0 ||
-      element.offsetHeight > 0 ||
+    ((element.offsetWidth || 0) > 0 ||
+      (element.offsetHeight || 0) > 0 ||
       rect.width > 0 ||
       rect.height > 0) &&
     style.display !== 'none' &&
     style.visibility !== 'hidden' &&
     Number(style.opacity) !== 0
   )
+}
+
+function isGeometryElement(value) {
+  return Boolean(
+    value &&
+      value.nodeType === Node.ELEMENT_NODE &&
+      typeof value.getBoundingClientRect === 'function'
+  )
+}
+
+function getSafeClientRect(element) {
+  if (!isGeometryElement(element)) return null
+
+  try {
+    return element.getBoundingClientRect()
+  } catch {
+    return null
+  }
 }
 
 function normalizeMatchText(value) {
@@ -2322,7 +2342,9 @@ function hasSensitiveContext(element) {
 }
 
 function looksLikeMainContent(element) {
-  const rect = element.getBoundingClientRect()
+  const rect = getSafeClientRect(element)
+  if (!rect) return false
+
   const viewportArea = window.innerWidth * window.innerHeight
   const area = rect.width * rect.height
   const textLength = getText(element).length
@@ -3338,7 +3360,9 @@ function isElementInViewport(element) {
   if (!element || !isVisible(element)) return false
 
   const rect =
-    element.getBoundingClientRect()
+    getSafeClientRect(element)
+
+  if (!rect) return false
 
   return (
     rect.bottom >= 0 &&
@@ -5966,7 +5990,9 @@ function isSwitchSizedElement(element) {
   if (!element || !isVisible(element)) return false
 
   const rect =
-    element.getBoundingClientRect()
+    getSafeClientRect(element)
+
+  if (!rect) return false
 
   return (
     rect.width >= 22 &&
@@ -7357,13 +7383,20 @@ function findProviderInfoModal() {
   )
     .filter(isProviderInfoModal)
     .sort((first, second) => {
+      const firstRect =
+        getSafeClientRect(first)
+      const secondRect =
+        getSafeClientRect(second)
+
       const firstArea =
-        first.getBoundingClientRect().width *
-        first.getBoundingClientRect().height
+        firstRect
+          ? firstRect.width * firstRect.height
+          : Number.POSITIVE_INFINITY
 
       const secondArea =
-        second.getBoundingClientRect().width *
-        second.getBoundingClientRect().height
+        secondRect
+          ? secondRect.width * secondRect.height
+          : Number.POSITIVE_INFINITY
 
       return firstArea - secondArea
     })[0] || null
@@ -8076,10 +8109,13 @@ function getDeepCMPAnchorDiagnostics(root) {
 function getAnchorComputedVisibility(anchor) {
   if (!anchor) return 'missing'
 
+  const rect =
+    getSafeClientRect(anchor)
+
+  if (!rect) return 'invalid-geometry'
+
   const style =
     window.getComputedStyle(anchor)
-  const rect =
-    anchor.getBoundingClientRect()
 
   if (!isVisible(anchor)) {
     return [
@@ -10056,7 +10092,9 @@ function calculateTextComplexity(text) {
 function detectBannerPosition(container) {
   if (!container) return 'unknown'
 
-  const rect = container.getBoundingClientRect()
+  const rect = getSafeClientRect(container)
+  if (!rect) return 'unknown'
+
   const viewportHeight = window.innerHeight
 
   const topRatio = rect.top / viewportHeight
@@ -14181,7 +14219,9 @@ function getCookieIntelligenceContainerKey(container) {
   if (!container) return 'null'
 
   const tagName = container.tagName ? container.tagName.toLowerCase() : ''
-  const rect = container.getBoundingClientRect()
+  const rect = getSafeClientRect(container)
+  if (!rect) return tagName || 'invalid'
+
   const role = container.getAttribute('role') || ''
 
   const roundedTop = Math.round(rect.top / 10) * 10
