@@ -76,6 +76,7 @@ const pendingAutomationTimers = new Set()
 const pendingIdleCallbacks = new Set()
 
 const STATS_KEY = 'stats'
+const COOKIE_AUDIT_KEY = 'lastCookieAudit'
 const PROTECTED_DOMAINS_KEY = 'protectedDomains'
 const BANNER_ACTION_COOLDOWN_MS = 10000
 const COOKIE_ACTION_SUCCESS_COOLDOWN_MS = 60000
@@ -91,6 +92,8 @@ const SCAN_BURST_RESET_MS = 15000
 const OBSERVER_COOLDOWN_MS = 2500
 const SHADOW_OBSERVE_COOLDOWN_MS = 5000
 const COOKIE_DEBUG_LOG_COOLDOWN_MS = 5000
+const MAX_COOKIE_AUDIT_NAMES = 120
+const MAX_COOKIE_AUDIT_SAMPLES_PER_CATEGORY = 6
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
 const LATE_CMP_RESCAN_DELAY_MS = 3500
 const MAX_SCANS_PER_PAGE = 8
@@ -1257,6 +1260,221 @@ function normalizeDomain(value) {
 
 function getCurrentDomain() {
   return normalizeDomain(window.location.hostname)
+}
+
+function getEmptyCookieAuditCounts() {
+  return {
+    essentialSessionSecurity: 0,
+    consentPreference: 0,
+    analytics: 0,
+    advertisingMarketing: 0,
+    trackingSocial: 0,
+    unknown: 0,
+  }
+}
+
+function getEmptyCookieAuditSamples() {
+  return {
+    essentialSessionSecurity: [],
+    consentPreference: [],
+    analytics: [],
+    advertisingMarketing: [],
+    trackingSocial: [],
+    unknown: [],
+  }
+}
+
+function normalizeCookieNameForAudit(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+}
+
+function cookieAuditNameHasAny(name, terms) {
+  const normalizedName =
+    normalizeCookieNameForAudit(name)
+
+  if (!normalizedName) return false
+
+  return terms.some((term) =>
+    normalizedName.includes(term)
+  )
+}
+
+function classifyCookieNameForAudit(name) {
+  const normalizedName =
+    normalizeCookieNameForAudit(name)
+
+  if (!normalizedName) return 'unknown'
+
+  if (
+    normalizedName === 'phpsessid' ||
+    normalizedName === 'jsessionid' ||
+    normalizedName === 'asp.net_sessionid' ||
+    normalizedName === 'sessionid' ||
+    normalizedName.endsWith('_session') ||
+    cookieAuditNameHasAny(normalizedName, [
+      'csrf',
+      'xsrf',
+      'auth',
+      'security',
+      'secure',
+      'session',
+      'logged_in',
+      'wordpress_logged_in',
+    ])
+  ) {
+    return 'essentialSessionSecurity'
+  }
+
+  if (
+    cookieAuditNameHasAny(normalizedName, [
+      'consent',
+      'cookieconsent',
+      'cookiescriptconsent',
+      'onetrust',
+      'optanon',
+      'didomi',
+      'euconsent',
+      'gdpr',
+      'privacy',
+      'preference',
+      'prefs',
+      'ccpa',
+      'tcf',
+      'cmp',
+    ])
+  ) {
+    return 'consentPreference'
+  }
+
+  if (
+    normalizedName === '_ga' ||
+    normalizedName === '_gid' ||
+    normalizedName === '_gat' ||
+    normalizedName.startsWith('_ga_') ||
+    normalizedName.startsWith('_hj') ||
+    normalizedName.startsWith('ga_') ||
+    cookieAuditNameHasAny(normalizedName, [
+      'analytics',
+      'matomo',
+      'piwik',
+      'plausible',
+      'amplitude',
+      'mixpanel',
+      'segment',
+      'hotjar',
+    ])
+  ) {
+    return 'analytics'
+  }
+
+  if (
+    normalizedName === '_fbp' ||
+    normalizedName === '_fbc' ||
+    normalizedName === 'fr' ||
+    normalizedName === 'ide' ||
+    normalizedName === 'test_cookie' ||
+    normalizedName.startsWith('_gcl') ||
+    normalizedName.startsWith('gcl_') ||
+    cookieAuditNameHasAny(normalizedName, [
+      'doubleclick',
+      'marketing',
+      'campaign',
+      'criteo',
+      'taboola',
+      'outbrain',
+    ])
+  ) {
+    return 'advertisingMarketing'
+  }
+
+  if (
+    normalizedName === '_ttp' ||
+    normalizedName === 'bcookie' ||
+    normalizedName === 'bscookie' ||
+    normalizedName === 'personalization_id' ||
+    normalizedName.startsWith('li_') ||
+    cookieAuditNameHasAny(normalizedName, [
+      'track',
+      'tracker',
+      'social',
+      'pixel',
+      'linkedin',
+      'twitter',
+      'ttclid',
+      'tiktok',
+    ])
+  ) {
+    return 'trackingSocial'
+  }
+
+  return 'unknown'
+}
+
+function readCookieNamesForAudit() {
+  try {
+    return String(document.cookie || '')
+      .split(';')
+      .map((cookie) => cookie.split('=')[0].trim())
+      .filter(Boolean)
+      .slice(0, MAX_COOKIE_AUDIT_NAMES)
+  } catch {
+    return []
+  }
+}
+
+function buildCookieAudit(context = {}) {
+  const names =
+    readCookieNamesForAudit()
+  const counts =
+    getEmptyCookieAuditCounts()
+  const samples =
+    getEmptyCookieAuditSamples()
+
+  names.forEach((name) => {
+    const category =
+      classifyCookieNameForAudit(name)
+
+    counts[category] += 1
+
+    if (
+      samples[category].length <
+      MAX_COOKIE_AUDIT_SAMPLES_PER_CATEGORY
+    ) {
+      samples[category].push(name)
+    }
+  })
+
+  return {
+    domain: getCurrentDomain(),
+    auditedAt: Date.now(),
+    actionType: context.type || '',
+    readableCookieCount: names.length,
+    categories: counts,
+    samples,
+  }
+}
+
+function recordCookieAuditAfterSuccessfulAction(context = {}) {
+  const audit =
+    buildCookieAudit(context)
+
+  safeStorageSet({
+    [COOKIE_AUDIT_KEY]: audit,
+  })
+
+  updateAddislineTestReport({
+    event: 'cookieAudit',
+    lastCookieAudit: audit,
+  })
+
+  rejectFlowLog('Cookie audit completed', {
+    readableCookieCount: audit.readableCookieCount,
+    categories: audit.categories,
+  })
+
+  return audit
 }
 
 function isTopFrameContext() {
@@ -5546,10 +5764,13 @@ function schedulePostActionVerification(context = {}) {
           context.type || 'verified'
         )
       }
-      finalizeCookieActionSuccess({
+      const verifiedContext = {
         ...context,
         container: state.container || context.container,
-      })
+      }
+
+      recordCookieAuditAfterSuccessfulAction(verifiedContext)
+      finalizeCookieActionSuccess(verifiedContext)
       return
     }
 
