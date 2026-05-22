@@ -147,6 +147,7 @@ const DEFAULT_STATS = {
 const safeRejectTexts = [
   'rechazar',
   'rechazar todo',
+  'rechazar todas',
   'denegar',
   'no acepto',
   'no acepto cookies',
@@ -180,6 +181,7 @@ const totalRejectTexts = [
   'reject non-essential cookies',
   'reject non essential cookies',
   'rechazar todo',
+  'rechazar todas',
   'rechazar cookies',
   'rechazar cookies opcionales',
   'rechazar cookies no esenciales',

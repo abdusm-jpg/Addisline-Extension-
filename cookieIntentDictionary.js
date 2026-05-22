@@ -113,6 +113,7 @@ const COOKIE_INTENT_DICTIONARY = Object.freeze({
     'use necessary cookies only',
     'rechazar',
     'rechazar todo',
+    'rechazar todas',
     'rechazar cookies',
     'rechazar opcionales',
     'rechazar cookies opcionales',
