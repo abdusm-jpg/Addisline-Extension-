@@ -38,6 +38,7 @@ let lateBannerRecoveryScanUsed = false
 let lateBannerRecoveryScanActive = false
 let lateBannerRecoveryCheckScheduled = false
 let lastScanDetectedControlCount = 0
+let lastPrioritizedCmpRootsFound = 0
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -109,6 +110,8 @@ const MAX_DOM_QUERY_RESULTS = 300
 const MAX_COOKIE_CANDIDATES_PER_SCAN = 10
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_DIAGNOSTIC_CONTROLS = 5
+const MAX_PRIORITIZED_CMP_ROOTS = 4
+const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 5
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
@@ -1309,6 +1312,7 @@ function recordCurrentSiteDiagnostic({
   matchedRejectElement = null,
   matchedRejectText = '',
   blockedReason = '',
+  prioritizedCmpRootsFound = lastPrioritizedCmpRootsFound,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1335,6 +1339,8 @@ function recordCurrentSiteDiagnostic({
           )
       ).slice(0, 120),
     blockedReason: String(blockedReason || '').slice(0, 120),
+    prioritizedCmpRootsFound:
+      Math.max(0, Number(prioritizedCmpRootsFound) || 0),
     lastUpdatedAt: now,
   }
 
@@ -1355,6 +1361,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       detectedControls: [],
       matchedRejectText: '',
       blockedReason: '',
+      prioritizedCmpRootsFound: 0,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -2253,6 +2260,128 @@ function getCookieContainer(element) {
   return bestMatch
 }
 
+function hasVisibleClickableControl(root) {
+  try {
+    return Array.from(
+      root.querySelectorAll(
+        [
+          'button',
+          'a',
+          '[role="button"]',
+          'input[type="button"]',
+          'input[type="submit"]',
+        ].join(',')
+      )
+    )
+      .slice(0, 12)
+      .some((control) =>
+        isVisible(control) &&
+        getCookieDebugDisabledState(control) !== 'disabled'
+      )
+  } catch {
+    return false
+  }
+}
+
+function isCenteredModalLikeRoot(element, rect) {
+  const viewportWidth =
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    1
+  const viewportHeight =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    1
+  const centerX =
+    rect.left + rect.width / 2
+  const centerY =
+    rect.top + rect.height / 2
+
+  return (
+    rect.width >= Math.min(260, viewportWidth * 0.8) &&
+    rect.height >= 120 &&
+    Math.abs(centerX - viewportWidth / 2) <= viewportWidth * 0.35 &&
+    Math.abs(centerY - viewportHeight / 2) <= viewportHeight * 0.4
+  )
+}
+
+function isLikelyVisibleCMPModalRoot(element) {
+  if (
+    !element ||
+    !isVisible(element) ||
+    element === document.body ||
+    element === document.documentElement ||
+    element.matches?.('form, nav, header, main, article') ||
+    isLikelyNonCookieModal(element)
+  ) {
+    return false
+  }
+
+  const rect =
+    getSafeClientRect(element)
+
+  if (!rect || rect.width < 220 || rect.height < 80) {
+    return false
+  }
+
+  const style =
+    window.getComputedStyle(element)
+  const zIndex =
+    Number.parseInt(style.zIndex, 10)
+  const modalLike =
+    element.matches?.('dialog, [role="dialog"], [aria-modal="true"]') ||
+    style.position === 'fixed' ||
+    style.position === 'sticky' ||
+    (
+      Number.isFinite(zIndex) &&
+      zIndex >= 10
+    ) ||
+    isCenteredModalLikeRoot(element, rect)
+
+  if (!modalLike || !hasVisibleClickableControl(element)) {
+    return false
+  }
+
+  const signal =
+    [
+      getText(element).slice(0, 1200),
+      getElementActionText(element).slice(0, 600),
+      element.id,
+      getClassNameText(element),
+      element.getAttribute?.('aria-label'),
+      getDatasetText(element),
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+  return (
+    textHasAny(signal, bannerKeywords) ||
+    hasKnownCmpSignal(element)
+  )
+}
+
+function findPrioritizedVisibleCMPRoots() {
+  const selectors = [
+    'dialog',
+    '[role="dialog"]',
+    '[aria-modal="true"]',
+    '[class*="modal" i]',
+    '[class*="overlay" i]',
+    '[class*="popup" i]',
+    '[style*="z-index" i]',
+    'body > div',
+  ].join(',')
+
+  try {
+    return Array.from(document.querySelectorAll(selectors))
+      .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+      .filter(isLikelyVisibleCMPModalRoot)
+      .slice(0, MAX_PRIORITIZED_CMP_ROOTS)
+  } catch {
+    return []
+  }
+}
+
 function findCookieBannerCandidates() {
   if (
     activeCookieContainer &&
@@ -2266,58 +2395,78 @@ function findCookieBannerCandidates() {
         chosenCandidateSummary: getElementTestSummary(activeCookieContainer),
       })
     }
+    lastPrioritizedCmpRootsFound = 0
     return [activeCookieContainer]
   }
 
-  const rawCandidates = Array.from(
-    querySelectorAllDeep(
-      [
-        '[id*="cookie" i]',
-        '[class*="cookie" i]',
-        '[id*="consent" i]',
-        '[class*="consent" i]',
-        '[id*="privacy" i]',
-        '[class*="privacy" i]',
-        '[id*="onetrust" i]',
-        '[class*="onetrust" i]',
-        '[id*="ot-sdk" i]',
-        '[class*="ot-sdk" i]',
-        '[id*="onetrust-pc" i]',
-        '[id*="didomi" i]',
-        '[class*="didomi" i]',
-        '[id*="didomi-popup" i]',
-        '[class*="didomi-popup" i]',
-        '[id*="cookiebot" i]',
-        '[class*="cookiebot" i]',
-        '[id*="CybotCookiebotDialog" i]',
-        '[id*="trustarc" i]',
-        '[class*="trustarc" i]',
-        '[id*="truste" i]',
-        '[class*="truste" i]',
-        '[id*="usercentrics" i]',
-        '[class*="usercentrics" i]',
-        '[id*="uc-center" i]',
-        '[class*="uc-center" i]',
-        '[id*="uc-privacy" i]',
-        '[class*="uc-privacy" i]',
-        '[id*="quantcast" i]',
-        '[class*="quantcast" i]',
-        '[id*="qc-cmp" i]',
-        '[class*="qc-cmp" i]',
-        '[aria-label*="cookie" i]',
-        '[aria-label*="consent" i]',
-        '[aria-label*="privacy" i]',
-        '[data-action*="cookie" i]',
-        '[data-action*="consent" i]',
-        'dialog',
-        '[role="dialog"]',
-        '[aria-modal="true"]',
-      ].join(',')
-    )
-  )
+  const prioritizedRoots =
+    findPrioritizedVisibleCMPRoots()
+  const prioritizedRootSet =
+    new Set(prioritizedRoots)
+
+  lastPrioritizedCmpRootsFound =
+    prioritizedRoots.length
+
+  const rawCandidates = [
+    ...prioritizedRoots,
+    ...Array.from(
+      querySelectorAllDeep(
+        [
+          '[id*="cookie" i]',
+          '[class*="cookie" i]',
+          '[id*="consent" i]',
+          '[class*="consent" i]',
+          '[id*="privacy" i]',
+          '[class*="privacy" i]',
+          '[id*="onetrust" i]',
+          '[class*="onetrust" i]',
+          '[id*="ot-sdk" i]',
+          '[class*="ot-sdk" i]',
+          '[id*="onetrust-pc" i]',
+          '[id*="didomi" i]',
+          '[class*="didomi" i]',
+          '[id*="didomi-popup" i]',
+          '[class*="didomi-popup" i]',
+          '[id*="cookiebot" i]',
+          '[class*="cookiebot" i]',
+          '[id*="CybotCookiebotDialog" i]',
+          '[id*="trustarc" i]',
+          '[class*="trustarc" i]',
+          '[id*="truste" i]',
+          '[class*="truste" i]',
+          '[id*="usercentrics" i]',
+          '[class*="usercentrics" i]',
+          '[id*="uc-center" i]',
+          '[class*="uc-center" i]',
+          '[id*="uc-privacy" i]',
+          '[class*="uc-privacy" i]',
+          '[id*="quantcast" i]',
+          '[class*="quantcast" i]',
+          '[id*="qc-cmp" i]',
+          '[class*="qc-cmp" i]',
+          '[aria-label*="cookie" i]',
+          '[aria-label*="consent" i]',
+          '[aria-label*="privacy" i]',
+          '[data-action*="cookie" i]',
+          '[data-action*="consent" i]',
+          'dialog',
+          '[role="dialog"]',
+          '[aria-modal="true"]',
+        ].join(',')
+      )
+    ),
+  ]
 
   const containers = rawCandidates
-    .map(getCookieContainer)
+    .map((candidate) =>
+      getCookieContainer(candidate) ||
+      (
+        prioritizedRootSet.has(candidate) &&
+        isLikelyVisibleCMPModalRoot(candidate)
+          ? candidate
+          : null
+      )
+    )
     .filter(Boolean)
 
   const candidates = Array.from(new Set(containers))
@@ -2336,6 +2485,7 @@ function findCookieBannerCandidates() {
     updateAddislineTestReport({
       event: 'findCookieBannerCandidates',
       bannerCandidateCount: candidates.length,
+      prioritizedCmpRootsFound: lastPrioritizedCmpRootsFound,
       chosenCandidateSummary: getElementTestSummary(activeCookieContainer),
     })
   }
