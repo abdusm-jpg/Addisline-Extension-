@@ -1360,6 +1360,12 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
   })
 }
 
+recordCurrentSiteDiagnostic({
+  status: 'active',
+  reason: 'content_script_running',
+  detectedControls: [],
+})
+
 function normalizeDomain(value) {
   return (value || '')
     .toLowerCase()
@@ -10432,7 +10438,6 @@ function applyRuntimeState() {
     scheduleInitialObserverStartup()
   } else {
     stopObserver()
-    clearCurrentSiteDiagnostic('site_not_active')
 
     if (
       protectionEnabled &&
