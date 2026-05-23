@@ -1278,6 +1278,51 @@ function setLastError(error) {
   })
 }
 
+function getReliableDiagnosticRoots(candidates = [], extraControls = []) {
+  const roots = []
+  const addRoot = (root) => {
+    if (
+      root &&
+      isReliableCMPRoot(root) &&
+      !roots.includes(root)
+    ) {
+      roots.push(root)
+    }
+  }
+
+  extraControls
+    .filter(Boolean)
+    .forEach((control) => {
+      addRoot(getCookieContainer(control))
+    })
+
+  ;(Array.isArray(candidates) ? candidates : [])
+    .forEach(addRoot)
+
+  return roots.slice(0, 2)
+}
+
+function getDiagnosticRootSummary(candidates = [], extraControls = []) {
+  const root =
+    getReliableDiagnosticRoots(candidates, extraControls)[0]
+
+  if (!root) {
+    return {
+      root: null,
+      rootTag: '',
+      rootClass: '',
+      rootReason: '',
+    }
+  }
+
+  return {
+    root,
+    rootTag: String(root.tagName || '').toLowerCase(),
+    rootClass: getClassNameText(root).slice(0, 160),
+    rootReason: getInitialCMPRootReason(root),
+  }
+}
+
 function getDiagnosticControlTexts(candidates = [], extraControls = []) {
   const texts = []
   const seen = new Set()
@@ -1293,10 +1338,20 @@ function getDiagnosticControlTexts(candidates = [], extraControls = []) {
 
   extraControls
     .filter(Boolean)
-    .forEach(addControlText)
+    .forEach((control) => {
+      const root =
+        getCookieContainer(control)
 
-  ;(Array.isArray(candidates) ? candidates : [])
-    .slice(0, 2)
+      if (
+        root &&
+        isReliableCMPRoot(root) &&
+        root.contains(control)
+      ) {
+        addControlText(control)
+      }
+    })
+
+  getReliableDiagnosticRoots(candidates, extraControls)
     .forEach((candidate) => {
       getDirectClickableControls(candidate)
         .slice(0, 8)
@@ -1320,6 +1375,8 @@ function recordCurrentSiteDiagnostic({
 } = {}) {
   if (!hasExtensionContext()) return
 
+  const rootSummary =
+    getDiagnosticRootSummary(candidates, [matchedRejectElement])
   const now =
     new Date().toISOString()
   const diagnostic = {
@@ -1343,6 +1400,9 @@ function recordCurrentSiteDiagnostic({
           )
       ).slice(0, 120),
     blockedReason: String(blockedReason || '').slice(0, 120),
+    rootTag: rootSummary.rootTag,
+    rootClass: rootSummary.rootClass,
+    rootReason: rootSummary.rootReason,
     prioritizedCmpRootsFound:
       Math.max(0, Number(prioritizedCmpRootsFound) || 0),
     prioritizedRootTexts:
@@ -1373,6 +1433,9 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       detectedControls: [],
       matchedRejectText: '',
       blockedReason: '',
+      rootTag: '',
+      rootClass: '',
+      rootReason: '',
       prioritizedCmpRootsFound: 0,
       prioritizedRootTexts: [],
       prioritizedRootControlCount: 0,
@@ -2227,6 +2290,47 @@ function hasKnownCmpSignal(element) {
   return textHasAny(signal, knownCmpKeywords)
 }
 
+function isExcludedCMPRootContext(element) {
+  const excludedRoot =
+    element?.closest?.(
+      [
+        'footer',
+        'header',
+        'nav',
+        'menu',
+        '[role="navigation"]',
+        '[role="menu"]',
+        '[class*="footer" i]',
+        '[class*="header" i]',
+        '[class*="nav" i]',
+        '[class*="menu" i]',
+      ].join(',')
+    )
+
+  return Boolean(excludedRoot)
+}
+
+function hasCMPRootEvidence(element) {
+  return (
+    hasCookieBannerSignal(element) ||
+    hasKnownCmpSignal(element)
+  )
+}
+
+function isReliableCMPRoot(element) {
+  return Boolean(
+    element &&
+      isVisible(element) &&
+      !isTextFragmentOrControl(element) &&
+      element !== document.body &&
+      element !== document.documentElement &&
+      !isExcludedCMPRootContext(element) &&
+      !isLikelyNonCookieModal(element) &&
+      hasCMPRootEvidence(element) &&
+      hasVisibleClickableControl(element)
+  )
+}
+
 function isPotentialCookieContainer(element) {
   if (
     !element ||
@@ -2234,6 +2338,7 @@ function isPotentialCookieContainer(element) {
     isTextFragmentOrControl(element) ||
     element === document.body ||
     element === document.documentElement ||
+    isExcludedCMPRootContext(element) ||
     isLikelyNonCookieModal(element) ||
     element.matches?.('form, nav, header, main, article')
   ) {
@@ -2247,8 +2352,8 @@ function isPotentialCookieContainer(element) {
   }
 
   return (
-    hasCookieBannerSignal(element) ||
-    hasKnownCmpSignal(element)
+    hasCMPRootEvidence(element) &&
+    hasVisibleClickableControl(element)
   )
 }
 
@@ -2357,6 +2462,7 @@ function isLikelyVisibleCMPModalRoot(element) {
     !isVisible(element) ||
     element === document.body ||
     element === document.documentElement ||
+    isExcludedCMPRootContext(element) ||
     element.matches?.('form, nav, header, main, article') ||
     isLikelyNonCookieModal(element)
   ) {
@@ -2400,10 +2506,8 @@ function isLikelyVisibleCMPModalRoot(element) {
       .filter(Boolean)
       .join(' ')
 
-  return (
-    textHasAny(signal, bannerKeywords) ||
+  return textHasAny(signal, bannerKeywords) ||
     hasKnownCmpSignal(element)
-  )
 }
 
 function findPrioritizedVisibleCMPRoots() {
