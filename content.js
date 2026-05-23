@@ -39,6 +39,8 @@ let lateBannerRecoveryScanActive = false
 let lateBannerRecoveryCheckScheduled = false
 let lastScanDetectedControlCount = 0
 let lastPrioritizedCmpRootsFound = 0
+let lastPrioritizedRootTexts = []
+let lastPrioritizedRootControlCount = 0
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -1313,6 +1315,8 @@ function recordCurrentSiteDiagnostic({
   matchedRejectText = '',
   blockedReason = '',
   prioritizedCmpRootsFound = lastPrioritizedCmpRootsFound,
+  prioritizedRootTexts = lastPrioritizedRootTexts,
+  prioritizedRootControlCount = lastPrioritizedRootControlCount,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1341,6 +1345,14 @@ function recordCurrentSiteDiagnostic({
     blockedReason: String(blockedReason || '').slice(0, 120),
     prioritizedCmpRootsFound:
       Math.max(0, Number(prioritizedCmpRootsFound) || 0),
+    prioritizedRootTexts:
+      (Array.isArray(prioritizedRootTexts)
+        ? prioritizedRootTexts
+        : [])
+        .filter(Boolean)
+        .slice(0, 3),
+    prioritizedRootControlCount:
+      Math.max(0, Number(prioritizedRootControlCount) || 0),
     lastUpdatedAt: now,
   }
 
@@ -1362,6 +1374,8 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       matchedRejectText: '',
       blockedReason: '',
       prioritizedCmpRootsFound: 0,
+      prioritizedRootTexts: [],
+      prioritizedRootControlCount: 0,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -2283,6 +2297,38 @@ function hasVisibleClickableControl(root) {
   }
 }
 
+function getVisibleClickableControlCount(root) {
+  try {
+    return Array.from(
+      root.querySelectorAll(
+        [
+          'button',
+          'a',
+          '[role="button"]',
+          'input[type="button"]',
+          'input[type="submit"]',
+        ].join(',')
+      )
+    )
+      .slice(0, 20)
+      .filter((control) =>
+        isVisible(control) &&
+        getCookieDebugDisabledState(control) !== 'disabled'
+      ).length
+  } catch {
+    return 0
+  }
+}
+
+function getPrioritizedRootTextSnippet(root) {
+  return normalizeMatchText(
+    [
+      getText(root).slice(0, 180),
+      getElementActionText(root).slice(0, 120),
+    ].join(' ')
+  ).slice(0, 120)
+}
+
 function isCenteredModalLikeRoot(element, rect) {
   const viewportWidth =
     window.innerWidth ||
@@ -2396,6 +2442,8 @@ function findCookieBannerCandidates() {
       })
     }
     lastPrioritizedCmpRootsFound = 0
+    lastPrioritizedRootTexts = []
+    lastPrioritizedRootControlCount = 0
     return [activeCookieContainer]
   }
 
@@ -2406,6 +2454,17 @@ function findCookieBannerCandidates() {
 
   lastPrioritizedCmpRootsFound =
     prioritizedRoots.length
+  lastPrioritizedRootTexts =
+    prioritizedRoots
+      .map(getPrioritizedRootTextSnippet)
+      .filter(Boolean)
+      .slice(0, 3)
+  lastPrioritizedRootControlCount =
+    prioritizedRoots.reduce(
+      (count, root) =>
+        count + getVisibleClickableControlCount(root),
+      0
+    )
 
   const rawCandidates = [
     ...prioritizedRoots,
@@ -2486,6 +2545,8 @@ function findCookieBannerCandidates() {
       event: 'findCookieBannerCandidates',
       bannerCandidateCount: candidates.length,
       prioritizedCmpRootsFound: lastPrioritizedCmpRootsFound,
+      prioritizedRootTexts: lastPrioritizedRootTexts,
+      prioritizedRootControlCount: lastPrioritizedRootControlCount,
       chosenCandidateSummary: getElementTestSummary(activeCookieContainer),
     })
   }

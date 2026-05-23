@@ -1446,6 +1446,19 @@ function renderCurrentSiteDiagnostic(diagnostic) {
           .filter(Boolean)
           .slice(0, 5)
       : []
+  const prioritizedRootTexts =
+    Array.isArray(diagnostic.prioritizedRootTexts)
+      ? diagnostic.prioritizedRootTexts
+          .filter(Boolean)
+          .slice(0, 3)
+      : []
+  const prioritizedSummary = [
+    `prioritizedCmpRootsFound: ${Math.max(0, Number(diagnostic.prioritizedCmpRootsFound) || 0)}`,
+    `prioritizedRootControlCount: ${Math.max(0, Number(diagnostic.prioritizedRootControlCount) || 0)}`,
+    ...prioritizedRootTexts.map((text) =>
+      `root: ${text}`
+    ),
+  ]
 
   currentSiteDiagnosticStatus.innerText =
     diagnostic.lastUpdatedAt
@@ -1456,9 +1469,7 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticReason.innerText =
     String(diagnostic.reason || 'Sin datos')
   currentSiteDiagnosticControls.innerText =
-    controls.length > 0
-      ? controls.join(', ')
-      : 'Sin datos'
+    [...controls, ...prioritizedSummary].join(', ')
   currentSiteDiagnosticReject.innerText =
     String(diagnostic.matchedRejectText || 'Sin datos')
   currentSiteDiagnosticBlocked.innerText =
