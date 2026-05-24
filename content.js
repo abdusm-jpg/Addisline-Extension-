@@ -59,6 +59,9 @@ let lastIframeCmpDetected = false
 let lastIframeRejectDetected = false
 let lastIframeDomain = ''
 let lastIframeInspectionSummaries = []
+let lastSettingsSaveDetected = false
+let lastSettingsSaveClicked = false
+let lastSettingsSaveVerification = ''
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -605,6 +608,7 @@ const essentialPreferenceTexts = [
 ]
 
 const savePreferenceTexts = [
+  'save choices',
   'save preferences',
   'confirm choices',
   'confirm my choices',
@@ -620,6 +624,8 @@ const savePreferenceTexts = [
   'submit all choices',
   'agree to selected',
   'confirmar opciones',
+  'confirmar mis opciones',
+  'guardar cambios',
   'guardar preferencias',
   'confirmar preferencias',
   'aplicar preferencias',
@@ -1511,6 +1517,9 @@ function recordCurrentSiteDiagnostic({
   iframeInspectionSummaries = lastIframeInspectionSummaries,
   lateHydrationRecheckScheduled: diagnosticLateHydrationRecheckScheduled = lateHydrationRecheckScheduled,
   lateHydrationRecheckRan: diagnosticLateHydrationRecheckRan = lateHydrationRecheckRan,
+  settingsSaveDetected = lastSettingsSaveDetected,
+  settingsSaveClicked = lastSettingsSaveClicked,
+  settingsSaveVerification = lastSettingsSaveVerification,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1603,6 +1612,12 @@ function recordCurrentSiteDiagnostic({
       Boolean(diagnosticLateHydrationRecheckScheduled),
     lateHydrationRecheckRan:
       Boolean(diagnosticLateHydrationRecheckRan),
+    settingsSaveDetected:
+      Boolean(settingsSaveDetected),
+    settingsSaveClicked:
+      Boolean(settingsSaveClicked),
+    settingsSaveVerification:
+      String(settingsSaveVerification || '').slice(0, 120),
     lastUpdatedAt: now,
   }
 
@@ -1648,6 +1663,9 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       iframeInspectionSummaries: [],
       lateHydrationRecheckScheduled: false,
       lateHydrationRecheckRan: false,
+      settingsSaveDetected: false,
+      settingsSaveClicked: false,
+      settingsSaveVerification: '',
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -5623,6 +5641,158 @@ function runLightweightCMPSpecificPanelPass(panel) {
   return togglesClicked > 0
 }
 
+function textMatchesLightweightSettingsSave(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return textHasAny(normalizedText, [
+    'guardar cambios',
+    'guardar configuracion',
+    'guardar preferencias',
+    'confirmar mis opciones',
+    'confirm choices',
+    'save choices',
+    'apply choices',
+  ])
+}
+
+function findLightweightSettingsSaveControl(panel = document) {
+  return getDirectClickableControls(panel)
+    .find((control) => {
+      const text =
+        getActionText(control)
+
+      return (
+        isVisible(control) &&
+        getCookieDebugDisabledState(control) !== 'disabled' &&
+        !hasUnsafeAcceptText(control) &&
+        !isSensitiveActionControl(control, panel) &&
+        (
+          textMatchesLightweightSettingsSave(text) ||
+          textMatchesDictionaryCookieIntent(text, 'savePreferences')
+        )
+      )
+    }) || null
+}
+
+function getLightweightSettingsCompletionPanel(openedControl) {
+  return (
+    findCookiePreferencesPanel() ||
+    getCookieContainer(openedControl) ||
+    activeCookieContainer ||
+    document
+  )
+}
+
+function scheduleLightweightSettingsSaveCompletion(openedControl, candidates) {
+  scheduleAutomationTimeout(() => {
+    if (
+      !shouldRunOnThisSite() ||
+      rejectFlowCompleted ||
+      !lightweightSettingsOpenAttempted
+    ) {
+      return
+    }
+
+    const panel =
+      getLightweightSettingsCompletionPanel(openedControl)
+    const saveControl =
+      findLightweightSettingsSaveControl(panel)
+
+    lastSettingsSaveDetected =
+      Boolean(saveControl)
+
+    if (!saveControl) {
+      lastSettingsSaveClicked = false
+      lastSettingsSaveVerification = 'save_not_found'
+      recordCurrentSiteDiagnostic({
+        status: 'settingsOpened',
+        reason: 'settings_save_not_found',
+        candidates: panel && panel !== document ? [panel] : candidates,
+        detectedControls: getDiagnosticControlTexts(
+          panel && panel !== document ? [panel] : candidates,
+          [openedControl]
+        ),
+        settingsSaveDetected: false,
+        settingsSaveClicked: false,
+        settingsSaveVerification: 'save_not_found',
+      })
+      rejectFlowCompleted = true
+      stopObserver()
+      return
+    }
+
+    const clicked =
+      canProcessBannerAction(saveControl) &&
+      clickElementSafely(saveControl, {
+        includePointerEvents: true,
+      })
+
+    lastSettingsSaveClicked =
+      Boolean(clicked)
+
+    if (!clicked) {
+      lastSettingsSaveVerification = 'click_failed'
+      recordCurrentSiteDiagnostic({
+        status: 'failed',
+        reason: 'settings_save_click_failed',
+        candidates: panel && panel !== document ? [panel] : candidates,
+        detectedControls: getDiagnosticControlTexts(
+          panel && panel !== document ? [panel] : candidates,
+          [saveControl]
+        ),
+        settingsSaveDetected: true,
+        settingsSaveClicked: false,
+        settingsSaveVerification: 'click_failed',
+      })
+      rejectFlowCompleted = true
+      stopObserver()
+      return
+    }
+
+    scheduleAutomationTimeout(() => {
+      const state =
+        getBannerVerificationState(panel)
+      const verification =
+        state.active ? 'banner_still_visible' : 'closed'
+
+      lastSettingsSaveVerification =
+        verification
+
+      recordCurrentSiteDiagnostic({
+        status: state.active ? 'settingsOpened' : 'rejected',
+        reason: state.active
+          ? 'settings_save_verification_failed'
+          : 'settings_save_verified',
+        candidates: state.container || panel
+          ? [state.container || panel]
+          : candidates,
+        matchedRejectElement: saveControl,
+        matchedRejectText: getActionText(saveControl),
+        blockedReason: state.active ? 'banner_still_visible' : '',
+        settingsSaveDetected: true,
+        settingsSaveClicked: true,
+        settingsSaveVerification: verification,
+      })
+
+      if (!state.active) {
+        const verifiedContext = {
+          type: 'save',
+          container: state.container || panel,
+          element: saveControl,
+        }
+
+        recordCookieAuditAfterSuccessfulAction(verifiedContext)
+        finalizeCookieActionSuccess(verifiedContext)
+        return
+      }
+
+      rejectFlowCompleted = true
+      stopObserver()
+    }, 900)
+  }, 900)
+}
+
 function attemptLightweightSettingsOpen(candidates) {
   if (
     !ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ||
@@ -5699,16 +5869,20 @@ function attemptLightweightSettingsOpen(candidates) {
     clicked: true,
     control: getCookieDebugElementSummary(control),
   })
+  lastSettingsSaveDetected = false
+  lastSettingsSaveClicked = false
+  lastSettingsSaveVerification = 'pending'
   recordCurrentSiteDiagnostic({
     status: 'settingsOpened',
     reason: 'settings_control_clicked',
     candidates,
     detectedControls: getDiagnosticControlTexts(candidates, [control]),
+    settingsSaveDetected: false,
+    settingsSaveClicked: false,
+    settingsSaveVerification: 'pending',
   })
-  stopObserver()
   scanBudgetExhausted = true
-  rejectFlowCompleted = true
-  markSuccessfulCookieActionCooldown(control)
+  scheduleLightweightSettingsSaveCompletion(control, candidates)
   setLastAction('settings_opened')
   setLastError('')
 

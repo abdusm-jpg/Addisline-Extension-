@@ -1499,6 +1499,9 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `iframeDomain: ${String(diagnostic.iframeDomain || 'none').slice(0, 80)}`,
     `lateHydrationRecheckScheduled: ${Boolean(diagnostic.lateHydrationRecheckScheduled)}`,
     `lateHydrationRecheckRan: ${Boolean(diagnostic.lateHydrationRecheckRan)}`,
+    `settingsSaveDetected: ${Boolean(diagnostic.settingsSaveDetected)}`,
+    `settingsSaveClicked: ${Boolean(diagnostic.settingsSaveClicked)}`,
+    `settingsSaveVerification: ${String(diagnostic.settingsSaveVerification || 'none').slice(0, 80)}`,
     ...(Array.isArray(diagnostic.iframeProbeMatchedControls)
       ? diagnostic.iframeProbeMatchedControls
           .filter(Boolean)
