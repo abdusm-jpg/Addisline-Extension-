@@ -55,6 +55,7 @@ let lastIframeProbeMatchedControls = []
 let lastIframeCmpDetected = false
 let lastIframeRejectDetected = false
 let lastIframeDomain = ''
+let lastIframeInspectionSummaries = []
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -1503,6 +1504,7 @@ function recordCurrentSiteDiagnostic({
   iframeCmpDetected = lastIframeCmpDetected,
   iframeRejectDetected = lastIframeRejectDetected,
   iframeDomain = lastIframeDomain,
+  iframeInspectionSummaries = lastIframeInspectionSummaries,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1586,6 +1588,11 @@ function recordCurrentSiteDiagnostic({
       Boolean(iframeRejectDetected),
     iframeDomain:
       String(iframeDomain || '').slice(0, 120),
+    iframeInspectionSummaries:
+      (Array.isArray(iframeInspectionSummaries)
+        ? iframeInspectionSummaries
+        : [])
+        .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
     lastUpdatedAt: now,
   }
 
@@ -1628,6 +1635,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       iframeCmpDetected: false,
       iframeRejectDetected: false,
       iframeDomain: '',
+      iframeInspectionSummaries: [],
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -3144,6 +3152,34 @@ function getCMPReachabilityProbeText(control) {
   return normalizeMatchText(getActionText(control)).slice(0, 80)
 }
 
+function getIframeInspectionSummary(iframeDocument) {
+  const controls =
+    safeQuerySelectorAll(
+      iframeDocument,
+      getPriorityControlSelectors()
+    )
+      .slice(0, 40)
+  const controlTexts =
+    controls
+      .map((control) =>
+        normalizeMatchText(getActionText(control)).slice(0, 80)
+      )
+      .filter(Boolean)
+      .slice(0, 10)
+
+  return {
+    iframeUrl: String(iframeDocument.location?.href || '').slice(0, 180),
+    iframeOrigin: String(iframeDocument.location?.origin || '').slice(0, 120),
+    iframeReadyState: String(iframeDocument.readyState || ''),
+    iframeBodyExists: Boolean(iframeDocument.body),
+    iframeBodyTextPreview:
+      normalizeMatchText(iframeDocument.body?.innerText || '')
+        .slice(0, 300),
+    iframeControlCount: controls.length,
+    iframeControlTexts: controlTexts,
+  }
+}
+
 function updateCMPReachabilityProbeDiagnostics() {
   const mainControls =
     getCMPReachabilityProbeControls(document)
@@ -3164,14 +3200,15 @@ function updateCMPReachabilityProbeDiagnostics() {
   let accessibleIframeCount = 0
   let inaccessibleIframeCount = 0
   const iframeProbeMatchedControls = []
+  const iframeInspectionSummaries = []
 
   safeQuerySelectorAll(document, 'iframe')
-    .slice(0, 20)
+    .filter(isVisibleMeaningfulIframe)
+    .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES)
     .forEach((iframe) => {
       try {
         const iframeDocument =
-          iframe.contentDocument ||
-          iframe.contentWindow?.document
+          getAccessibleIframeDocument(iframe)
 
         if (!iframeDocument?.documentElement) {
           inaccessibleIframeCount += 1
@@ -3179,6 +3216,9 @@ function updateCMPReachabilityProbeDiagnostics() {
         }
 
         accessibleIframeCount += 1
+        iframeInspectionSummaries.push(
+          getIframeInspectionSummary(iframeDocument)
+        )
 
         getCMPReachabilityProbeControls(iframeDocument)
           .slice(0, 3)
@@ -3202,6 +3242,8 @@ function updateCMPReachabilityProbeDiagnostics() {
     inaccessibleIframeCount
   lastIframeProbeMatchedControls =
     iframeProbeMatchedControls.slice(0, 5)
+  lastIframeInspectionSummaries =
+    iframeInspectionSummaries
 }
 
 function getVisibleCMPControlCount(root) {
@@ -3594,6 +3636,7 @@ function findCookieBannerCandidates() {
     lastIframeCmpDetected = false
     lastIframeRejectDetected = false
     lastIframeDomain = ''
+    lastIframeInspectionSummaries = []
     return [activeCookieContainer]
   }
 

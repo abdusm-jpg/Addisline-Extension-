@@ -1452,6 +1452,31 @@ function renderCurrentSiteDiagnostic(diagnostic) {
           .filter(Boolean)
           .slice(0, 3)
       : []
+  const iframeInspectionSummaries =
+    Array.isArray(diagnostic.iframeInspectionSummaries)
+      ? diagnostic.iframeInspectionSummaries
+          .slice(0, 2)
+      : []
+  const iframeInspectionLines =
+    iframeInspectionSummaries.flatMap((summary, index) => {
+      const controlTexts =
+        Array.isArray(summary.iframeControlTexts)
+          ? summary.iframeControlTexts
+              .filter(Boolean)
+              .slice(0, 10)
+              .join(' | ')
+          : ''
+
+      return [
+        `iframe${index + 1}Url: ${String(summary.iframeUrl || 'none').slice(0, 120)}`,
+        `iframe${index + 1}Origin: ${String(summary.iframeOrigin || 'none').slice(0, 80)}`,
+        `iframe${index + 1}ReadyState: ${String(summary.iframeReadyState || 'none')}`,
+        `iframe${index + 1}BodyExists: ${Boolean(summary.iframeBodyExists)}`,
+        `iframe${index + 1}ControlCount: ${Math.max(0, Number(summary.iframeControlCount) || 0)}`,
+        `iframe${index + 1}Text: ${String(summary.iframeBodyTextPreview || 'none').slice(0, 160)}`,
+        `iframe${index + 1}Controls: ${controlTexts || 'none'}`,
+      ]
+    })
   const prioritizedSummary = [
     `rootTag: ${String(diagnostic.rootTag || 'none')}`,
     `rootReason: ${String(diagnostic.rootReason || 'none')}`,
@@ -1478,6 +1503,7 @@ function renderCurrentSiteDiagnostic(diagnostic) {
           .slice(0, 3)
           .map((text) => `iframeMatch: ${text}`)
       : []),
+    ...iframeInspectionLines,
     ...prioritizedRootTexts.map((text) =>
       `root: ${text}`
     ),
