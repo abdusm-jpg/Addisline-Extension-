@@ -630,6 +630,25 @@ const nonCookieModalTexts = [
   'open in app',
 ]
 
+const marketingPopupTexts = [
+  'newsletter',
+  'subscribe',
+  'subscription',
+  'suscribete',
+  'suscribete',
+  'descuento',
+  'discount',
+  'promo',
+  'promotion',
+  'email signup',
+  'sign up for email',
+  'sign up for our newsletter',
+  'first order',
+  'coupon',
+  'cupon',
+  'oferta',
+]
+
 const knownCmpKeywords = [
   'onetrust',
   'ot sdk',
@@ -1312,6 +1331,7 @@ function getDiagnosticRootSummary(candidates = [], extraControls = []) {
       rootTag: '',
       rootClass: '',
       rootReason: '',
+      excludedAsMarketingPopup: false,
     }
   }
 
@@ -1320,6 +1340,7 @@ function getDiagnosticRootSummary(candidates = [], extraControls = []) {
     rootTag: String(root.tagName || '').toLowerCase(),
     rootClass: getClassNameText(root).slice(0, 160),
     rootReason: getInitialCMPRootReason(root),
+    excludedAsMarketingPopup: isMarketingPopupWithoutCMPActions(root),
   }
 }
 
@@ -1403,6 +1424,7 @@ function recordCurrentSiteDiagnostic({
     rootTag: rootSummary.rootTag,
     rootClass: rootSummary.rootClass,
     rootReason: rootSummary.rootReason,
+    excludedAsMarketingPopup: Boolean(rootSummary.excludedAsMarketingPopup),
     prioritizedCmpRootsFound:
       Math.max(0, Number(prioritizedCmpRootsFound) || 0),
     prioritizedRootTexts:
@@ -1436,6 +1458,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       rootTag: '',
       rootClass: '',
       rootReason: '',
+      excludedAsMarketingPopup: false,
       prioritizedCmpRootsFound: 0,
       prioritizedRootTexts: [],
       prioritizedRootControlCount: 0,
@@ -2317,6 +2340,55 @@ function hasCMPRootEvidence(element) {
   )
 }
 
+function hasCMPActionSignal(element) {
+  const signal =
+    normalizeMatchText([
+      getText(element).slice(0, 1200),
+      getElementActionText(element).slice(0, 800),
+      element?.id,
+      getClassNameText(element),
+      element?.getAttribute?.('aria-label'),
+      getDatasetText(element),
+    ].join(' '))
+
+  return (
+    textMatchesDictionaryCookieIntent(signal, 'rejectAll') ||
+    textMatchesDictionaryCookieIntent(signal, 'openSettings') ||
+    textHasAny(signal, [
+      'reject',
+      'rechazar',
+      'rechazar todo',
+      'rechazar todas',
+      'no acepto',
+      'consent',
+      'cookies',
+      'cookie',
+      'privacy',
+      'privacidad',
+      'gestionar cookies',
+      'cookie settings',
+      'privacy settings',
+    ])
+  )
+}
+
+function isMarketingPopupWithoutCMPActions(element) {
+  const signal =
+    normalizeMatchText([
+      getText(element).slice(0, 1200),
+      getElementActionText(element).slice(0, 800),
+      element?.id,
+      getClassNameText(element),
+      element?.getAttribute?.('aria-label'),
+      getDatasetText(element),
+    ].join(' '))
+
+  return (
+    textHasAny(signal, marketingPopupTexts) &&
+    !hasCMPActionSignal(element)
+  )
+}
+
 function isReliableCMPRoot(element) {
   return Boolean(
     element &&
@@ -2326,6 +2398,7 @@ function isReliableCMPRoot(element) {
       element !== document.documentElement &&
       !isExcludedCMPRootContext(element) &&
       !isLikelyNonCookieModal(element) &&
+      !isMarketingPopupWithoutCMPActions(element) &&
       hasCMPRootEvidence(element) &&
       hasVisibleClickableControl(element)
   )
@@ -2340,6 +2413,7 @@ function isPotentialCookieContainer(element) {
     element === document.documentElement ||
     isExcludedCMPRootContext(element) ||
     isLikelyNonCookieModal(element) ||
+    isMarketingPopupWithoutCMPActions(element) ||
     element.matches?.('form, nav, header, main, article')
   ) {
     return false
@@ -2464,6 +2538,7 @@ function isLikelyVisibleCMPModalRoot(element) {
     element === document.documentElement ||
     isExcludedCMPRootContext(element) ||
     element.matches?.('form, nav, header, main, article') ||
+    isMarketingPopupWithoutCMPActions(element) ||
     isLikelyNonCookieModal(element)
   ) {
     return false

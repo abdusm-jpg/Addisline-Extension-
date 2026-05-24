@@ -1456,6 +1456,7 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `rootTag: ${String(diagnostic.rootTag || 'none')}`,
     `rootReason: ${String(diagnostic.rootReason || 'none')}`,
     `rootClass: ${String(diagnostic.rootClass || 'none').slice(0, 80)}`,
+    `excludedAsMarketingPopup: ${Boolean(diagnostic.excludedAsMarketingPopup)}`,
     `prioritizedCmpRootsFound: ${Math.max(0, Number(diagnostic.prioritizedCmpRootsFound) || 0)}`,
     `prioritizedRootControlCount: ${Math.max(0, Number(diagnostic.prioritizedRootControlCount) || 0)}`,
     ...prioritizedRootTexts.map((text) =>
