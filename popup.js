@@ -1465,6 +1465,16 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `newsletterSignalsDetected: ${Boolean(diagnostic.newsletterSignalsDetected)}`,
     `derivedCmpRootFromControl: ${Boolean(diagnostic.derivedCmpRootFromControl)}`,
     `derivedControlText: ${String(diagnostic.derivedControlText || 'none').slice(0, 80)}`,
+    `mainDocumentControlProbeCount: ${Math.max(0, Number(diagnostic.mainDocumentControlProbeCount) || 0)}`,
+    `shadowControlProbeCount: ${Math.max(0, Number(diagnostic.shadowControlProbeCount) || 0)}`,
+    `accessibleIframeCount: ${Math.max(0, Number(diagnostic.accessibleIframeCount) || 0)}`,
+    `inaccessibleIframeCount: ${Math.max(0, Number(diagnostic.inaccessibleIframeCount) || 0)}`,
+    ...(Array.isArray(diagnostic.iframeProbeMatchedControls)
+      ? diagnostic.iframeProbeMatchedControls
+          .filter(Boolean)
+          .slice(0, 3)
+          .map((text) => `iframeMatch: ${text}`)
+      : []),
     ...prioritizedRootTexts.map((text) =>
       `root: ${text}`
     ),

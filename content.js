@@ -47,6 +47,11 @@ let lastExplicitRejectControlDetected = false
 let lastNewsletterSignalsDetected = false
 let lastDerivedCmpRootFromControl = false
 let lastDerivedControlText = ''
+let lastMainDocumentControlProbeCount = 0
+let lastShadowControlProbeCount = 0
+let lastAccessibleIframeCount = 0
+let lastInaccessibleIframeCount = 0
+let lastIframeProbeMatchedControls = []
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -704,6 +709,13 @@ const cmpRootDerivationControlTexts = [
   'no acepto',
   'personalizar',
   'aceptar todas',
+]
+
+const cmpReachabilityProbeTexts = [
+  'rechazar todas',
+  'rechazar todo',
+  'aceptar todas',
+  'personalizar',
 ]
 
 const knownCmpKeywords = [
@@ -1479,6 +1491,11 @@ function recordCurrentSiteDiagnostic({
   newsletterSignalsDetected = lastNewsletterSignalsDetected,
   derivedCmpRootFromControl = lastDerivedCmpRootFromControl,
   derivedControlText = lastDerivedControlText,
+  mainDocumentControlProbeCount = lastMainDocumentControlProbeCount,
+  shadowControlProbeCount = lastShadowControlProbeCount,
+  accessibleIframeCount = lastAccessibleIframeCount,
+  inaccessibleIframeCount = lastInaccessibleIframeCount,
+  iframeProbeMatchedControls = lastIframeProbeMatchedControls,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1542,6 +1559,20 @@ function recordCurrentSiteDiagnostic({
       Boolean(derivedCmpRootFromControl),
     derivedControlText:
       String(derivedControlText || '').slice(0, 120),
+    mainDocumentControlProbeCount:
+      Math.max(0, Number(mainDocumentControlProbeCount) || 0),
+    shadowControlProbeCount:
+      Math.max(0, Number(shadowControlProbeCount) || 0),
+    accessibleIframeCount:
+      Math.max(0, Number(accessibleIframeCount) || 0),
+    inaccessibleIframeCount:
+      Math.max(0, Number(inaccessibleIframeCount) || 0),
+    iframeProbeMatchedControls:
+      (Array.isArray(iframeProbeMatchedControls)
+        ? iframeProbeMatchedControls
+        : [])
+        .filter(Boolean)
+        .slice(0, 5),
     lastUpdatedAt: now,
   }
 
@@ -1576,6 +1607,11 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       newsletterSignalsDetected: false,
       derivedCmpRootFromControl: false,
       derivedControlText: '',
+      mainDocumentControlProbeCount: 0,
+      shadowControlProbeCount: 0,
+      accessibleIframeCount: 0,
+      inaccessibleIframeCount: 0,
+      iframeProbeMatchedControls: [],
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -3034,6 +3070,121 @@ function textMatchesCMPRootDerivationControl(text) {
   )
 }
 
+function textMatchesCMPReachabilityProbe(text) {
+  return textHasAny(
+    normalizeMatchText(text),
+    cmpReachabilityProbeTexts
+  )
+}
+
+function isReachabilityProbeControlVisible(control) {
+  if (!isElementLike(control)) return false
+
+  const rect =
+    getSafeClientRect(control)
+
+  if (!rect || rect.width <= 0 || rect.height <= 0) {
+    return false
+  }
+
+  try {
+    const view =
+      control.ownerDocument?.defaultView || window
+    const style =
+      view.getComputedStyle(control)
+
+    return (
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      Number(style.opacity) !== 0
+    )
+  } catch {
+    return isVisible(control)
+  }
+}
+
+function getCMPReachabilityProbeControls(root) {
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+    .filter((control) =>
+      isReachabilityProbeControlVisible(control) &&
+      textMatchesCMPReachabilityProbe(getActionText(control))
+    )
+}
+
+function getCMPReachabilityProbeText(control) {
+  return normalizeMatchText(getActionText(control)).slice(0, 80)
+}
+
+function updateCMPReachabilityProbeDiagnostics() {
+  const mainControls =
+    getCMPReachabilityProbeControls(document)
+
+  let shadowControlCount = 0
+  safeQuerySelectorAll(document, '*')
+    .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+    .forEach((element) => {
+      const shadowRoot =
+        element?.shadowRoot
+
+      if (!shadowRoot) return
+
+      shadowControlCount +=
+        getCMPReachabilityProbeControls(shadowRoot).length
+    })
+
+  let accessibleIframeCount = 0
+  let inaccessibleIframeCount = 0
+  const iframeProbeMatchedControls = []
+
+  safeQuerySelectorAll(document, 'iframe')
+    .slice(0, 20)
+    .forEach((iframe) => {
+      try {
+        const iframeDocument =
+          iframe.contentDocument ||
+          iframe.contentWindow?.document
+
+        if (!iframeDocument?.documentElement) {
+          inaccessibleIframeCount += 1
+          return
+        }
+
+        accessibleIframeCount += 1
+
+        getCMPReachabilityProbeControls(iframeDocument)
+          .slice(0, 3)
+          .forEach((control) => {
+            iframeProbeMatchedControls.push(
+              getCMPReachabilityProbeText(control)
+            )
+          })
+      } catch {
+        inaccessibleIframeCount += 1
+      }
+    })
+
+  lastMainDocumentControlProbeCount =
+    mainControls.length
+  lastShadowControlProbeCount =
+    shadowControlCount
+  lastAccessibleIframeCount =
+    accessibleIframeCount
+  lastInaccessibleIframeCount =
+    inaccessibleIframeCount
+  lastIframeProbeMatchedControls =
+    iframeProbeMatchedControls.slice(0, 5)
+}
+
 function getVisibleCMPControlCount(root) {
   return safeQuerySelectorAll(
     root,
@@ -3220,6 +3371,8 @@ function getPrioritizedCMPRootScore(root) {
 }
 
 function findPrioritizedVisibleCMPRoots() {
+  updateCMPReachabilityProbeDiagnostics()
+
   const selectors = [
     'dialog',
     '[role="dialog"]',
@@ -3320,6 +3473,11 @@ function findCookieBannerCandidates() {
     lastNewsletterSignalsDetected = false
     lastDerivedCmpRootFromControl = false
     lastDerivedControlText = ''
+    lastMainDocumentControlProbeCount = 0
+    lastShadowControlProbeCount = 0
+    lastAccessibleIframeCount = 0
+    lastInaccessibleIframeCount = 0
+    lastIframeProbeMatchedControls = []
     return [activeCookieContainer]
   }
 
