@@ -37,6 +37,9 @@ let emergencyVisibleCMPScanUsed = false
 let lateBannerRecoveryScanUsed = false
 let lateBannerRecoveryScanActive = false
 let lateBannerRecoveryCheckScheduled = false
+let lateHydrationRecheckScheduled = false
+let lateHydrationRecheckRan = false
+let lateHydrationRecheckActive = false
 let lastScanDetectedControlCount = 0
 let lastPrioritizedCmpRootsFound = 0
 let lastPrioritizedRootTexts = []
@@ -120,6 +123,7 @@ const MAX_COOKIE_AUDIT_SAMPLES_PER_CATEGORY = 6
 const PAGE_LOADING_SCAN_DELAY_MS = 1500
 const LATE_CMP_RESCAN_DELAY_MS = 3500
 const LATE_BANNER_RECOVERY_CHECK_DELAY_MS = 4000
+const LATE_HYDRATION_RECHECK_DELAY_MS = 1000
 const MAX_SCANS_PER_PAGE = 8
 const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_NO_CMP_SCANS = 3
@@ -1505,6 +1509,8 @@ function recordCurrentSiteDiagnostic({
   iframeRejectDetected = lastIframeRejectDetected,
   iframeDomain = lastIframeDomain,
   iframeInspectionSummaries = lastIframeInspectionSummaries,
+  lateHydrationRecheckScheduled: diagnosticLateHydrationRecheckScheduled = lateHydrationRecheckScheduled,
+  lateHydrationRecheckRan: diagnosticLateHydrationRecheckRan = lateHydrationRecheckRan,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1593,6 +1599,10 @@ function recordCurrentSiteDiagnostic({
         ? iframeInspectionSummaries
         : [])
         .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
+    lateHydrationRecheckScheduled:
+      Boolean(diagnosticLateHydrationRecheckScheduled),
+    lateHydrationRecheckRan:
+      Boolean(diagnosticLateHydrationRecheckRan),
     lastUpdatedAt: now,
   }
 
@@ -1636,6 +1646,8 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       iframeRejectDetected: false,
       iframeDomain: '',
       iframeInspectionSummaries: [],
+      lateHydrationRecheckScheduled: false,
+      lateHydrationRecheckRan: false,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -6003,6 +6015,88 @@ function scheduleLateBannerRecoveryCheck(reason = 'scan_budget_exhausted') {
       stopObserver()
     }
   }, LATE_BANNER_RECOVERY_CHECK_DELAY_MS)
+
+  return true
+}
+
+function hasLateHydrationCMPHint() {
+  updateCMPReachabilityProbeDiagnostics()
+
+  return (
+    lastMainDocumentControlProbeCount > 0 ||
+    lastShadowControlProbeCount > 0 ||
+    lastIframeProbeMatchedControls.length > 0 ||
+    getVisibleLateBannerRecoveryRoots().length > 0 ||
+    findSameOriginIframeCMPRoots().length > 0
+  )
+}
+
+function scheduleLateHydrationRecheck(reason = 'no_cmp_after_bounded_scans') {
+  if (
+    lateHydrationRecheckScheduled ||
+    lateHydrationRecheckRan ||
+    rejectFlowCompleted ||
+    lastScanDetectedControlCount > 0 ||
+    lastPrioritizedCmpRootsFound > 0 ||
+    !isPageActiveForAutomation() ||
+    !shouldRunOnThisSite()
+  ) {
+    return false
+  }
+
+  lateHydrationRecheckScheduled = true
+
+  recordCurrentSiteDiagnostic({
+    status: 'skipped',
+    reason: 'late_hydration_recheck_scheduled',
+    detectedControls: [],
+    blockedReason: reason,
+    lateHydrationRecheckScheduled: true,
+    lateHydrationRecheckRan,
+  })
+
+  scheduleAutomationTimeout(() => {
+    lateHydrationRecheckScheduled = false
+
+    if (
+      lateHydrationRecheckRan ||
+      rejectFlowCompleted ||
+      !isPageActiveForAutomation() ||
+      !shouldRunOnThisSite()
+    ) {
+      return
+    }
+
+    if (!hasLateHydrationCMPHint()) {
+      recordCurrentSiteDiagnostic({
+        status: 'skipped',
+        reason: 'late_hydration_recheck_no_hint',
+        detectedControls: [],
+        blockedReason: reason,
+        lateHydrationRecheckScheduled: false,
+        lateHydrationRecheckRan: false,
+      })
+      stopObserver()
+      return
+    }
+
+    lateHydrationRecheckRan = true
+    lateHydrationRecheckActive = true
+    scanBudgetExhausted = false
+
+    recordCurrentSiteDiagnostic({
+      status: 'skipped',
+      reason: 'late_hydration_recheck_ran',
+      detectedControls: [],
+      blockedReason: reason,
+      lateHydrationRecheckScheduled: false,
+      lateHydrationRecheckRan: true,
+    })
+
+    runWhenIdle(() => {
+      scanPage()
+    })
+  }, LATE_HYDRATION_RECHECK_DELAY_MS)
 
   return true
 }
@@ -10658,6 +10752,12 @@ function canRunPageScan(source = 'scan') {
     return true
   }
 
+  if (lateHydrationRecheckActive) {
+    lateHydrationRecheckActive = false
+    pageScanCount += 1
+    return true
+  }
+
   if (scanBudgetExhausted || rejectFlowCompleted) {
     return false
   }
@@ -10669,6 +10769,9 @@ function canRunPageScan(source = 'scan') {
       reason: 'scan_budget_exhausted',
       blockedReason: source,
     })
+    if (scheduleLateHydrationRecheck(source)) {
+      return false
+    }
     if (triggerLateBannerRecoveryScan(source)) {
       return false
     }
@@ -11032,6 +11135,9 @@ function scanPage() {
           candidates,
           blockedReason: 'scan_budget_exhausted',
         })
+        if (scheduleLateHydrationRecheck('no_cmp_after_bounded_scans')) {
+          return
+        }
         if (scheduleLateBannerRecoveryCheck('no_cmp_after_bounded_scans')) {
           return
         }
@@ -11853,6 +11959,8 @@ function stopObserver() {
   startupScanScheduled = false
   loadingScanDeferred = false
   lateBannerRecoveryCheckScheduled = false
+  lateHydrationRecheckScheduled = false
+  lateHydrationRecheckActive = false
   scanBurstCount = 0
   lastObserverScanScheduledAt = 0
 

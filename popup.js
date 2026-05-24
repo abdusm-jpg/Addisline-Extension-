@@ -1497,6 +1497,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `iframeCmpDetected: ${Boolean(diagnostic.iframeCmpDetected)}`,
     `iframeRejectDetected: ${Boolean(diagnostic.iframeRejectDetected)}`,
     `iframeDomain: ${String(diagnostic.iframeDomain || 'none').slice(0, 80)}`,
+    `lateHydrationRecheckScheduled: ${Boolean(diagnostic.lateHydrationRecheckScheduled)}`,
+    `lateHydrationRecheckRan: ${Boolean(diagnostic.lateHydrationRecheckRan)}`,
     ...(Array.isArray(diagnostic.iframeProbeMatchedControls)
       ? diagnostic.iframeProbeMatchedControls
           .filter(Boolean)
