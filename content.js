@@ -43,6 +43,8 @@ let lastPrioritizedRootTexts = []
 let lastPrioritizedRootControlCount = 0
 let lastCmpModalSignalsDetected = false
 let lastModalGeometryMatched = false
+let lastExplicitRejectControlDetected = false
+let lastNewsletterSignalsDetected = false
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -678,6 +680,19 @@ const marketingPopupTexts = [
   'coupon',
   'cupon',
   'oferta',
+]
+
+const explicitRejectControlTexts = [
+  'reject',
+  'reject all',
+  'decline',
+  'decline all',
+  'rechazar',
+  'rechazar todo',
+  'rechazar todas',
+  'rechazar las no necesarias',
+  'rechazar no necesarias',
+  'no acepto',
 ]
 
 const knownCmpKeywords = [
@@ -1449,6 +1464,8 @@ function recordCurrentSiteDiagnostic({
   prioritizedRootControlCount = lastPrioritizedRootControlCount,
   cmpModalSignalsDetected = lastCmpModalSignalsDetected,
   modalGeometryMatched = lastModalGeometryMatched,
+  explicitRejectControlDetected = lastExplicitRejectControlDetected,
+  newsletterSignalsDetected = lastNewsletterSignalsDetected,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1504,6 +1521,10 @@ function recordCurrentSiteDiagnostic({
       Boolean(cmpModalSignalsDetected),
     modalGeometryMatched:
       Boolean(modalGeometryMatched),
+    explicitRejectControlDetected:
+      Boolean(explicitRejectControlDetected),
+    newsletterSignalsDetected:
+      Boolean(newsletterSignalsDetected),
     lastUpdatedAt: now,
   }
 
@@ -1534,6 +1555,8 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       prioritizedRootControlCount: 0,
       cmpModalSignalsDetected: false,
       modalGeometryMatched: false,
+      explicitRejectControlDetected: false,
+      newsletterSignalsDetected: false,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -2494,7 +2517,81 @@ function hasCMPActionSignal(element) {
   )
 }
 
-function isMarketingPopupWithoutCMPActions(element) {
+function hasExplicitRejectControl(root) {
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, 20)
+    .some((control) => {
+      if (
+        !isVisible(control) ||
+        getCookieDebugDisabledState(control) === 'disabled' ||
+        hasUnsafeAcceptText(control)
+      ) {
+        return false
+      }
+
+      const text =
+        getActionText(control)
+
+      return (
+        textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
+        textHasAny(text, explicitRejectControlTexts) ||
+        textHasAny(text, totalRejectTexts) ||
+        isNoAceptoControl(control)
+      )
+    })
+}
+
+function hasVisibleConsentOrRejectControl(root) {
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, 16)
+    .some((control) => {
+      if (
+        !isVisible(control) ||
+        getCookieDebugDisabledState(control) === 'disabled' ||
+        hasUnsafeAcceptText(control)
+      ) {
+        return false
+      }
+
+      const text =
+        getActionText(control)
+
+      return (
+        textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
+        textMatchesDictionaryCookieIntent(text, 'openSettings') ||
+        textHasAny(text, [
+          'reject',
+          'rechazar',
+          'no acepto',
+          'decline',
+          'consent',
+          'cookies',
+          'cookie settings',
+          'gestionar cookies',
+        ])
+      )
+    })
+}
+
+function hasNewsletterSignals(element) {
   const signal =
     normalizeMatchText([
       getText(element).slice(0, 1200),
@@ -2504,10 +2601,29 @@ function isMarketingPopupWithoutCMPActions(element) {
       element?.getAttribute?.('aria-label'),
       getDatasetText(element),
     ].join(' '))
+  const hasEmailField =
+    safeQuerySelectorAll(
+      element,
+      [
+        'input[type="email"]',
+        'input[name*="email" i]',
+        'input[id*="email" i]',
+        'input[placeholder*="email" i]',
+        'input[autocomplete="email" i]',
+      ].join(',')
+    ).length > 0
 
   return (
-    textHasAny(signal, marketingPopupTexts) &&
-    !hasCMPActionSignal(element)
+    hasEmailField ||
+    textHasAny(signal, marketingPopupTexts)
+  )
+}
+
+function isMarketingPopupWithoutCMPActions(element) {
+  return (
+    hasNewsletterSignals(element) &&
+    !hasExplicitRejectControl(element) &&
+    !hasVisibleConsentOrRejectControl(element)
   )
 }
 
@@ -2553,8 +2669,15 @@ function isPotentialCookieContainer(element) {
     return false
   }
 
+  const modalSignals =
+    getCMPModalSignalSummary(element)
+
   return (
-    hasCMPRootEvidence(element) &&
+    (
+      hasCMPRootEvidence(element) ||
+      modalSignals.explicitRejectControlDetected ||
+      modalSignals.cmpModalSignalsDetected
+    ) &&
     hasVisibleClickableControl(element)
   )
 }
@@ -2701,6 +2824,8 @@ function getCMPModalSignalSummary(element) {
     return {
       cmpModalSignalsDetected: false,
       modalGeometryMatched: false,
+      explicitRejectControlDetected: false,
+      newsletterSignalsDetected: false,
     }
   }
 
@@ -2744,16 +2869,23 @@ function getCMPModalSignalSummary(element) {
   const cmpTextSignal =
     hasCMPRootEvidence(element) ||
     hasCMPActionSignal(element)
+  const explicitRejectControlDetected =
+    hasExplicitRejectControl(element)
+  const newsletterSignalsDetected =
+    hasNewsletterSignals(element)
   const actionControlSignal =
-    hasVisibleCMPActionControl(element)
+    hasVisibleCMPActionControl(element) ||
+    explicitRejectControlDetected
   const cmpModalSignalsDetected =
     modalGeometryMatched &&
-    cmpTextSignal &&
+    (cmpTextSignal || explicitRejectControlDetected) &&
     actionControlSignal
 
   return {
     cmpModalSignalsDetected,
     modalGeometryMatched,
+    explicitRejectControlDetected,
+    newsletterSignalsDetected,
   }
 }
 
@@ -2872,6 +3004,45 @@ function findLikelyCMPModalRootFromControl(control) {
   return bestRoot
 }
 
+function getPrioritizedCMPRootScore(root) {
+  const summary =
+    getCMPModalSignalSummary(root)
+  const rect =
+    getSafeClientRect(root)
+  const viewportHeight =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    1
+  const text =
+    normalizeMatchText([
+      getText(root).slice(0, 1000),
+      getElementActionText(root).slice(0, 600),
+    ].join(' '))
+  let score = 0
+
+  if (summary.explicitRejectControlDetected) score += 1000
+  if (summary.cmpModalSignalsDetected) score += 350
+  if (summary.modalGeometryMatched) score += 120
+  if (hasCMPRootEvidence(root)) score += 220
+  if (hasKnownCmpSignal(root)) score += 260
+  if (hasVisibleCMPActionControl(root)) score += 180
+
+  if (
+    rect &&
+    rect.top >= viewportHeight * 0.45 &&
+    textHasAny(text, ['cookie', 'cookies', 'privacy', 'privacidad']) &&
+    summary.explicitRejectControlDetected
+  ) {
+    score += 300
+  }
+
+  if (summary.newsletterSignalsDetected) {
+    score -= summary.explicitRejectControlDetected ? 120 : 550
+  }
+
+  return score
+}
+
 function findPrioritizedVisibleCMPRoots() {
   const selectors = [
     'dialog',
@@ -2909,6 +3080,10 @@ function findPrioritizedVisibleCMPRoots() {
       ...directRoots,
       ...controlRoots,
     ])
+    .sort((first, second) =>
+      getPrioritizedCMPRootScore(second) -
+      getPrioritizedCMPRootScore(first)
+    )
     .slice(0, MAX_PRIORITIZED_CMP_ROOTS)
 
   lastCmpModalSignalsDetected =
@@ -2918,6 +3093,14 @@ function findPrioritizedVisibleCMPRoots() {
   lastModalGeometryMatched =
     roots.some((root) =>
       getCMPModalSignalSummary(root).modalGeometryMatched
+    )
+  lastExplicitRejectControlDetected =
+    roots.some((root) =>
+      getCMPModalSignalSummary(root).explicitRejectControlDetected
+    )
+  lastNewsletterSignalsDetected =
+    roots.some((root) =>
+      getCMPModalSignalSummary(root).newsletterSignalsDetected
     )
 
   return roots
@@ -2941,6 +3124,8 @@ function findCookieBannerCandidates() {
     lastPrioritizedRootControlCount = 0
     lastCmpModalSignalsDetected = false
     lastModalGeometryMatched = false
+    lastExplicitRejectControlDetected = false
+    lastNewsletterSignalsDetected = false
     return [activeCookieContainer]
   }
 

@@ -1461,6 +1461,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `prioritizedRootControlCount: ${Math.max(0, Number(diagnostic.prioritizedRootControlCount) || 0)}`,
     `cmpModalSignalsDetected: ${Boolean(diagnostic.cmpModalSignalsDetected)}`,
     `modalGeometryMatched: ${Boolean(diagnostic.modalGeometryMatched)}`,
+    `explicitRejectControlDetected: ${Boolean(diagnostic.explicitRejectControlDetected)}`,
+    `newsletterSignalsDetected: ${Boolean(diagnostic.newsletterSignalsDetected)}`,
     ...prioritizedRootTexts.map((text) =>
       `root: ${text}`
     ),
