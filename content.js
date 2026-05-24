@@ -41,6 +41,8 @@ let lastScanDetectedControlCount = 0
 let lastPrioritizedCmpRootsFound = 0
 let lastPrioritizedRootTexts = []
 let lastPrioritizedRootControlCount = 0
+let lastCmpModalSignalsDetected = false
+let lastModalGeometryMatched = false
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -1445,6 +1447,8 @@ function recordCurrentSiteDiagnostic({
   prioritizedCmpRootsFound = lastPrioritizedCmpRootsFound,
   prioritizedRootTexts = lastPrioritizedRootTexts,
   prioritizedRootControlCount = lastPrioritizedRootControlCount,
+  cmpModalSignalsDetected = lastCmpModalSignalsDetected,
+  modalGeometryMatched = lastModalGeometryMatched,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1496,6 +1500,10 @@ function recordCurrentSiteDiagnostic({
         .slice(0, 3),
     prioritizedRootControlCount:
       Math.max(0, Number(prioritizedRootControlCount) || 0),
+    cmpModalSignalsDetected:
+      Boolean(cmpModalSignalsDetected),
+    modalGeometryMatched:
+      Boolean(modalGeometryMatched),
     lastUpdatedAt: now,
   }
 
@@ -1524,6 +1532,8 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       prioritizedCmpRootsFound: 0,
       prioritizedRootTexts: [],
       prioritizedRootControlCount: 0,
+      cmpModalSignalsDetected: false,
+      modalGeometryMatched: false,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -2502,6 +2512,9 @@ function isMarketingPopupWithoutCMPActions(element) {
 }
 
 function isReliableCMPRoot(element) {
+  const modalSignals =
+    getCMPModalSignalSummary(element)
+
   return Boolean(
     isElementLike(element) &&
       isVisible(element) &&
@@ -2511,7 +2524,10 @@ function isReliableCMPRoot(element) {
       !isExcludedCMPRootContext(element) &&
       !isLikelyNonCookieModal(element) &&
       !isMarketingPopupWithoutCMPActions(element) &&
-      hasCMPRootEvidence(element) &&
+      (
+        hasCMPRootEvidence(element) ||
+        modalSignals.cmpModalSignalsDetected
+      ) &&
       hasVisibleClickableControl(element)
   )
 }
@@ -2601,6 +2617,49 @@ function getVisibleClickableControlCount(root) {
     ).length
 }
 
+function hasVisibleCMPActionControl(root) {
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, 16)
+    .some((control) => {
+      if (
+        !isVisible(control) ||
+        getCookieDebugDisabledState(control) === 'disabled' ||
+        hasUnsafeAcceptText(control)
+      ) {
+        return false
+      }
+
+      const text =
+        getActionText(control)
+
+      return (
+        textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
+        textMatchesDictionaryCookieIntent(text, 'openSettings') ||
+        textHasAny(text, [
+          'reject',
+          'rechazar',
+          'no acepto',
+          'decline',
+          'cookies',
+          'privacy',
+          'privacidad',
+          'gestionar cookies',
+          'cookie settings',
+          'privacy settings',
+        ])
+      )
+    })
+}
+
 function getPrioritizedRootTextSnippet(root) {
   return normalizeMatchText(
     [
@@ -2632,6 +2691,72 @@ function isCenteredModalLikeRoot(element, rect) {
   )
 }
 
+function getCMPModalSignalSummary(element) {
+  const rect =
+    getSafeClientRect(element)
+  const style =
+    safeGetComputedStyle(element)
+
+  if (!rect || !style) {
+    return {
+      cmpModalSignalsDetected: false,
+      modalGeometryMatched: false,
+    }
+  }
+
+  const viewportWidth =
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    1
+  const viewportHeight =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    1
+  const viewportArea =
+    viewportWidth * viewportHeight
+  const zIndex =
+    Number.parseInt(style.zIndex, 10)
+  const dialogLike =
+    safeMatches(element, 'dialog, [role="dialog"], [aria-modal="true"]')
+  const overlayPosition =
+    style.position === 'fixed' ||
+    style.position === 'sticky' ||
+    (
+      style.position === 'absolute' &&
+      Number.isFinite(zIndex) &&
+      zIndex >= 10
+    )
+  const highZIndex =
+    Number.isFinite(zIndex) &&
+    zIndex >= 10
+  const centered =
+    isCenteredModalLikeRoot(element, rect)
+  const largeVisible =
+    rect.width >= Math.min(320, viewportWidth * 0.7) &&
+    rect.height >= 120 &&
+    (rect.width * rect.height) >= viewportArea * 0.06
+  const modalGeometryMatched =
+    dialogLike ||
+    overlayPosition ||
+    highZIndex ||
+    centered ||
+    largeVisible
+  const cmpTextSignal =
+    hasCMPRootEvidence(element) ||
+    hasCMPActionSignal(element)
+  const actionControlSignal =
+    hasVisibleCMPActionControl(element)
+  const cmpModalSignalsDetected =
+    modalGeometryMatched &&
+    cmpTextSignal &&
+    actionControlSignal
+
+  return {
+    cmpModalSignalsDetected,
+    modalGeometryMatched,
+  }
+}
+
 function isLikelyVisibleCMPModalRoot(element) {
   if (
     !isElementLike(element) ||
@@ -2659,6 +2784,8 @@ function isLikelyVisibleCMPModalRoot(element) {
 
   const zIndex =
     Number.parseInt(style.zIndex, 10)
+  const modalSignals =
+    getCMPModalSignalSummary(element)
   const modalLike =
     safeMatches(element, 'dialog, [role="dialog"], [aria-modal="true"]') ||
     style.position === 'fixed' ||
@@ -2669,7 +2796,10 @@ function isLikelyVisibleCMPModalRoot(element) {
     ) ||
     isCenteredModalLikeRoot(element, rect)
 
-  if (!modalLike || !hasVisibleClickableControl(element)) {
+  if (
+    (!modalLike && !modalSignals.modalGeometryMatched) ||
+    !hasVisibleClickableControl(element)
+  ) {
     return false
   }
 
@@ -2685,8 +2815,61 @@ function isLikelyVisibleCMPModalRoot(element) {
       .filter(Boolean)
       .join(' ')
 
-  return textHasAny(signal, bannerKeywords) ||
-    hasKnownCmpSignal(element)
+  return (
+    textHasAny(signal, bannerKeywords) ||
+    hasKnownCmpSignal(element) ||
+    modalSignals.cmpModalSignalsDetected
+  )
+}
+
+function findLikelyCMPModalRootFromControl(control) {
+  if (
+    !isElementLike(control) ||
+    !isVisible(control) ||
+    hasUnsafeAcceptText(control)
+  ) {
+    return null
+  }
+
+  const actionText =
+    getActionText(control)
+
+  if (
+    !textMatchesDictionaryCookieIntent(actionText, 'rejectAll') &&
+    !textMatchesDictionaryCookieIntent(actionText, 'openSettings') &&
+    !textHasAny(actionText, ['reject', 'rechazar', 'no acepto', 'cookies', 'privacy'])
+  ) {
+    return null
+  }
+
+  let current =
+    control.parentElement
+  let depth = 0
+  let bestRoot = null
+
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement &&
+    depth < 8
+  ) {
+    if (
+      isLikelyVisibleCMPModalRoot(current) ||
+      (
+        !isExcludedCMPRootContext(current) &&
+        !isMarketingPopupWithoutCMPActions(current) &&
+        !isLikelyNonCookieModal(current) &&
+        getCMPModalSignalSummary(current).cmpModalSignalsDetected
+      )
+    ) {
+      bestRoot = current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return bestRoot
 }
 
 function findPrioritizedVisibleCMPRoots() {
@@ -2701,10 +2884,43 @@ function findPrioritizedVisibleCMPRoots() {
     'body > div',
   ].join(',')
 
-  return safeQuerySelectorAll(document, selectors)
+  const directRoots =
+    safeQuerySelectorAll(document, selectors)
     .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
     .filter(isLikelyVisibleCMPModalRoot)
+
+  const controlRoots =
+    safeQuerySelectorAll(
+      document,
+      [
+        'button',
+        'a',
+        '[role="button"]',
+        'input[type="button"]',
+        'input[type="submit"]',
+      ].join(',')
+    )
+      .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+      .map(findLikelyCMPModalRootFromControl)
+      .filter(Boolean)
+
+  const roots =
+    uniqueElements([
+      ...directRoots,
+      ...controlRoots,
+    ])
     .slice(0, MAX_PRIORITIZED_CMP_ROOTS)
+
+  lastCmpModalSignalsDetected =
+    roots.some((root) =>
+      getCMPModalSignalSummary(root).cmpModalSignalsDetected
+    )
+  lastModalGeometryMatched =
+    roots.some((root) =>
+      getCMPModalSignalSummary(root).modalGeometryMatched
+    )
+
+  return roots
 }
 
 function findCookieBannerCandidates() {
@@ -2723,6 +2939,8 @@ function findCookieBannerCandidates() {
     lastPrioritizedCmpRootsFound = 0
     lastPrioritizedRootTexts = []
     lastPrioritizedRootControlCount = 0
+    lastCmpModalSignalsDetected = false
+    lastModalGeometryMatched = false
     return [activeCookieContainer]
   }
 
@@ -2865,6 +3083,10 @@ function getInitialCMPRootReason(element) {
 
   if (safeMatches(element, 'dialog, [role="dialog"], [aria-modal="true"]')) {
     return 'visible_modal_or_dialog'
+  }
+
+  if (getCMPModalSignalSummary(element).cmpModalSignalsDetected) {
+    return 'modal_geometry_cmp_signals'
   }
 
   return 'candidate'

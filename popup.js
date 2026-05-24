@@ -1459,6 +1459,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `excludedAsMarketingPopup: ${Boolean(diagnostic.excludedAsMarketingPopup)}`,
     `prioritizedCmpRootsFound: ${Math.max(0, Number(diagnostic.prioritizedCmpRootsFound) || 0)}`,
     `prioritizedRootControlCount: ${Math.max(0, Number(diagnostic.prioritizedRootControlCount) || 0)}`,
+    `cmpModalSignalsDetected: ${Boolean(diagnostic.cmpModalSignalsDetected)}`,
+    `modalGeometryMatched: ${Boolean(diagnostic.modalGeometryMatched)}`,
     ...prioritizedRootTexts.map((text) =>
       `root: ${text}`
     ),
