@@ -160,16 +160,23 @@ const safeRejectTexts = [
   'rechazar',
   'rechazar todo',
   'rechazar todas',
+  'rechazar las no necesarias',
+  'rechazar no necesarias',
   'denegar',
   'no acepto',
   'no acepto cookies',
   'continuar sin aceptar',
+  'solo necesarias',
+  'solo cookies necesarias',
+  'usar solo necesarias',
   'reject',
   'reject all',
   'reject optional cookies',
   'reject non-essential cookies',
   'decline',
   'disagree and close',
+  'continue without accepting',
+  'continue without consent',
   'decline all',
   'no consent',
   'do not consent',
@@ -183,6 +190,8 @@ const safeRejectTexts = [
   'only necessary',
   'necessary only',
   'essential only',
+  'essential cookies only',
+  'use essential cookies only',
 ]
 
 const totalRejectTexts = [
@@ -194,16 +203,23 @@ const totalRejectTexts = [
   'reject non essential cookies',
   'rechazar todo',
   'rechazar todas',
+  'rechazar las no necesarias',
+  'rechazar no necesarias',
   'rechazar cookies',
   'rechazar cookies opcionales',
   'rechazar cookies no esenciales',
   'no acepto',
   'no acepto cookies',
   'continuar sin aceptar',
+  'solo necesarias',
+  'solo cookies necesarias',
+  'usar solo necesarias',
   'decline all',
   'decline all btn',
   'declineall',
   'disagree and close',
+  'continue without accepting',
+  'continue without consent',
   'decline optional cookies',
   'decline non-essential cookies',
   'no consent',
@@ -237,6 +253,15 @@ const rejectTexts = [
   'decline',
   'disagree and close',
   'continuar sin aceptar',
+  'rechazar las no necesarias',
+  'rechazar no necesarias',
+  'solo necesarias',
+  'solo cookies necesarias',
+  'usar solo necesarias',
+  'continue without accepting',
+  'continue without consent',
+  'essential cookies only',
+  'use essential cookies only',
   'refuser',
   'ablehnen',
   'rifiuta',
@@ -247,8 +272,12 @@ const necessaryOnlyTexts = [
   'solo necesarias',
   'solo esenciales',
   'cookies necesarias',
+  'solo cookies necesarias',
+  'usar solo necesarias',
   'necessary only',
   'essential only',
+  'essential cookies only',
+  'use essential cookies only',
 ]
 
 const settingsTexts = [
@@ -1382,6 +1411,29 @@ function getDiagnosticControlTexts(candidates = [], extraControls = []) {
   return texts.slice(0, MAX_DIAGNOSTIC_CONTROLS)
 }
 
+function getMatchedRejectPhraseNormalized(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  if (!normalizedText) return ''
+
+  const phrases = [
+    ...totalRejectTexts,
+    ...safeRejectTexts,
+    ...rejectTexts,
+    ...necessaryOnlyTexts,
+  ]
+    .map(normalizeMatchText)
+    .filter(Boolean)
+    .sort((first, second) =>
+      second.length - first.length
+    )
+
+  return phrases.find((phrase) =>
+    textHasPhrase(normalizedText, phrase)
+  ) || ''
+}
+
 function recordCurrentSiteDiagnostic({
   status = 'skipped',
   reason = '',
@@ -1420,6 +1472,15 @@ function recordCurrentSiteDiagnostic({
               : ''
           )
       ).slice(0, 120),
+    matchedRejectPhraseNormalized:
+      getMatchedRejectPhraseNormalized(
+        matchedRejectText ||
+          (
+            matchedRejectElement
+              ? getActionText(matchedRejectElement)
+              : ''
+          )
+      ),
     blockedReason: String(blockedReason || '').slice(0, 120),
     rootTag: rootSummary.rootTag,
     rootClass: rootSummary.rootClass,
@@ -1454,6 +1515,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       reason,
       detectedControls: [],
       matchedRejectText: '',
+      matchedRejectPhraseNormalized: '',
       blockedReason: '',
       rootTag: '',
       rootClass: '',
