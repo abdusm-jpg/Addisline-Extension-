@@ -1463,6 +1463,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `modalGeometryMatched: ${Boolean(diagnostic.modalGeometryMatched)}`,
     `explicitRejectControlDetected: ${Boolean(diagnostic.explicitRejectControlDetected)}`,
     `newsletterSignalsDetected: ${Boolean(diagnostic.newsletterSignalsDetected)}`,
+    `derivedCmpRootFromControl: ${Boolean(diagnostic.derivedCmpRootFromControl)}`,
+    `derivedControlText: ${String(diagnostic.derivedControlText || 'none').slice(0, 80)}`,
     ...prioritizedRootTexts.map((text) =>
       `root: ${text}`
     ),

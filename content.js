@@ -45,6 +45,8 @@ let lastCmpModalSignalsDetected = false
 let lastModalGeometryMatched = false
 let lastExplicitRejectControlDetected = false
 let lastNewsletterSignalsDetected = false
+let lastDerivedCmpRootFromControl = false
+let lastDerivedControlText = ''
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -693,6 +695,15 @@ const explicitRejectControlTexts = [
   'rechazar las no necesarias',
   'rechazar no necesarias',
   'no acepto',
+]
+
+const cmpRootDerivationControlTexts = [
+  'rechazar todas',
+  'rechazar todo',
+  'rechazar las no necesarias',
+  'no acepto',
+  'personalizar',
+  'aceptar todas',
 ]
 
 const knownCmpKeywords = [
@@ -1466,6 +1477,8 @@ function recordCurrentSiteDiagnostic({
   modalGeometryMatched = lastModalGeometryMatched,
   explicitRejectControlDetected = lastExplicitRejectControlDetected,
   newsletterSignalsDetected = lastNewsletterSignalsDetected,
+  derivedCmpRootFromControl = lastDerivedCmpRootFromControl,
+  derivedControlText = lastDerivedControlText,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1525,6 +1538,10 @@ function recordCurrentSiteDiagnostic({
       Boolean(explicitRejectControlDetected),
     newsletterSignalsDetected:
       Boolean(newsletterSignalsDetected),
+    derivedCmpRootFromControl:
+      Boolean(derivedCmpRootFromControl),
+    derivedControlText:
+      String(derivedControlText || '').slice(0, 120),
     lastUpdatedAt: now,
   }
 
@@ -1557,6 +1574,8 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       modalGeometryMatched: false,
       explicitRejectControlDetected: false,
       newsletterSignalsDetected: false,
+      derivedCmpRootFromControl: false,
+      derivedControlText: '',
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -3004,6 +3023,163 @@ function findLikelyCMPModalRootFromControl(control) {
   return bestRoot
 }
 
+function textMatchesCMPRootDerivationControl(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return (
+    textHasAny(normalizedText, cmpRootDerivationControlTexts) ||
+    textMatchesDictionaryCookieIntent(normalizedText, 'rejectAll') ||
+    textMatchesLightweightSettingsOpen(normalizedText)
+  )
+}
+
+function getVisibleCMPControlCount(root) {
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, 12)
+    .filter((control) =>
+      isVisible(control) &&
+      textMatchesCMPRootDerivationControl(getActionText(control))
+    ).length
+}
+
+function hasDerivedCMPRootTextEvidence(root) {
+  const text =
+    normalizeMatchText([
+      getText(root).slice(0, 1000),
+      getElementActionText(root).slice(0, 600),
+      root?.id,
+      getClassNameText(root),
+      root?.getAttribute?.('aria-label'),
+      getDatasetText(root),
+    ].join(' '))
+
+  return (
+    hasCMPRootEvidence(root) ||
+    textHasAny(text, [
+      'cookie',
+      'cookies',
+      'privacy',
+      'privacidad',
+      'consent',
+      'consentimiento',
+    ])
+  )
+}
+
+function isDerivedCMPRootCandidate(root) {
+  if (
+    !isElementLike(root) ||
+    !isVisible(root) ||
+    root === document.body ||
+    root === document.documentElement ||
+    isTextFragmentOrControl(root) ||
+    isExcludedCMPRootContext(root) ||
+    isLikelyNonCookieModal(root) ||
+    isMarketingPopupWithoutCMPActions(root)
+  ) {
+    return false
+  }
+
+  const rect =
+    getSafeClientRect(root)
+
+  if (!rect || rect.width < 220 || rect.height < 70) {
+    return false
+  }
+
+  const visibleControlCount =
+    getVisibleClickableControlCount(root)
+  const cmpControlCount =
+    getVisibleCMPControlCount(root)
+  const modalSignals =
+    getCMPModalSignalSummary(root)
+  const modalLikeSize =
+    modalSignals.modalGeometryMatched ||
+    (
+      rect.width >= 260 &&
+      rect.height >= 90
+    )
+
+  return (
+    modalLikeSize &&
+    visibleControlCount >= 2 &&
+    (
+      hasDerivedCMPRootTextEvidence(root) ||
+      cmpControlCount >= 2 ||
+      modalSignals.explicitRejectControlDetected
+    )
+  )
+}
+
+function deriveCMPRootFromVisibleControl(control) {
+  if (
+    !isElementLike(control) ||
+    !isVisible(control)
+  ) {
+    return null
+  }
+
+  const controlText =
+    getActionText(control)
+
+  if (!textMatchesCMPRootDerivationControl(controlText)) {
+    return null
+  }
+
+  let current =
+    control.parentElement
+  let depth = 0
+  let bestRoot = null
+
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement &&
+    depth < 5
+  ) {
+    if (isDerivedCMPRootCandidate(current)) {
+      bestRoot = current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return bestRoot
+}
+
+function findButtonDerivedCMPRoots() {
+  return safeQuerySelectorAll(
+    document,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+    .filter((control) =>
+      isVisible(control) &&
+      textMatchesCMPRootDerivationControl(getActionText(control))
+    )
+    .map((control) => ({
+      control,
+      root: deriveCMPRootFromVisibleControl(control),
+    }))
+}
+
 function getPrioritizedCMPRootScore(root) {
   const summary =
     getCMPModalSignalSummary(root)
@@ -3074,11 +3250,16 @@ function findPrioritizedVisibleCMPRoots() {
       .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
       .map(findLikelyCMPModalRootFromControl)
       .filter(Boolean)
+  const buttonDerivedRoots =
+    findButtonDerivedCMPRoots()
 
   const roots =
     uniqueElements([
       ...directRoots,
       ...controlRoots,
+      ...buttonDerivedRoots
+        .map((result) => result.root)
+        .filter(Boolean),
     ])
     .sort((first, second) =>
       getPrioritizedCMPRootScore(second) -
@@ -3102,6 +3283,17 @@ function findPrioritizedVisibleCMPRoots() {
     roots.some((root) =>
       getCMPModalSignalSummary(root).newsletterSignalsDetected
     )
+  const derivedMatch =
+    buttonDerivedRoots.find((result) =>
+      roots.includes(result.root)
+    )
+  lastDerivedCmpRootFromControl =
+    Boolean(derivedMatch)
+  lastDerivedControlText =
+    (derivedMatch || buttonDerivedRoots[0])
+      ? getActionText((derivedMatch || buttonDerivedRoots[0]).control)
+        .slice(0, 120)
+      : ''
 
   return roots
 }
@@ -3126,6 +3318,8 @@ function findCookieBannerCandidates() {
     lastModalGeometryMatched = false
     lastExplicitRejectControlDetected = false
     lastNewsletterSignalsDetected = false
+    lastDerivedCmpRootFromControl = false
+    lastDerivedControlText = ''
     return [activeCookieContainer]
   }
 
