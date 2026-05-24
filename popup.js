@@ -1469,6 +1469,9 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     `shadowControlProbeCount: ${Math.max(0, Number(diagnostic.shadowControlProbeCount) || 0)}`,
     `accessibleIframeCount: ${Math.max(0, Number(diagnostic.accessibleIframeCount) || 0)}`,
     `inaccessibleIframeCount: ${Math.max(0, Number(diagnostic.inaccessibleIframeCount) || 0)}`,
+    `iframeCmpDetected: ${Boolean(diagnostic.iframeCmpDetected)}`,
+    `iframeRejectDetected: ${Boolean(diagnostic.iframeRejectDetected)}`,
+    `iframeDomain: ${String(diagnostic.iframeDomain || 'none').slice(0, 80)}`,
     ...(Array.isArray(diagnostic.iframeProbeMatchedControls)
       ? diagnostic.iframeProbeMatchedControls
           .filter(Boolean)

@@ -52,6 +52,9 @@ let lastShadowControlProbeCount = 0
 let lastAccessibleIframeCount = 0
 let lastInaccessibleIframeCount = 0
 let lastIframeProbeMatchedControls = []
+let lastIframeCmpDetected = false
+let lastIframeRejectDetected = false
+let lastIframeDomain = ''
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -125,6 +128,7 @@ const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
+const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
 const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 5
 const MAX_PAGE_ACTIONS = 16
 const MAX_PAGE_TRAVERSALS = 500
@@ -1496,6 +1500,9 @@ function recordCurrentSiteDiagnostic({
   accessibleIframeCount = lastAccessibleIframeCount,
   inaccessibleIframeCount = lastInaccessibleIframeCount,
   iframeProbeMatchedControls = lastIframeProbeMatchedControls,
+  iframeCmpDetected = lastIframeCmpDetected,
+  iframeRejectDetected = lastIframeRejectDetected,
+  iframeDomain = lastIframeDomain,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1573,6 +1580,12 @@ function recordCurrentSiteDiagnostic({
         : [])
         .filter(Boolean)
         .slice(0, 5),
+    iframeCmpDetected:
+      Boolean(iframeCmpDetected),
+    iframeRejectDetected:
+      Boolean(iframeRejectDetected),
+    iframeDomain:
+      String(iframeDomain || '').slice(0, 120),
     lastUpdatedAt: now,
   }
 
@@ -1612,6 +1625,9 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       accessibleIframeCount: 0,
       inaccessibleIframeCount: 0,
       iframeProbeMatchedControls: [],
+      iframeCmpDetected: false,
+      iframeRejectDetected: false,
+      iframeDomain: '',
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -2184,7 +2200,10 @@ function safeGetComputedStyle(element) {
   if (!isElementLike(element)) return null
 
   try {
-    return window.getComputedStyle(element)
+    const view =
+      element.ownerDocument?.defaultView || window
+
+    return view.getComputedStyle(element)
   } catch {
     return null
   }
@@ -3309,9 +3328,9 @@ function deriveCMPRootFromVisibleControl(control) {
   return bestRoot
 }
 
-function findButtonDerivedCMPRoots() {
+function findButtonDerivedCMPRoots(root = document) {
   return safeQuerySelectorAll(
-    document,
+    root,
     [
       'button',
       'a',
@@ -3329,6 +3348,136 @@ function findButtonDerivedCMPRoots() {
       control,
       root: deriveCMPRootFromVisibleControl(control),
     }))
+}
+
+function getAccessibleIframeDocument(iframe) {
+  try {
+    const iframeDocument =
+      iframe.contentDocument ||
+      iframe.contentWindow?.document
+
+    if (!iframeDocument?.documentElement) {
+      return null
+    }
+
+    return iframeDocument
+  } catch {
+    return null
+  }
+}
+
+function isVisibleMeaningfulIframe(iframe) {
+  if (!isVisible(iframe)) return false
+
+  const rect =
+    getSafeClientRect(iframe)
+
+  return Boolean(
+    rect &&
+      rect.width >= 220 &&
+      rect.height >= 100
+  )
+}
+
+function getFrameDomain(frameDocument) {
+  try {
+    return new URL(frameDocument.location.href).hostname
+  } catch {
+    return ''
+  }
+}
+
+function getPriorityRootSelectors() {
+  return [
+    'dialog',
+    '[role="dialog"]',
+    '[aria-modal="true"]',
+    '[class*="modal" i]',
+    '[class*="overlay" i]',
+    '[class*="popup" i]',
+    '[style*="z-index" i]',
+    'body > div',
+  ].join(',')
+}
+
+function getPriorityControlSelectors() {
+  return [
+    'button',
+    'a',
+    '[role="button"]',
+    'input[type="button"]',
+    'input[type="submit"]',
+  ].join(',')
+}
+
+function findPriorityCMPRootsInDocument(rootDocument) {
+  const directRoots =
+    safeQuerySelectorAll(rootDocument, getPriorityRootSelectors())
+      .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+      .filter(isLikelyVisibleCMPModalRoot)
+
+  const controlRoots =
+    safeQuerySelectorAll(rootDocument, getPriorityControlSelectors())
+      .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+      .map(findLikelyCMPModalRootFromControl)
+      .filter(Boolean)
+  const buttonDerivedRoots =
+    findButtonDerivedCMPRoots(rootDocument)
+
+  return uniqueElements([
+    ...directRoots,
+    ...controlRoots,
+    ...buttonDerivedRoots
+      .map((result) => result.root)
+      .filter(Boolean),
+  ])
+    .sort((first, second) =>
+      getPrioritizedCMPRootScore(second) -
+      getPrioritizedCMPRootScore(first)
+    )
+    .slice(0, MAX_PRIORITIZED_CMP_ROOTS)
+}
+
+function findSameOriginIframeCMPRoots() {
+  const iframeRoots = []
+
+  lastIframeCmpDetected = false
+  lastIframeRejectDetected = false
+  lastIframeDomain = ''
+
+  safeQuerySelectorAll(document, 'iframe')
+    .filter(isVisibleMeaningfulIframe)
+    .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES)
+    .forEach((iframe) => {
+      const iframeDocument =
+        getAccessibleIframeDocument(iframe)
+
+      if (!iframeDocument) return
+
+      const roots =
+        findPriorityCMPRootsInDocument(iframeDocument)
+
+      if (roots.length === 0) return
+
+      if (!lastIframeDomain) {
+        lastIframeDomain = getFrameDomain(iframeDocument)
+      }
+
+      lastIframeCmpDetected = true
+      if (
+        roots.some((root) =>
+          getCMPModalSignalSummary(root).explicitRejectControlDetected ||
+          hasExplicitRejectControl(root)
+        )
+      ) {
+        lastIframeRejectDetected = true
+      }
+
+      iframeRoots.push(...roots)
+    })
+
+  return uniqueElements(iframeRoots)
+    .slice(0, MAX_PRIORITIZED_CMP_ROOTS)
 }
 
 function getPrioritizedCMPRootScore(root) {
@@ -3373,46 +3522,10 @@ function getPrioritizedCMPRootScore(root) {
 function findPrioritizedVisibleCMPRoots() {
   updateCMPReachabilityProbeDiagnostics()
 
-  const selectors = [
-    'dialog',
-    '[role="dialog"]',
-    '[aria-modal="true"]',
-    '[class*="modal" i]',
-    '[class*="overlay" i]',
-    '[class*="popup" i]',
-    '[style*="z-index" i]',
-    'body > div',
-  ].join(',')
-
-  const directRoots =
-    safeQuerySelectorAll(document, selectors)
-    .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
-    .filter(isLikelyVisibleCMPModalRoot)
-
-  const controlRoots =
-    safeQuerySelectorAll(
-      document,
-      [
-        'button',
-        'a',
-        '[role="button"]',
-        'input[type="button"]',
-        'input[type="submit"]',
-      ].join(',')
-    )
-      .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
-      .map(findLikelyCMPModalRootFromControl)
-      .filter(Boolean)
-  const buttonDerivedRoots =
-    findButtonDerivedCMPRoots()
-
   const roots =
     uniqueElements([
-      ...directRoots,
-      ...controlRoots,
-      ...buttonDerivedRoots
-        .map((result) => result.root)
-        .filter(Boolean),
+      ...findPriorityCMPRootsInDocument(document),
+      ...findSameOriginIframeCMPRoots(),
     ])
     .sort((first, second) =>
       getPrioritizedCMPRootScore(second) -
@@ -3437,14 +3550,14 @@ function findPrioritizedVisibleCMPRoots() {
       getCMPModalSignalSummary(root).newsletterSignalsDetected
     )
   const derivedMatch =
-    buttonDerivedRoots.find((result) =>
+    findButtonDerivedCMPRoots().find((result) =>
       roots.includes(result.root)
     )
   lastDerivedCmpRootFromControl =
     Boolean(derivedMatch)
   lastDerivedControlText =
-    (derivedMatch || buttonDerivedRoots[0])
-      ? getActionText((derivedMatch || buttonDerivedRoots[0]).control)
+    derivedMatch
+      ? getActionText(derivedMatch.control)
         .slice(0, 120)
       : ''
 
@@ -3478,6 +3591,9 @@ function findCookieBannerCandidates() {
     lastAccessibleIframeCount = 0
     lastInaccessibleIframeCount = 0
     lastIframeProbeMatchedControls = []
+    lastIframeCmpDetected = false
+    lastIframeRejectDetected = false
+    lastIframeDomain = ''
     return [activeCookieContainer]
   }
 
@@ -6620,25 +6736,28 @@ function clickElementSafely(element, options = {}) {
 
   processedActionElements.add(element)
   try {
+    const eventView =
+      element.ownerDocument?.defaultView || window
+
     if (
       options.includePointerEvents &&
-      typeof PointerEvent === 'function'
+      typeof eventView.PointerEvent === 'function'
     ) {
       element.dispatchEvent(
-        new PointerEvent('pointerdown', {
+        new eventView.PointerEvent('pointerdown', {
           bubbles: true,
           cancelable: true,
-          view: window,
+          view: eventView,
           pointerType: 'mouse',
           isPrimary: true,
         })
       )
 
       element.dispatchEvent(
-        new PointerEvent('pointerup', {
+        new eventView.PointerEvent('pointerup', {
           bubbles: true,
           cancelable: true,
-          view: window,
+          view: eventView,
           pointerType: 'mouse',
           isPrimary: true,
         })
@@ -6646,18 +6765,18 @@ function clickElementSafely(element, options = {}) {
     }
 
     element.dispatchEvent(
-      new MouseEvent('mousedown', {
+      new eventView.MouseEvent('mousedown', {
         bubbles: true,
         cancelable: true,
-        view: window,
+        view: eventView,
       })
     )
 
     element.dispatchEvent(
-      new MouseEvent('mouseup', {
+      new eventView.MouseEvent('mouseup', {
         bubbles: true,
         cancelable: true,
-        view: window,
+        view: eventView,
       })
     )
 
