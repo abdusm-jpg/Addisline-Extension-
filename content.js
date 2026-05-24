@@ -2051,7 +2051,8 @@ function isVisible(element) {
   const rect = getSafeClientRect(element)
   if (!rect) return false
 
-  const style = window.getComputedStyle(element)
+  const style = safeGetComputedStyle(element)
+  if (!style) return false
 
   return (
     ((element.offsetWidth || 0) > 0 ||
@@ -2064,21 +2065,76 @@ function isVisible(element) {
   )
 }
 
-function isGeometryElement(value) {
+function isElementLike(value) {
   return Boolean(
     value &&
-      value.nodeType === Node.ELEMENT_NODE &&
+      typeof value === 'object' &&
+      value.nodeType === 1 &&
       typeof value.getBoundingClientRect === 'function'
   )
 }
 
-function getSafeClientRect(element) {
-  if (!isGeometryElement(element)) return null
+function isGeometryElement(value) {
+  return isElementLike(value)
+}
+
+function safeGetRect(element) {
+  if (!isElementLike(element)) return null
 
   try {
     return element.getBoundingClientRect()
   } catch {
     return null
+  }
+}
+
+function getSafeClientRect(element) {
+  return safeGetRect(element)
+}
+
+function safeGetComputedStyle(element) {
+  if (!isElementLike(element)) return null
+
+  try {
+    return window.getComputedStyle(element)
+  } catch {
+    return null
+  }
+}
+
+function safeMatches(element, selector) {
+  if (!isElementLike(element) || typeof element.matches !== 'function') {
+    return false
+  }
+
+  try {
+    return element.matches(selector)
+  } catch {
+    return false
+  }
+}
+
+function safeClosest(element, selector) {
+  if (!isElementLike(element) || typeof element.closest !== 'function') {
+    return null
+  }
+
+  try {
+    return element.closest(selector)
+  } catch {
+    return null
+  }
+}
+
+function safeQuerySelectorAll(root, selector) {
+  if (!root || typeof root.querySelectorAll !== 'function') {
+    return []
+  }
+
+  try {
+    return Array.from(root.querySelectorAll(selector))
+  } catch {
+    return []
   }
 }
 
@@ -2204,15 +2260,12 @@ function querySelectorAllDeep(selector, root = document) {
 
     visitedRoots.add(currentRoot)
 
-    try {
-      results.push(
-        ...Array.from(currentRoot.querySelectorAll(selector))
-      )
-      if (results.length >= MAX_DOM_QUERY_RESULTS) {
-        results.length = MAX_DOM_QUERY_RESULTS
-        return
-      }
-    } catch {
+    const selectedElements =
+      safeQuerySelectorAll(currentRoot, selector)
+
+    results.push(...selectedElements)
+    if (results.length >= MAX_DOM_QUERY_RESULTS) {
+      results.length = MAX_DOM_QUERY_RESULTS
       return
     }
 
@@ -2220,18 +2273,14 @@ function querySelectorAllDeep(selector, root = document) {
       return
     }
 
-    try {
-      currentRoot.querySelectorAll('*').forEach((element) => {
-        if (results.length >= MAX_DOM_QUERY_RESULTS) {
-          return
-        }
-        if (element.shadowRoot) {
-          collect(element.shadowRoot)
-        }
-      })
-    } catch {
-      // Some detached roots can throw while a CMP re-renders.
-    }
+    safeQuerySelectorAll(currentRoot, '*').forEach((element) => {
+      if (results.length >= MAX_DOM_QUERY_RESULTS) {
+        return
+      }
+      if (element.shadowRoot) {
+        collect(element.shadowRoot)
+      }
+    })
   }
 
   collect(root)
@@ -2290,7 +2339,7 @@ function hasStrongCookieSignal(element) {
 }
 
 function isLikelyNonCookieModal(element) {
-  if (!element) return false
+  if (!isElementLike(element)) return false
 
   const signal = [
     getText(element).slice(0, 1200),
@@ -2310,7 +2359,8 @@ function isLikelyNonCookieModal(element) {
 
 function isInsideNonCookieModal(element) {
   const modal =
-    element?.closest?.(
+    safeClosest(
+      element,
       [
         'dialog',
         '[role="dialog"]',
@@ -2325,25 +2375,24 @@ function isInsideNonCookieModal(element) {
 }
 
 function isTextFragmentOrControl(element) {
-  return Boolean(
-    element?.matches?.(
-      [
-        'button',
-        'a',
-        'span',
-        'strong',
-        'p',
-        'em',
-        'b',
-        'i',
-        'small',
-        'label',
-        'input',
-        'textarea',
-        'select',
-        '[role="button"]',
-      ].join(',')
-    )
+  return safeMatches(
+    element,
+    [
+      'button',
+      'a',
+      'span',
+      'strong',
+      'p',
+      'em',
+      'b',
+      'i',
+      'small',
+      'label',
+      'input',
+      'textarea',
+      'select',
+      '[role="button"]',
+    ].join(',')
   )
 }
 
@@ -2377,7 +2426,8 @@ function hasKnownCmpSignal(element) {
 
 function isExcludedCMPRootContext(element) {
   const excludedRoot =
-    element?.closest?.(
+    safeClosest(
+      element,
       [
         'footer',
         'header',
@@ -2453,7 +2503,7 @@ function isMarketingPopupWithoutCMPActions(element) {
 
 function isReliableCMPRoot(element) {
   return Boolean(
-    element &&
+    isElementLike(element) &&
       isVisible(element) &&
       !isTextFragmentOrControl(element) &&
       element !== document.body &&
@@ -2468,7 +2518,7 @@ function isReliableCMPRoot(element) {
 
 function isPotentialCookieContainer(element) {
   if (
-    !element ||
+    !isElementLike(element) ||
     !isVisible(element) ||
     isTextFragmentOrControl(element) ||
     element === document.body ||
@@ -2476,7 +2526,7 @@ function isPotentialCookieContainer(element) {
     isExcludedCMPRootContext(element) ||
     isLikelyNonCookieModal(element) ||
     isMarketingPopupWithoutCMPActions(element) ||
-    element.matches?.('form, nav, header, main, article')
+    safeMatches(element, 'form, nav, header, main, article')
   ) {
     return false
   }
@@ -2516,49 +2566,39 @@ function getCookieContainer(element) {
 }
 
 function hasVisibleClickableControl(root) {
-  try {
-    return Array.from(
-      root.querySelectorAll(
-        [
-          'button',
-          'a',
-          '[role="button"]',
-          'input[type="button"]',
-          'input[type="submit"]',
-        ].join(',')
-      )
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, 12)
+    .some((control) =>
+      isVisible(control) &&
+      getCookieDebugDisabledState(control) !== 'disabled'
     )
-      .slice(0, 12)
-      .some((control) =>
-        isVisible(control) &&
-        getCookieDebugDisabledState(control) !== 'disabled'
-      )
-  } catch {
-    return false
-  }
 }
 
 function getVisibleClickableControlCount(root) {
-  try {
-    return Array.from(
-      root.querySelectorAll(
-        [
-          'button',
-          'a',
-          '[role="button"]',
-          'input[type="button"]',
-          'input[type="submit"]',
-        ].join(',')
-      )
-    )
-      .slice(0, 20)
-      .filter((control) =>
-        isVisible(control) &&
-        getCookieDebugDisabledState(control) !== 'disabled'
-      ).length
-  } catch {
-    return 0
-  }
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, 20)
+    .filter((control) =>
+      isVisible(control) &&
+      getCookieDebugDisabledState(control) !== 'disabled'
+    ).length
 }
 
 function getPrioritizedRootTextSnippet(root) {
@@ -2594,12 +2634,12 @@ function isCenteredModalLikeRoot(element, rect) {
 
 function isLikelyVisibleCMPModalRoot(element) {
   if (
-    !element ||
+    !isElementLike(element) ||
     !isVisible(element) ||
     element === document.body ||
     element === document.documentElement ||
     isExcludedCMPRootContext(element) ||
-    element.matches?.('form, nav, header, main, article') ||
+    safeMatches(element, 'form, nav, header, main, article') ||
     isMarketingPopupWithoutCMPActions(element) ||
     isLikelyNonCookieModal(element)
   ) {
@@ -2614,11 +2654,13 @@ function isLikelyVisibleCMPModalRoot(element) {
   }
 
   const style =
-    window.getComputedStyle(element)
+    safeGetComputedStyle(element)
+  if (!style) return false
+
   const zIndex =
     Number.parseInt(style.zIndex, 10)
   const modalLike =
-    element.matches?.('dialog, [role="dialog"], [aria-modal="true"]') ||
+    safeMatches(element, 'dialog, [role="dialog"], [aria-modal="true"]') ||
     style.position === 'fixed' ||
     style.position === 'sticky' ||
     (
@@ -2659,14 +2701,10 @@ function findPrioritizedVisibleCMPRoots() {
     'body > div',
   ].join(',')
 
-  try {
-    return Array.from(document.querySelectorAll(selectors))
-      .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
-      .filter(isLikelyVisibleCMPModalRoot)
-      .slice(0, MAX_PRIORITIZED_CMP_ROOTS)
-  } catch {
-    return []
-  }
+  return safeQuerySelectorAll(document, selectors)
+    .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+    .filter(isLikelyVisibleCMPModalRoot)
+    .slice(0, MAX_PRIORITIZED_CMP_ROOTS)
 }
 
 function findCookieBannerCandidates() {
@@ -2825,7 +2863,7 @@ function getInitialCMPRootReason(element) {
     return 'cookie_banner_signal'
   }
 
-  if (element.matches?.('dialog, [role="dialog"], [aria-modal="true"]')) {
+  if (safeMatches(element, 'dialog, [role="dialog"], [aria-modal="true"]')) {
     return 'visible_modal_or_dialog'
   }
 
@@ -2974,7 +3012,8 @@ function selectInitialCMPRoot(candidates = []) {
 
 function hasSensitiveInput(element) {
   return Boolean(
-    element.querySelector?.(
+    safeQuerySelectorAll(
+      element,
       [
         'input[type="password"]',
         'input[type="email"]',
@@ -2983,12 +3022,13 @@ function hasSensitiveInput(element) {
         'input[autocomplete*="cc-" i]',
         'textarea',
       ].join(',')
-    )
+    ).length
   )
 }
 
 function hasSensitiveContext(element) {
-  const context = element.closest?.(
+  const context = safeClosest(
+    element,
     'form, nav, header, main, article'
   )
 
@@ -3041,7 +3081,7 @@ function isSafeToHide(element) {
 
   if (
     isTextFragmentOrControl(element) ||
-    element.matches?.('form, nav, header, main, article') ||
+    safeMatches(element, 'form, nav, header, main, article') ||
     isLikelyNonCookieModal(element) ||
     hasSensitiveInput(element) ||
     hasSensitiveContext(element) ||
@@ -3064,9 +3104,10 @@ function hasPageScrollLock() {
     document.documentElement,
     document.body,
   ].some((element) => {
-    if (!element) return false
+    if (!isElementLike(element)) return false
 
-    const style = window.getComputedStyle(element)
+    const style = safeGetComputedStyle(element)
+    if (!style) return false
 
     return (
       style.overflow === 'hidden' ||
@@ -3263,7 +3304,8 @@ function getNearbyActionContext(element, container) {
     element?.parentElement
 
   const closestControlGroup =
-    element?.closest?.(
+    safeClosest(
+      element,
       [
         'li',
         'p',
@@ -3279,7 +3321,8 @@ function getNearbyActionContext(element, container) {
     )
 
   const cmpContext =
-    element?.closest?.(
+    safeClosest(
+      element,
       [
         '[id*="cookie" i]',
         '[class*="cookie" i]',
@@ -4872,7 +4915,7 @@ function getInitialMoreOptionsControls(container = document) {
     controls.push(control)
   }
 
-  if (container?.matches?.(buttonSelector)) {
+  if (safeMatches(container, buttonSelector)) {
     addControl(container)
   }
 
@@ -5108,7 +5151,7 @@ function getInitialMoreOptionsButtonDiagnostics(
     controls.filter((control) =>
       control?.tagName?.toLowerCase?.() === 'button' ||
       control?.getAttribute?.('role') === 'button' ||
-      control?.matches?.('input[type="button"], input[type="submit"]')
+      safeMatches(control, 'input[type="button"], input[type="submit"]')
     )
   const matchingButton =
     buttons.find((button) =>
@@ -5475,7 +5518,8 @@ function traceRejectedSettingsCandidates(container, reason) {
 function getBannerActionSignature(element) {
   const container =
     getCookieContainer(element) ||
-    element?.closest?.(
+    safeClosest(
+      element,
       [
         '[role="dialog"]',
         '[aria-modal="true"]',
@@ -6255,7 +6299,7 @@ function getBannerVerificationState(container) {
       : findCookieBannerCandidates()[0]
 
   const style =
-    currentContainer ? window.getComputedStyle(currentContainer) : null
+    safeGetComputedStyle(currentContainer)
 
   const bannerVisible =
     Boolean(currentContainer && isVisible(currentContainer))
@@ -6275,7 +6319,8 @@ function getBannerVerificationState(container) {
 
   const modalPresent =
     Boolean(
-      currentContainer?.matches?.(
+      safeMatches(
+        currentContainer,
         'dialog, [role="dialog"], [aria-modal="true"]'
       ) ||
       findCookiePreferencesPanel()
@@ -6685,7 +6730,9 @@ function hasVisualEnabledState(control) {
   if (!control || !isVisible(control)) return false
 
   const style =
-    window.getComputedStyle(control)
+    safeGetComputedStyle(control)
+  if (!style) return false
+
   const classText =
     normalizeMatchText(getClassNameText(control))
   const stateText =
@@ -6729,7 +6776,7 @@ function hasVisualEnabledState(control) {
       .some((child) => {
         if (!isVisible(child)) return false
         const transform =
-          window.getComputedStyle(child).transform
+          safeGetComputedStyle(child)?.transform
         const matrixMatch =
           String(transform || '').match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([-.\d]+)/)
 
@@ -6745,7 +6792,8 @@ function hasVisualEnabledState(control) {
     .some((child) => {
       if (!isVisible(child)) return false
       const childStyle =
-        window.getComputedStyle(child)
+        safeGetComputedStyle(child)
+      if (!childStyle) return false
 
       return (
         isBlueEnabledColor(childStyle.backgroundColor) ||
@@ -6808,7 +6856,8 @@ function isLikelyCustomVisualSwitchControl(element) {
     ].join(' '))
 
   return (
-    element.matches?.(
+    safeMatches(
+      element,
       '[aria-checked], [aria-pressed], [role="switch"], [role="checkbox"], [data-state], [data-checked], [data-enabled], [class*="switch" i], [class*="toggle" i], [class*="slider" i], button'
     ) ||
     textHasAny(classText, ['switch', 'toggle', 'slider', 'knob', 'thumb']) ||
@@ -6864,7 +6913,7 @@ function getCustomVisualToggleControls(container) {
       if (!root || !isVisible(root)) return
 
       const candidates =
-        root.matches?.('*')
+        safeMatches(root, '*')
           ? [
               root,
               ...querySelectorAllDeep(
@@ -6958,8 +7007,9 @@ function getNearbyPreferenceText(control) {
     .map(getText)
     .join(' ')
 
-  const label = control.closest?.('label')
-  const context = control.closest?.(
+  const label = safeClosest(control, 'label')
+  const context = safeClosest(
+    control,
     [
       'li',
       'fieldset',
@@ -7025,7 +7075,7 @@ function getAssociatedLabelText(control) {
       : null
 
   const closestLabel =
-    control.closest?.('label')
+    safeClosest(control, 'label')
 
   return [
     explicitLabel ? getText(explicitLabel) : '',
@@ -7081,7 +7131,8 @@ function getAncestorContextText(control) {
   }
 
   const section =
-    control.closest?.(
+    safeClosest(
+      control,
       [
         'section',
         'fieldset',
@@ -7110,7 +7161,7 @@ function getAncestorContextText(control) {
 function getControlledPreferenceContextText(control) {
   const parts = []
   const tabPanel =
-    control.closest?.('[role="tabpanel"], [id]')
+    safeClosest(control, '[role="tabpanel"], [id]')
 
   if (tabPanel?.id) {
     try {
@@ -7129,7 +7180,7 @@ function getControlledPreferenceContextText(control) {
   }
 
   const selectedTab =
-    control.closest?.('[role="dialog"], [aria-modal="true"], [class*="preference" i], [class*="consent" i]')
+    safeClosest(control, '[role="dialog"], [aria-modal="true"], [class*="preference" i], [class*="consent" i]')
       ?.querySelector?.('[role="tab"][aria-selected="true"]')
 
   if (selectedTab) {
@@ -7190,7 +7241,8 @@ function isExplicitToggleControl(control) {
     getActionText(control)
 
   return Boolean(
-    control.matches?.(
+    safeMatches(
+      control,
       [
         'input[type="checkbox"]',
         '[role="checkbox"]',
@@ -7320,7 +7372,8 @@ function isPreferenceSectionControl(control) {
   }
 
   if (
-    control.matches?.(
+    safeMatches(
+      control,
       'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [aria-checked], [class*="toggle" i], [class*="switch" i], [class*="slider" i]'
     )
   ) {
@@ -7334,7 +7387,8 @@ function isPreferenceSectionControl(control) {
   return (
     text.length <= 600 ||
     Boolean(
-      control.matches?.(
+      safeMatches(
+        control,
         'button, a, [role="button"], [role="tab"], [aria-controls], [aria-expanded], [data-action], [onclick], [tabindex]'
       )
     )
@@ -7555,7 +7609,8 @@ function isSafePreferenceExpansionControl(control, panel, depth) {
   }
 
   if (
-    control.matches?.(
+    safeMatches(
+      control,
       'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [aria-checked], [class*="toggle" i], [class*="switch" i], [class*="slider" i]'
     )
   ) {
@@ -7576,7 +7631,8 @@ function isSafePreferenceExpansionControl(control, panel, depth) {
     textHasAny(contextText, preferenceExpansionTexts) ||
     (
       Boolean(
-        control.matches?.(
+        safeMatches(
+          control,
           'button, a, [role="button"], [role="tab"], [aria-controls], [aria-expanded], [data-action], [onclick], [tabindex]'
         )
       ) &&
@@ -7823,11 +7879,11 @@ function getConsentToggleState(control) {
     return 'disabled'
   }
 
-  if (control.matches?.('input[type="checkbox"]')) {
+  if (safeMatches(control, 'input[type="checkbox"]')) {
     return control.checked ? 'enabled' : 'disabled'
   }
 
-  if (control.matches?.('input[type="radio"]')) {
+  if (safeMatches(control, 'input[type="radio"]')) {
     return control.checked ? 'enabled' : 'disabled'
   }
 
@@ -7937,11 +7993,11 @@ function isToggleEnabled(control) {
     return false
   }
 
-  if (control.matches?.('input[type="checkbox"]')) {
+  if (safeMatches(control, 'input[type="checkbox"]')) {
     return control.checked
   }
 
-  if (control.matches?.('input[type="radio"]')) {
+  if (safeMatches(control, 'input[type="radio"]')) {
     return control.checked
   }
 
@@ -8565,7 +8621,7 @@ function getVisibleDeepCMPNavigationControls(root) {
 
 function getDeepCMPNavigationClickabilityIndicators(control) {
   const style =
-    control ? window.getComputedStyle(control) : null
+    safeGetComputedStyle(control)
 
   return {
     role: control?.getAttribute?.('role') || '',
@@ -8594,7 +8650,7 @@ function hasDeepCMPNavigationClickability(control) {
     ['button', 'tab', 'link'].includes(
       normalizeMatchText(indicators.role)
     ) ||
-    control?.matches?.('button, a')
+    safeMatches(control, 'button, a')
   )
 }
 
@@ -8896,7 +8952,8 @@ function getAnchorComputedVisibility(anchor) {
   if (!rect) return 'invalid-geometry'
 
   const style =
-    window.getComputedStyle(anchor)
+    safeGetComputedStyle(anchor)
+  if (!style) return 'invalid-style'
 
   if (!isVisible(anchor)) {
     return [
@@ -8919,10 +8976,13 @@ function getAnchorComputedVisibility(anchor) {
 }
 
 function getAnchorNearbyText(anchor) {
+  const nearbyContainer =
+    safeClosest(anchor, 'li, p, div, section')
+
   return normalizeMatchText([
     anchor?.parentElement ? getText(anchor.parentElement).slice(0, 220) : '',
-    anchor?.closest?.('li, p, div, section')
-      ? getText(anchor.closest('li, p, div, section')).slice(0, 220)
+    nearbyContainer
+      ? getText(nearbyContainer).slice(0, 220)
       : '',
   ].join(' ')).slice(0, 260)
 }
@@ -10258,8 +10318,7 @@ function mutationLooksCookieRelated(mutation) {
 
 function isVisibleFixedOrStickyCMPElement(element) {
   if (
-    !element ||
-    element.nodeType !== Node.ELEMENT_NODE ||
+    !isElementLike(element) ||
     !isVisible(element) ||
     isLikelyNonCookieModal(element)
   ) {
@@ -10267,7 +10326,9 @@ function isVisibleFixedOrStickyCMPElement(element) {
   }
 
   const style =
-    window.getComputedStyle(element)
+    safeGetComputedStyle(element)
+  if (!style) return false
+
   const isOverlayPosition =
     style.position === 'fixed' ||
     style.position === 'sticky'
