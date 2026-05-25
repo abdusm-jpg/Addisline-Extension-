@@ -183,6 +183,11 @@ const currentSiteDiagnosticDomScope =
     'currentSiteDiagnosticDomScope'
   )
 
+const currentSiteDiagnosticBottomBanner =
+  document.getElementById(
+    'currentSiteDiagnosticBottomBanner'
+  )
+
 const currentSiteDiagnosticIframeAccess =
   document.getElementById(
     'currentSiteDiagnosticIframeAccess'
@@ -1739,6 +1744,56 @@ function formatCurrentSiteDomScope(summary) {
   return lines.join('\n')
 }
 
+function formatCurrentSiteBottomBanner(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const candidates =
+    Array.isArray(summary.candidates)
+      ? summary.candidates
+          .filter((candidate) =>
+            candidate && typeof candidate === 'object'
+          )
+          .slice(0, 5)
+      : []
+  const lines = [
+    `candidateCount: ${Math.max(0, Number(summary.candidateCount) || 0)}`,
+  ]
+
+  if (candidates.length === 0) {
+    lines.push('candidates: none')
+    return lines.join('\n')
+  }
+
+  lines.push('candidates:')
+  candidates.forEach((candidate, index) => {
+    const controls =
+      Array.isArray(candidate.controlTexts)
+        ? candidate.controlTexts
+            .filter(Boolean)
+            .slice(0, 5)
+            .join('|')
+        : ''
+
+    lines.push([
+      `${index + 1}. ${String(candidate.tagName || 'unknown').slice(0, 20)}`,
+      `pos:${String(candidate.position || 'unknown').slice(0, 20)}`,
+      `z:${Math.round(Number(candidate.zIndex) || 0)}`,
+      `rect:${Math.round(Number(candidate.x) || 0)},${Math.round(Number(candidate.y) || 0)},${Math.round(Number(candidate.width) || 0)}x${Math.round(Number(candidate.height) || 0)}`,
+      `bottom:${Math.round(Number(candidate.viewportBottomDistance) || 0)}`,
+      `cookie:${Boolean(candidate.cookieTextSignal)}`,
+      `reject:${Boolean(candidate.rejectTextSignal)}`,
+      `settings:${Boolean(candidate.settingsTextSignal)}`,
+      `accept:${Boolean(candidate.acceptTextSignal)}`,
+      `controls:${controls || 'none'}`,
+      String(candidate.text || 'no text').slice(0, 100),
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
 function formatCurrentSiteIframeAccess(summary) {
   if (!summary || typeof summary !== 'object') {
     return 'Sin datos'
@@ -1912,6 +1967,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'Sin datos'
     currentSiteDiagnosticDomScope.innerText =
       'Sin datos'
+    currentSiteDiagnosticBottomBanner.innerText =
+      'Sin datos'
     currentSiteDiagnosticIframeAccess.innerText =
       'Sin datos'
     currentSiteDiagnosticLateSnapshot.innerText =
@@ -2026,6 +2083,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticDomScope.innerText =
     formatCurrentSiteDomScope(
       diagnostic.domScopeDiagnostics
+    )
+  currentSiteDiagnosticBottomBanner.innerText =
+    formatCurrentSiteBottomBanner(
+      diagnostic.bottomBannerDiagnostics
     )
   currentSiteDiagnosticIframeAccess.innerText =
     formatCurrentSiteIframeAccess(

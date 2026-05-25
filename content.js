@@ -70,6 +70,7 @@ let lastCookieTextScopeDiagnostics = null
 let lastLateDiagnosticSnapshot = null
 let lastDomScopeDiagnostics = null
 let lastIframeAccessibilityDiagnostics = null
+let lastBottomBannerDiagnostics = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -153,6 +154,8 @@ const MAX_COOKIE_TEXT_SCOPE_NODES = 800
 const MAX_COOKIE_TEXT_SCOPE_SHADOW_ROOTS = 20
 const MAX_DOM_SCOPE_FIXED_STICKY_SAMPLES = 5
 const MAX_IFRAME_ACCESSIBILITY_DIAGNOSTICS = 5
+const MAX_BOTTOM_BANNER_DIAGNOSTICS = 5
+const MAX_BOTTOM_BANNER_CONTROL_TEXTS = 5
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -2436,6 +2439,167 @@ function resetDomScopeDiagnostics() {
   lastDomScopeDiagnostics = null
 }
 
+function getBottomBannerTextSignals(element) {
+  const signal =
+    normalizeMatchText([
+      getActionText(element),
+      getText(element).slice(0, 1200),
+      element?.id,
+      getClassNameText(element),
+      element?.getAttribute?.('aria-label'),
+      getDatasetText(element),
+    ].join(' '))
+
+  return {
+    cookie:
+      textHasAny(signal, bannerKeywords) ||
+      textHasAny(signal, ['cookie', 'cookies', 'consent']),
+    reject:
+      textMatchesDictionaryCookieIntent(signal, 'rejectAll') ||
+      textHasAny(signal, totalRejectTexts) ||
+      textHasAny(signal, rejectTexts),
+    settings:
+      textMatchesDictionaryCookieIntent(signal, 'openSettings') ||
+      textMatchesDictionaryCookieIntent(signal, 'manageSettings') ||
+      textMatchesLightweightSettingsOpen(signal) ||
+      textHasAny(signal, settingsTexts),
+    accept:
+      textMatchesDictionaryCookieIntent(signal, 'avoidAcceptAll') ||
+      textHasAny(signal, ['accept', 'aceptar', 'allow all']),
+  }
+}
+
+function isBottomPositionedElement(element) {
+  const rect =
+    getSafeClientRect(element)
+
+  if (!rect || !isVisible(element)) return false
+
+  const viewportHeight =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    1
+  const viewportWidth =
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    1
+  const nearBottom =
+    rect.bottom >= viewportHeight * 0.82 ||
+    rect.top >= viewportHeight * 0.55
+  const meaningfulSize =
+    rect.width >= Math.min(260, viewportWidth * 0.65) &&
+    rect.height >= 45
+
+  return nearBottom && meaningfulSize
+}
+
+function getBottomBannerControlTexts(element) {
+  return safeQuerySelectorAll(
+    element,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+    ].join(',')
+  )
+    .slice(0, MAX_CLICKABLE_CONTROLS_PER_SCAN)
+    .map((control) =>
+      normalizeMatchText(getActionText(control)).slice(0, 80)
+    )
+    .filter(Boolean)
+    .slice(0, MAX_BOTTOM_BANNER_CONTROL_TEXTS)
+}
+
+function getBottomBannerDiagnostic(element) {
+  const rect =
+    getSafeClientRect(element)
+  const style =
+    safeGetComputedStyle(element)
+  const signals =
+    getBottomBannerTextSignals(element)
+
+  return {
+    tagName: element?.tagName?.toLowerCase?.() || '',
+    id: String(element?.id || '').slice(0, 60),
+    className: getClassNameText(element).slice(0, 100),
+    text:
+      normalizeMatchText([
+        getActionText(element),
+        getText(element).slice(0, 500),
+      ].join(' '))
+        .slice(0, 160),
+    visible: isVisible(element),
+    x: rect ? Math.round(rect.x) : 0,
+    y: rect ? Math.round(rect.y) : 0,
+    width: rect ? Math.round(rect.width) : 0,
+    height: rect ? Math.round(rect.height) : 0,
+    viewportBottomDistance:
+      rect
+        ? Math.round(
+            (
+              window.innerHeight ||
+              document.documentElement.clientHeight ||
+              0
+            ) - rect.bottom
+          )
+        : 0,
+    position: String(style?.position || '').slice(0, 24),
+    zIndex: getZIndexNumber(style),
+    cookieTextSignal: signals.cookie,
+    rejectTextSignal: signals.reject,
+    settingsTextSignal: signals.settings,
+    acceptTextSignal: signals.accept,
+    controlTexts: getBottomBannerControlTexts(element),
+  }
+}
+
+function updateBottomBannerDiagnostics() {
+  const candidates =
+    safeQuerySelectorAll(
+      document,
+      [
+        'div',
+        'section',
+        'aside',
+        'dialog',
+        '[role="dialog"]',
+        '[role="region"]',
+        '[class*="banner" i]',
+        '[class*="cookie" i]',
+        '[class*="consent" i]',
+        '[id*="cookie" i]',
+        '[id*="consent" i]',
+      ].join(',')
+    )
+      .slice(0, MAX_COOKIE_TEXT_SCOPE_NODES)
+      .filter((element) => {
+        if (!isBottomPositionedElement(element)) return false
+
+        const signals =
+          getBottomBannerTextSignals(element)
+
+        return (
+          signals.cookie ||
+          signals.reject ||
+          signals.settings ||
+          signals.accept
+        )
+      })
+      .slice(0, MAX_BOTTOM_BANNER_DIAGNOSTICS)
+      .map(getBottomBannerDiagnostic)
+
+  lastBottomBannerDiagnostics = {
+    candidateCount: candidates.length,
+    candidates,
+  }
+}
+
+function resetBottomBannerDiagnostics() {
+  lastBottomBannerDiagnostics = null
+}
+
 function getDiagnosticClickableControlsFromRoot(root) {
   return safeQuerySelectorAll(
     root,
@@ -2716,6 +2880,7 @@ function getDiagnosticClassification({
   directClickableDiagnostics = null,
   domScopeDiagnostics = null,
   iframeAccessibilityDiagnostics = null,
+  bottomBannerDiagnostics = null,
   prioritizedCmpRootsFound = 0,
   explicitRejectControlDetected = false,
 } = {}) {
@@ -2733,6 +2898,8 @@ function getDiagnosticClassification({
     Math.max(0, Number(domScopeDiagnostics?.visibleFixedStickyCount) || 0)
   const shadowRootCount =
     Math.max(0, Number(domScopeDiagnostics?.openShadowRootCount) || 0)
+  const bottomBannerCount =
+    Math.max(0, Number(bottomBannerDiagnostics?.candidateCount) || 0)
   const iframeEntries =
     Array.isArray(iframeAccessibilityDiagnostics?.iframes)
       ? iframeAccessibilityDiagnostics.iframes
@@ -2761,6 +2928,13 @@ function getDiagnosticClassification({
 
   if (blockedIframe) {
     return 'blocked_by_iframe_access'
+  }
+
+  if (
+    bottomBannerCount > 0 &&
+    !rejectDetected
+  ) {
+    return 'non_blocking_bottom_cookie_banner_possible'
   }
 
   if (
@@ -2835,6 +3009,7 @@ function recordCurrentSiteDiagnostic({
   lateDiagnosticSnapshot = lastLateDiagnosticSnapshot,
   domScopeDiagnostics = lastDomScopeDiagnostics,
   iframeAccessibilityDiagnostics = lastIframeAccessibilityDiagnostics,
+  bottomBannerDiagnostics = lastBottomBannerDiagnostics,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -2858,6 +3033,7 @@ function recordCurrentSiteDiagnostic({
       directClickableDiagnostics,
       domScopeDiagnostics,
       iframeAccessibilityDiagnostics,
+      bottomBannerDiagnostics,
       prioritizedCmpRootsFound,
       explicitRejectControlDetected,
     })
@@ -3091,6 +3267,19 @@ function recordCurrentSiteDiagnostic({
                 .slice(0, MAX_IFRAME_ACCESSIBILITY_DIAGNOSTICS),
           }
         : null,
+    bottomBannerDiagnostics:
+      bottomBannerDiagnostics &&
+      typeof bottomBannerDiagnostics === 'object'
+        ? {
+            candidateCount:
+              Math.max(0, Number(bottomBannerDiagnostics.candidateCount) || 0),
+            candidates:
+              (Array.isArray(bottomBannerDiagnostics.candidates)
+                ? bottomBannerDiagnostics.candidates
+                : [])
+                .slice(0, MAX_BOTTOM_BANNER_DIAGNOSTICS),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -3146,6 +3335,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       lateDiagnosticSnapshot: lastLateDiagnosticSnapshot,
       domScopeDiagnostics: null,
       iframeAccessibilityDiagnostics: null,
+      bottomBannerDiagnostics: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -12598,6 +12788,7 @@ function scanPage() {
     resetCookieTextScopeDiagnostics()
     resetDomScopeDiagnostics()
     resetIframeAccessibilityDiagnostics()
+    resetBottomBannerDiagnostics()
 
     const modeConfig =
       getProtectionModeConfig()
@@ -12645,6 +12836,7 @@ function scanPage() {
     updateCookieTextScopeDiagnostics()
     updateDomScopeDiagnostics()
     updateIframeAccessibilityDiagnostics()
+    updateBottomBannerDiagnostics()
     lastScanDetectedControlCount =
       getDiagnosticControlTexts(candidates).length
     updateLastDiagnosticDecisionTrace(decisionTrace)
