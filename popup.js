@@ -163,6 +163,11 @@ const currentSiteDiagnosticRejectCandidates =
     'currentSiteDiagnosticRejectCandidates'
   )
 
+const currentSiteDiagnosticDirectControls =
+  document.getElementById(
+    'currentSiteDiagnosticDirectControls'
+  )
+
 const currentSiteDiagnosticTrace =
   document.getElementById(
     'currentSiteDiagnosticTrace'
@@ -1502,6 +1507,54 @@ function formatCurrentSiteRejectCandidates(candidates) {
     .join('\n')
 }
 
+function formatCurrentSiteDirectControls(controls) {
+  const safeControls =
+    Array.isArray(controls)
+      ? controls
+          .filter((control) =>
+            control && typeof control === 'object'
+          )
+          .slice(0, 10)
+      : []
+
+  if (safeControls.length === 0) {
+    return 'Sin datos'
+  }
+
+  return safeControls
+    .map((control, index) => {
+      const role =
+        String(control.role || '').slice(0, 32)
+      const type =
+        String(control.type || '').slice(0, 32)
+      const kind =
+        [
+          String(control.tagName || 'unknown').slice(0, 20),
+          role ? `role:${role}` : '',
+          type ? `type:${type}` : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+      const parts = [
+        `${index + 1}. ${kind}`,
+        String(control.text || 'no text').slice(0, 80),
+        `visible:${Boolean(control.visible)}`,
+        `disabled:${Boolean(control.disabled)}`,
+        `rejectIntent:${Boolean(control.rejectIntent)}`,
+        `cookieIntent:${Boolean(control.cookieIntent)}`,
+      ]
+      const blockReason =
+        String(control.blockReason || '').slice(0, 80)
+
+      if (blockReason) {
+        parts.push(`block:${blockReason}`)
+      }
+
+      return parts.join(' | ')
+    })
+    .join('\n')
+}
+
 function renderCurrentSiteDiagnostic(diagnostic) {
   const updatedAt =
     new Date(diagnostic?.lastUpdatedAt || 0)
@@ -1548,6 +1601,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     currentSiteDiagnosticBlocked.innerText =
       'Sin datos'
     currentSiteDiagnosticRejectCandidates.innerText =
+      'Sin datos'
+    currentSiteDiagnosticDirectControls.innerText =
       'Sin datos'
     currentSiteDiagnosticTrace.innerText =
       'Sin datos'
@@ -1645,6 +1700,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticRejectCandidates.innerText =
     formatCurrentSiteRejectCandidates(
       diagnostic.rejectCandidateDiagnostics
+    )
+  currentSiteDiagnosticDirectControls.innerText =
+    formatCurrentSiteDirectControls(
+      diagnostic.directClickableDiagnostics
     )
   currentSiteDiagnosticTrace.innerText =
     formatCurrentSiteDecisionTrace(diagnostic.decisionTrace)

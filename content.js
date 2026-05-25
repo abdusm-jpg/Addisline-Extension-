@@ -64,6 +64,7 @@ let lastSettingsSaveClicked = false
 let lastSettingsSaveVerification = ''
 let lastDiagnosticDecisionTrace = null
 let lastRejectCandidateDiagnostics = []
+let lastDirectClickableDiagnostics = []
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -138,6 +139,8 @@ const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
+const MAX_DIRECT_CLICKABLE_DIAGNOSTICS = 10
+const MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT = 80
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -1707,6 +1710,62 @@ function resetRejectCandidateDiagnostics() {
   lastRejectCandidateDiagnostics = []
 }
 
+function hasCookieIntentSignal(control) {
+  const signal =
+    normalizeMatchText([
+      getActionText(control),
+      control?.id,
+      getClassNameText(control),
+      control?.getAttribute?.('aria-label'),
+      control?.getAttribute?.('title'),
+      control?.value,
+      control?.getAttribute?.('value'),
+    ].join(' '))
+
+  return (
+    textHasAny(signal, bannerKeywords) ||
+    textHasAny(signal, preferenceSectionTexts) ||
+    textMatchesDictionaryCookieIntent(signal, 'openSettings') ||
+    textMatchesDictionaryCookieIntent(signal, 'manageSettings') ||
+    textMatchesDictionaryCookieIntent(signal, 'rejectAll')
+  )
+}
+
+function getDirectClickableDiagnostic(control, index) {
+  const type =
+    String(control?.getAttribute?.('type') || '').slice(0, 40)
+  const blockReason =
+    getBasicRejectBlockReason(control)
+
+  return {
+    index: Math.max(0, Number(index) || 0),
+    tagName: control?.tagName?.toLowerCase?.() || '',
+    role: String(control?.getAttribute?.('role') || '').slice(0, 40),
+    type,
+    text:
+      normalizeMatchText(getActionText(control))
+        .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT),
+    visible: isVisible(control),
+    disabled: getCookieDebugDisabledState(control) === 'disabled',
+    rejectIntent: hasRejectCandidateDiagnosticSignal(control),
+    cookieIntent: hasCookieIntentSignal(control),
+    blockReason: String(blockReason || '').slice(0, 80),
+  }
+}
+
+function recordDirectClickableDiagnostics(controls = []) {
+  lastDirectClickableDiagnostics =
+    (Array.isArray(controls) ? controls : [])
+      .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS)
+      .map((control, index) =>
+        getDirectClickableDiagnostic(control, index)
+      )
+}
+
+function resetDirectClickableDiagnostics() {
+  lastDirectClickableDiagnostics = []
+}
+
 function recordCurrentSiteDiagnostic({
   status = 'skipped',
   reason = '',
@@ -1740,6 +1799,7 @@ function recordCurrentSiteDiagnostic({
   settingsSaveVerification = lastSettingsSaveVerification,
   decisionTrace = lastDiagnosticDecisionTrace,
   rejectCandidateDiagnostics = lastRejectCandidateDiagnostics,
+  directClickableDiagnostics = lastDirectClickableDiagnostics,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1861,6 +1921,11 @@ function recordCurrentSiteDiagnostic({
         ? rejectCandidateDiagnostics
         : [])
         .slice(0, MAX_REJECT_CANDIDATE_DIAGNOSTICS),
+    directClickableDiagnostics:
+      (Array.isArray(directClickableDiagnostics)
+        ? directClickableDiagnostics
+        : [])
+        .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS),
     lastUpdatedAt: now,
   }
 
@@ -1911,6 +1976,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       settingsSaveVerification: '',
       decisionTrace: null,
       rejectCandidateDiagnostics: [],
+      directClickableDiagnostics: [],
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -6219,6 +6285,7 @@ function findDirectSafeRejectControl(decisionTrace = null) {
     getDirectClickableControls(document)
 
   traceDirectRejectExtraction(controls)
+  recordDirectClickableDiagnostics(controls)
   recordRejectCandidateDiagnostics(
     'direct_scan',
     controls,
@@ -11357,6 +11424,7 @@ function scanPage() {
       createDiagnosticDecisionTrace('scanPage')
     updateLastDiagnosticDecisionTrace(decisionTrace)
     resetRejectCandidateDiagnostics()
+    resetDirectClickableDiagnostics()
 
     const modeConfig =
       getProtectionModeConfig()

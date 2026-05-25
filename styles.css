@@ -377,6 +377,7 @@ h1 {
 }
 
 #currentSiteDiagnosticRejectCandidates,
+#currentSiteDiagnosticDirectControls,
 #currentSiteDiagnosticTrace {
   white-space: pre-wrap;
   text-align: left;
