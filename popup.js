@@ -178,6 +178,11 @@ const currentSiteDiagnosticDomScope =
     'currentSiteDiagnosticDomScope'
   )
 
+const currentSiteDiagnosticIframeAccess =
+  document.getElementById(
+    'currentSiteDiagnosticIframeAccess'
+  )
+
 const currentSiteDiagnosticLateSnapshot =
   document.getElementById(
     'currentSiteDiagnosticLateSnapshot'
@@ -1729,6 +1734,47 @@ function formatCurrentSiteDomScope(summary) {
   return lines.join('\n')
 }
 
+function formatCurrentSiteIframeAccess(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const iframes =
+    Array.isArray(summary.iframes)
+      ? summary.iframes
+          .filter((iframe) =>
+            iframe && typeof iframe === 'object'
+          )
+          .slice(0, 5)
+      : []
+  const lines = [
+    `iframeCount: ${Math.max(0, Number(summary.iframeCount) || 0)}`,
+  ]
+
+  if (iframes.length === 0) {
+    lines.push('iframes: none')
+    return lines.join('\n')
+  }
+
+  lines.push('iframes:')
+  iframes.forEach((iframe, index) => {
+    lines.push([
+      `${index + 1}. #${Math.max(0, Number(iframe.index) || 0)}`,
+      `domain:${String(iframe.domain || 'none').slice(0, 80)}`,
+      `accessible:${Boolean(iframe.accessible)}`,
+      `failure:${String(iframe.accessFailureType || 'none').slice(0, 80)}`,
+      `visible:${Boolean(iframe.visible)}`,
+      `meaningful:${Boolean(iframe.meaningfulVisible)}`,
+      `rect:${Math.max(0, Number(iframe.width) || 0)}x${Math.max(0, Number(iframe.height) || 0)}`,
+      `bodyText:${Boolean(iframe.bodyTextExists)}`,
+      `cookieText:${Boolean(iframe.cookieTextExists)}`,
+      `src:${String(iframe.src || 'none').slice(0, 100)}`,
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
 function formatCurrentSiteLateSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') {
     return 'Sin datos'
@@ -1859,6 +1905,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'Sin datos'
     currentSiteDiagnosticDomScope.innerText =
       'Sin datos'
+    currentSiteDiagnosticIframeAccess.innerText =
+      'Sin datos'
     currentSiteDiagnosticLateSnapshot.innerText =
       'Sin datos'
     currentSiteDiagnosticTrace.innerText =
@@ -1969,6 +2017,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticDomScope.innerText =
     formatCurrentSiteDomScope(
       diagnostic.domScopeDiagnostics
+    )
+  currentSiteDiagnosticIframeAccess.innerText =
+    formatCurrentSiteIframeAccess(
+      diagnostic.iframeAccessibilityDiagnostics
     )
   currentSiteDiagnosticLateSnapshot.innerText =
     formatCurrentSiteLateSnapshot(

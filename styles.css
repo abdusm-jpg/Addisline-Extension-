@@ -380,6 +380,7 @@ h1 {
 #currentSiteDiagnosticDirectControls,
 #currentSiteDiagnosticCookieTextMatches,
 #currentSiteDiagnosticDomScope,
+#currentSiteDiagnosticIframeAccess,
 #currentSiteDiagnosticLateSnapshot,
 #currentSiteDiagnosticTrace {
   white-space: pre-wrap;

@@ -69,6 +69,7 @@ let lastDirectClickableDiagnostics = []
 let lastCookieTextScopeDiagnostics = null
 let lastLateDiagnosticSnapshot = null
 let lastDomScopeDiagnostics = null
+let lastIframeAccessibilityDiagnostics = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -151,6 +152,7 @@ const MAX_LATE_DIAGNOSTIC_SNAPSHOT_SAMPLES = 5
 const MAX_COOKIE_TEXT_SCOPE_NODES = 800
 const MAX_COOKIE_TEXT_SCOPE_SHADOW_ROOTS = 20
 const MAX_DOM_SCOPE_FIXED_STICKY_SAMPLES = 5
+const MAX_IFRAME_ACCESSIBILITY_DIAGNOSTICS = 5
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -2100,6 +2102,133 @@ function getIframeDiagnosticDomain(iframe) {
   }
 }
 
+function inspectIframeAccess(iframe) {
+  try {
+    const iframeDocument =
+      iframe.contentDocument ||
+      iframe.contentWindow?.document
+
+    if (!iframeDocument) {
+      return {
+        accessible: false,
+        document: null,
+        failureType: 'missing_document',
+      }
+    }
+
+    if (!iframeDocument.documentElement) {
+      return {
+        accessible: false,
+        document: null,
+        failureType: 'missing_document_element',
+      }
+    }
+
+    return {
+      accessible: true,
+      document: iframeDocument,
+      failureType: '',
+    }
+  } catch (error) {
+    const message =
+      String(error?.message || error || '').toLowerCase()
+    const failureType =
+      message.includes('permission') ||
+      message.includes('cross-origin') ||
+      message.includes('cross origin') ||
+      message.includes('denied')
+        ? 'cross_origin_access_denied'
+        : 'access_error'
+
+    return {
+      accessible: false,
+      document: null,
+      failureType,
+    }
+  }
+}
+
+function getIframeCookieTextState(iframeDocument) {
+  const bodyText =
+    normalizeMatchText(iframeDocument?.body?.innerText || '')
+  const bodyTextExists =
+    bodyText.length > 0
+  const cookieTextExists =
+    bodyTextExists && textMatchesCookieScopeDiagnostic(bodyText)
+  const controls =
+    iframeDocument
+      ? getDiagnosticClickableControlsFromRoot(iframeDocument)
+      : []
+  const controlTexts =
+    controls
+      .map((control) =>
+        normalizeMatchText(getActionText(control))
+      )
+      .filter(Boolean)
+  const controlCookieTextExists =
+    controlTexts.some(textMatchesCookieScopeDiagnostic)
+
+  return {
+    bodyTextExists,
+    cookieTextExists:
+      Boolean(cookieTextExists || controlCookieTextExists),
+  }
+}
+
+function getIframeAccessibilityDiagnostic(iframe, index) {
+  const rect =
+    getSafeClientRect(iframe)
+  const access =
+    inspectIframeAccess(iframe)
+  const textState =
+    access.accessible
+      ? getIframeCookieTextState(access.document)
+      : {
+          bodyTextExists: false,
+          cookieTextExists: false,
+        }
+
+  return {
+    index,
+    src:
+      String(
+        iframe.getAttribute?.('src') ||
+          iframe.src ||
+          ''
+      ).slice(0, 180),
+    domain:
+      String(getIframeDiagnosticDomain(iframe) || '').slice(0, 120),
+    accessible: Boolean(access.accessible),
+    accessFailureType:
+      String(access.failureType || '').slice(0, 80),
+    visible: isVisible(iframe),
+    meaningfulVisible: isVisibleMeaningfulIframe(iframe),
+    width: rect ? Math.round(rect.width) : 0,
+    height: rect ? Math.round(rect.height) : 0,
+    bodyTextExists: Boolean(textState.bodyTextExists),
+    cookieTextExists: Boolean(textState.cookieTextExists),
+  }
+}
+
+function updateIframeAccessibilityDiagnostics() {
+  const iframes =
+    safeQuerySelectorAll(document, 'iframe')
+
+  lastIframeAccessibilityDiagnostics = {
+    iframeCount: iframes.length,
+    iframes:
+      iframes
+        .slice(0, MAX_IFRAME_ACCESSIBILITY_DIAGNOSTICS)
+        .map((iframe, index) =>
+          getIframeAccessibilityDiagnostic(iframe, index)
+        ),
+  }
+}
+
+function resetIframeAccessibilityDiagnostics() {
+  lastIframeAccessibilityDiagnostics = null
+}
+
 function updateCookieTextScopeDiagnostics() {
   lastCookieTextScopeDiagnostics =
     buildCookieTextScopeDiagnostics()
@@ -2615,6 +2744,7 @@ function recordCurrentSiteDiagnostic({
   cookieTextScopeDiagnostics = lastCookieTextScopeDiagnostics,
   lateDiagnosticSnapshot = lastLateDiagnosticSnapshot,
   domScopeDiagnostics = lastDomScopeDiagnostics,
+  iframeAccessibilityDiagnostics = lastIframeAccessibilityDiagnostics,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -2838,6 +2968,19 @@ function recordCurrentSiteDiagnostic({
                 .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
           }
         : null,
+    iframeAccessibilityDiagnostics:
+      iframeAccessibilityDiagnostics &&
+      typeof iframeAccessibilityDiagnostics === 'object'
+        ? {
+            iframeCount:
+              Math.max(0, Number(iframeAccessibilityDiagnostics.iframeCount) || 0),
+            iframes:
+              (Array.isArray(iframeAccessibilityDiagnostics.iframes)
+                ? iframeAccessibilityDiagnostics.iframes
+                : [])
+                .slice(0, MAX_IFRAME_ACCESSIBILITY_DIAGNOSTICS),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -2892,6 +3035,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       cookieTextScopeDiagnostics: null,
       lateDiagnosticSnapshot: lastLateDiagnosticSnapshot,
       domScopeDiagnostics: null,
+      iframeAccessibilityDiagnostics: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -12343,6 +12487,7 @@ function scanPage() {
     resetDirectClickableDiagnostics()
     resetCookieTextScopeDiagnostics()
     resetDomScopeDiagnostics()
+    resetIframeAccessibilityDiagnostics()
 
     const modeConfig =
       getProtectionModeConfig()
@@ -12389,6 +12534,7 @@ function scanPage() {
       )
     updateCookieTextScopeDiagnostics()
     updateDomScopeDiagnostics()
+    updateIframeAccessibilityDiagnostics()
     lastScanDetectedControlCount =
       getDiagnosticControlTexts(candidates).length
     updateLastDiagnosticDecisionTrace(decisionTrace)
