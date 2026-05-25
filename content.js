@@ -62,6 +62,7 @@ let lastIframeInspectionSummaries = []
 let lastSettingsSaveDetected = false
 let lastSettingsSaveClicked = false
 let lastSettingsSaveVerification = ''
+let lastDiagnosticDecisionTrace = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -134,6 +135,7 @@ const MAX_DOM_QUERY_RESULTS = 300
 const MAX_COOKIE_CANDIDATES_PER_SCAN = 10
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_DIAGNOSTIC_CONTROLS = 5
+const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -1489,6 +1491,56 @@ function getMatchedRejectPhraseNormalized(text) {
   ) || ''
 }
 
+function createDiagnosticDecisionTrace(source = 'scanPage') {
+  return {
+    source,
+    startedAt: Date.now(),
+    scanCount: pageScanCount,
+    mutationScanCount: observerMutationScanCount,
+    steps: [],
+  }
+}
+
+function addDiagnosticDecisionStep(trace, step = {}) {
+  if (
+    !trace ||
+    !Array.isArray(trace.steps) ||
+    trace.steps.length >= MAX_DIAGNOSTIC_DECISION_TRACE_STEPS
+  ) {
+    return
+  }
+
+  trace.steps.push({
+    strategy: String(step.strategy || 'unknown').slice(0, 60),
+    status: String(step.status || 'ran').slice(0, 24),
+    reason: String(step.reason || '').slice(0, 80),
+    found: Math.max(0, Number(step.found) || 0),
+    scanned: Math.max(0, Number(step.scanned) || 0),
+    elapsedMs: Math.max(0, Number(step.elapsedMs) || 0),
+  })
+}
+
+function finalizeDiagnosticDecisionTrace(trace) {
+  if (!trace) return null
+
+  return {
+    source: String(trace.source || 'scanPage').slice(0, 40),
+    scanCount: Math.max(0, Number(trace.scanCount) || 0),
+    mutationScanCount:
+      Math.max(0, Number(trace.mutationScanCount) || 0),
+    elapsedMs:
+      Math.max(0, Date.now() - (Number(trace.startedAt) || Date.now())),
+    steps: (Array.isArray(trace.steps) ? trace.steps : [])
+      .slice(0, MAX_DIAGNOSTIC_DECISION_TRACE_STEPS),
+  }
+}
+
+function updateLastDiagnosticDecisionTrace(trace) {
+  lastDiagnosticDecisionTrace =
+    finalizeDiagnosticDecisionTrace(trace)
+  return lastDiagnosticDecisionTrace
+}
+
 function recordCurrentSiteDiagnostic({
   status = 'skipped',
   reason = '',
@@ -1520,6 +1572,7 @@ function recordCurrentSiteDiagnostic({
   settingsSaveDetected = lastSettingsSaveDetected,
   settingsSaveClicked = lastSettingsSaveClicked,
   settingsSaveVerification = lastSettingsSaveVerification,
+  decisionTrace = lastDiagnosticDecisionTrace,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1618,6 +1671,24 @@ function recordCurrentSiteDiagnostic({
       Boolean(settingsSaveClicked),
     settingsSaveVerification:
       String(settingsSaveVerification || '').slice(0, 120),
+    decisionTrace:
+      decisionTrace && typeof decisionTrace === 'object'
+        ? {
+            source:
+              String(decisionTrace.source || '').slice(0, 40),
+            scanCount:
+              Math.max(0, Number(decisionTrace.scanCount) || 0),
+            mutationScanCount:
+              Math.max(0, Number(decisionTrace.mutationScanCount) || 0),
+            elapsedMs:
+              Math.max(0, Number(decisionTrace.elapsedMs) || 0),
+            steps:
+              (Array.isArray(decisionTrace.steps)
+                ? decisionTrace.steps
+                : [])
+                .slice(0, MAX_DIAGNOSTIC_DECISION_TRACE_STEPS),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -1666,6 +1737,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       settingsSaveDetected: false,
       settingsSaveClicked: false,
       settingsSaveVerification: '',
+      decisionTrace: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -3636,12 +3708,21 @@ function findPrioritizedVisibleCMPRoots() {
   return roots
 }
 
-function findCookieBannerCandidates() {
+function findCookieBannerCandidates(decisionTrace = null) {
+  const startedAt = Date.now()
+
   if (
     activeCookieContainer &&
     isVisible(activeCookieContainer) &&
     isPotentialCookieContainer(activeCookieContainer)
   ) {
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'cmp.active_container',
+      status: 'found',
+      found: 1,
+      scanned: 1,
+      elapsedMs: Date.now() - startedAt,
+    })
     if (isAddislineTestMode()) {
       updateAddislineTestReport({
         event: 'findCookieBannerCandidates:active',
@@ -3670,6 +3751,17 @@ function findCookieBannerCandidates() {
     return [activeCookieContainer]
   }
 
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'cmp.active_container',
+    status: 'skipped',
+    reason: activeCookieContainer
+      ? 'cached_container_not_visible_or_invalid'
+      : 'no_cached_container',
+    scanned: activeCookieContainer ? 1 : 0,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  const prioritizedStartedAt = Date.now()
   const prioritizedRoots =
     findPrioritizedVisibleCMPRoots()
   const prioritizedRootSet =
@@ -3688,7 +3780,15 @@ function findCookieBannerCandidates() {
         count + getVisibleClickableControlCount(root),
       0
     )
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'cmp.prioritized_visible_roots',
+    status: prioritizedRoots.length > 0 ? 'found' : 'not_found',
+    found: prioritizedRoots.length,
+    scanned: MAX_PRIORITIZED_CMP_ROOT_SCAN,
+    elapsedMs: Date.now() - prioritizedStartedAt,
+  })
 
+  const selectorStartedAt = Date.now()
   const rawCandidates = [
     ...prioritizedRoots,
     ...Array.from(
@@ -3762,6 +3862,13 @@ function findCookieBannerCandidates() {
 
   activeCookieContainer =
     candidates[0] || null
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'cmp.selector_candidates',
+    status: candidates.length > 0 ? 'found' : 'not_found',
+    found: candidates.length,
+    scanned: rawCandidates.length,
+    elapsedMs: Date.now() - selectorStartedAt,
+  })
 
   if (isAddislineTestMode()) {
     updateAddislineTestReport({
@@ -5924,15 +6031,23 @@ function logCMPBannerClassifications(candidates) {
   }
 }
 
-function findDirectSafeRejectControl() {
-  if (!shouldRunOnThisSite()) return null
+function findDirectSafeRejectControl(decisionTrace = null) {
+  if (!shouldRunOnThisSite()) {
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'reject.direct_scan',
+      status: 'skipped',
+      reason: 'site_not_enabled',
+    })
+    return null
+  }
 
+  const startedAt = Date.now()
   const controls =
     getDirectClickableControls(document)
 
   traceDirectRejectExtraction(controls)
 
-  return controls
+  const control = controls
     .find((control) => {
       if (!isVisible(control)) return false
       if (isInsideNonCookieModal(control)) return false
@@ -5960,6 +6075,16 @@ function findDirectSafeRejectControl() {
 
       return hasDirectSafeRejectSignal(control)
     })
+
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'reject.direct_scan',
+    status: control ? 'found' : 'not_found',
+    found: control ? 1 : 0,
+    scanned: controls.length,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  return control || null
 }
 
 function findDirectSettingsControl() {
@@ -7131,7 +7256,7 @@ function clickElementForProviderModalClose(element) {
   return true
 }
 
-function decideCookieAction(container) {
+function decideCookieAction(container, decisionTrace = null) {
   const modeConfig =
     getProtectionModeConfig()
 
@@ -7158,6 +7283,11 @@ function decideCookieAction(container) {
   }
 
   if (!shouldRunOnThisSite()) {
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'reject.container_scan',
+      status: 'skipped',
+      reason: 'site_not_enabled',
+    })
     return finish({
       type: 'none',
       element: null,
@@ -7165,14 +7295,30 @@ function decideCookieAction(container) {
   }
 
   if (!modeConfig.allowAutoReject) {
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'reject.container_scan',
+      status: 'skipped',
+      reason: 'auto_reject_disabled',
+    })
     return finish({
       type: 'none',
       element: null,
     })
   }
 
+  const scannedControls =
+    getActionControls(container).length
+
+  const rejectAllStartedAt = Date.now()
   const totalReject =
     findBestExplicitRejectActionByIntent(container, 'rejectAll')
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'reject.container_reject_all',
+    status: totalReject ? 'found' : 'not_found',
+    found: totalReject ? 1 : 0,
+    scanned: scannedControls,
+    elapsedMs: Date.now() - rejectAllStartedAt,
+  })
 
   if (totalReject) {
     cookieDebugLog('cookie.reject.detected', {
@@ -7189,8 +7335,16 @@ function decideCookieAction(container) {
     })
   }
 
+  const essentialStartedAt = Date.now()
   const necessaryOnly =
     findBestExplicitRejectActionByIntent(container, 'essentialOnly')
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'reject.container_essential_only',
+    status: necessaryOnly ? 'found' : 'not_found',
+    found: necessaryOnly ? 1 : 0,
+    scanned: scannedControls,
+    elapsedMs: Date.now() - essentialStartedAt,
+  })
 
   if (necessaryOnly) {
     cookieDebugLog('cookie.reject.detected', {
@@ -7207,6 +7361,7 @@ function decideCookieAction(container) {
     })
   }
 
+  const categoryStartedAt = Date.now()
   const rejectCategory =
     [
       'analyticsReject',
@@ -7218,6 +7373,13 @@ function decideCookieAction(container) {
         findBestExplicitRejectActionByIntent(container, intent, 10)
       )
       .find(Boolean)
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'reject.container_category',
+    status: rejectCategory ? 'found' : 'not_found',
+    found: rejectCategory ? 1 : 0,
+    scanned: scannedControls,
+    elapsedMs: Date.now() - categoryStartedAt,
+  })
 
   if (rejectCategory) {
     const rejectCategoryIntent =
@@ -7237,7 +7399,15 @@ function decideCookieAction(container) {
     })
   }
 
+  const legacyStartedAt = Date.now()
   const reject = findBestActionByKeywords(container, rejectTexts)
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'reject.container_legacy_keywords',
+    status: reject ? 'found' : 'not_found',
+    found: reject ? 1 : 0,
+    scanned: scannedControls,
+    elapsedMs: Date.now() - legacyStartedAt,
+  })
 
   if (reject) {
     cookieDebugLog('cookie.reject.detected', {
@@ -7255,13 +7425,27 @@ function decideCookieAction(container) {
   }
 
   if (!modeConfig.allowSettingsOpen) {
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'settings.container_scan',
+      status: 'skipped',
+      reason: 'settings_open_disabled',
+      scanned: scannedControls,
+    })
     return finish({
       type: 'none',
       element: null,
     })
   }
 
+  const settingsStartedAt = Date.now()
   const settings = findBestActionByIntent(container, 'managePreferences')
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'settings.container_manage_preferences',
+    status: settings ? 'found' : 'not_found',
+    found: settings ? 1 : 0,
+    scanned: scannedControls,
+    elapsedMs: Date.now() - settingsStartedAt,
+  })
 
   if (settings) {
     cookieDebugLog('cookie.settings.detected', {
@@ -7276,7 +7460,15 @@ function decideCookieAction(container) {
     })
   }
 
+  const saveStartedAt = Date.now()
   const save = findBestActionByIntent(container, 'savePreferences')
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'settings.container_save_preferences',
+    status: save ? 'found' : 'not_found',
+    found: save ? 1 : 0,
+    scanned: scannedControls,
+    elapsedMs: Date.now() - saveStartedAt,
+  })
 
   if (save) {
     cookieDebugLog('cookie.save.detected', {
@@ -7291,7 +7483,16 @@ function decideCookieAction(container) {
     })
   }
 
+  const acceptStartedAt = Date.now()
   const accept = findBestActionByIntent(container, 'acceptAll')
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'settings.container_accept_last_resort',
+    status: accept ? 'skipped' : 'not_found',
+    reason: accept ? 'accept_all_is_last_resort' : '',
+    found: accept ? 1 : 0,
+    scanned: scannedControls,
+    elapsedMs: Date.now() - acceptStartedAt,
+  })
 
   if (accept) {
     return finish({
@@ -10967,6 +11168,10 @@ function scanPage() {
       return
     }
 
+    const decisionTrace =
+      createDiagnosticDecisionTrace('scanPage')
+    updateLastDiagnosticDecisionTrace(decisionTrace)
+
     const modeConfig =
       getProtectionModeConfig()
 
@@ -11005,13 +11210,14 @@ function scanPage() {
       return
     }
 
-    const candidates = findCookieBannerCandidates()
+    const candidates = findCookieBannerCandidates(decisionTrace)
       .filter((candidate) =>
         !modeConfig.allowSuppression ||
         !suppressReRenderedBanner(candidate)
       )
     lastScanDetectedControlCount =
       getDiagnosticControlTexts(candidates).length
+    updateLastDiagnosticDecisionTrace(decisionTrace)
 
     cookieDebugLog('cookie.scan.candidates', {
       count: candidates.length,
@@ -11042,14 +11248,27 @@ function scanPage() {
       modeConfig.allowAutoReject &&
       attemptCMPSpecificReject(candidates[0] || document)
     ) {
+      addDiagnosticDecisionStep(decisionTrace, {
+        strategy: 'reject.cmp_specific_helper',
+        status: 'found',
+        found: 1,
+      })
+      updateLastDiagnosticDecisionTrace(decisionTrace)
       return
     }
+
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'reject.cmp_specific_helper',
+      status: ENABLE_CMP_SPECIFIC_HELPERS ? 'not_found' : 'skipped',
+      reason: ENABLE_CMP_SPECIFIC_HELPERS ? '' : 'helper_disabled',
+    })
 
     if (modeConfig.allowAutoReject) {
       for (const candidate of candidates) {
         if (!isPotentialCookieContainer(candidate)) continue
 
-        const action = decideCookieAction(candidate)
+        const action = decideCookieAction(candidate, decisionTrace)
+        updateLastDiagnosticDecisionTrace(decisionTrace)
 
         if (action.type === 'reject' && action.element) {
           rejectFlowLog('Basic reject candidate found', {
@@ -11118,11 +11337,26 @@ function scanPage() {
         }
       }
     }
+    if (!modeConfig.allowAutoReject) {
+      addDiagnosticDecisionStep(decisionTrace, {
+        strategy: 'reject.container_scan',
+        status: 'skipped',
+        reason: 'auto_reject_disabled',
+      })
+    }
 
     const directRejectControl =
       modeConfig.allowAutoReject
-        ? findDirectSafeRejectControl()
+        ? findDirectSafeRejectControl(decisionTrace)
         : null
+    if (!modeConfig.allowAutoReject) {
+      addDiagnosticDecisionStep(decisionTrace, {
+        strategy: 'reject.direct_scan',
+        status: 'skipped',
+        reason: 'auto_reject_disabled',
+      })
+    }
+    updateLastDiagnosticDecisionTrace(decisionTrace)
 
     if (directRejectControl) {
       rejectFlowLog('Basic reject candidate found', {
@@ -11288,15 +11522,38 @@ function scanPage() {
     }
 
     if (attemptCMPSpecificSettingsOpen(candidates[0] || document)) {
+      addDiagnosticDecisionStep(decisionTrace, {
+        strategy: 'settings.cmp_specific_helper',
+        status: 'found',
+        found: 1,
+      })
+      updateLastDiagnosticDecisionTrace(decisionTrace)
       return
     }
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'settings.cmp_specific_helper',
+      status: ENABLE_CMP_SPECIFIC_HELPERS ? 'not_found' : 'skipped',
+      reason: ENABLE_CMP_SPECIFIC_HELPERS ? '' : 'helper_disabled',
+    })
 
     if (
       ENABLE_LIGHTWEIGHT_SETTINGS_OPEN &&
       attemptLightweightSettingsOpen(candidates)
     ) {
+      addDiagnosticDecisionStep(decisionTrace, {
+        strategy: 'settings.lightweight_open',
+        status: 'found',
+        found: 1,
+      })
+      updateLastDiagnosticDecisionTrace(decisionTrace)
       return
     }
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'settings.lightweight_open',
+      status: ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ? 'not_found' : 'skipped',
+      reason: ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ? '' : 'helper_disabled',
+    })
+    updateLastDiagnosticDecisionTrace(decisionTrace)
 
     if (candidates.length === 0 && !directRejectControl) {
       noCMPScanCount += 1
