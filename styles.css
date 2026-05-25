@@ -378,6 +378,7 @@ h1 {
 
 #currentSiteDiagnosticRejectCandidates,
 #currentSiteDiagnosticDirectControls,
+#currentSiteDiagnosticCookieTextMatches,
 #currentSiteDiagnosticTrace {
   white-space: pre-wrap;
   text-align: left;

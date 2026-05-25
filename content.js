@@ -65,6 +65,7 @@ let lastSettingsSaveVerification = ''
 let lastDiagnosticDecisionTrace = null
 let lastRejectCandidateDiagnostics = []
 let lastDirectClickableDiagnostics = []
+let lastCookieTextScopeDiagnostics = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -141,6 +142,9 @@ const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT = 80
+const MAX_COOKIE_TEXT_SCOPE_MATCHES = 10
+const MAX_COOKIE_TEXT_SCOPE_NODES = 800
+const MAX_COOKIE_TEXT_SCOPE_SHADOW_ROOTS = 20
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -1874,6 +1878,241 @@ function resetDirectClickableDiagnostics() {
   }
 }
 
+function textMatchesCookieScopeDiagnostic(text) {
+  const normalizedText =
+    normalizeMatchText(text)
+
+  return (
+    textMatchesDictionaryCookieIntent(normalizedText, 'rejectAll') ||
+    textMatchesDictionaryCookieIntent(normalizedText, 'openSettings') ||
+    textMatchesDictionaryCookieIntent(normalizedText, 'manageSettings') ||
+    textHasAny(normalizedText, totalRejectTexts) ||
+    textHasAny(normalizedText, rejectTexts) ||
+    textHasAny(normalizedText, settingsTexts) ||
+    textHasAny(normalizedText, [
+      'cookie',
+      'cookies',
+      'consent',
+      'privacy',
+      'privacidad',
+      'preferencias',
+      'decline',
+      'accept',
+      'aceptar',
+      'rechazar',
+      'reject',
+    ])
+  )
+}
+
+function getNearestClickableAncestorTag(element) {
+  let current =
+    isElementLike(element) ? element : element?.parentElement
+  let depth = 0
+
+  while (current && depth < 8) {
+    if (
+      safeMatches(
+        current,
+        [
+          'button',
+          'a',
+          '[role="button"]',
+          'input',
+          '[onclick]',
+          '[tabindex]',
+        ].join(',')
+      )
+    ) {
+      return current.tagName?.toLowerCase?.() || ''
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return ''
+}
+
+function getCookieTextScopeMatch(element, scope) {
+  return {
+    scope,
+    tagName: element?.tagName?.toLowerCase?.() || '',
+    text:
+      normalizeMatchText([
+        getActionText(element),
+        element?.textContent?.slice(0, 300),
+      ].join(' '))
+        .slice(0, 120),
+    visible: isVisible(element),
+    nearestClickableAncestorTag:
+      getNearestClickableAncestorTag(element),
+  }
+}
+
+function collectCookieTextMatchesFromRoot(root, scope, state) {
+  if (
+    !root ||
+    !state ||
+    state.matches.length >= MAX_COOKIE_TEXT_SCOPE_MATCHES ||
+    state.nodesVisited >= MAX_COOKIE_TEXT_SCOPE_NODES
+  ) {
+    return
+  }
+
+  const walkerRoot =
+    root.body || root.documentElement || root
+  const ownerDocument =
+    root.ownerDocument || root
+  const walker =
+    ownerDocument.createTreeWalker?.(
+      walkerRoot,
+      NodeFilter.SHOW_ELEMENT
+    )
+
+  if (!walker) return
+
+  let node =
+    walker.currentNode
+
+  while (
+    node &&
+    state.matches.length < MAX_COOKIE_TEXT_SCOPE_MATCHES &&
+    state.nodesVisited < MAX_COOKIE_TEXT_SCOPE_NODES
+  ) {
+    state.nodesVisited += 1
+
+    if (
+      isElementLike(node) &&
+      !safeMatches(
+        node,
+        'html, body, script, style, noscript, template'
+      )
+    ) {
+      const text =
+        normalizeMatchText([
+          getActionText(node),
+          node.textContent?.slice(0, 300),
+        ].join(' '))
+
+      if (text && textMatchesCookieScopeDiagnostic(text)) {
+        state.matches.push(
+          getCookieTextScopeMatch(node, scope)
+        )
+      }
+    }
+
+    node = walker.nextNode()
+  }
+}
+
+function getIframeDiagnosticDomain(iframe) {
+  try {
+    const src =
+      iframe.getAttribute?.('src') || iframe.src || ''
+    return src ? new URL(src, window.location.href).hostname : ''
+  } catch {
+    return ''
+  }
+}
+
+function updateCookieTextScopeDiagnostics() {
+  const state = {
+    matches: [],
+    nodesVisited: 0,
+  }
+  let shadowRootCount = 0
+  let accessibleIframeCount = 0
+  let inaccessibleIframeCount = 0
+  const inaccessibleIframeDomains = []
+
+  collectCookieTextMatchesFromRoot(document, 'main', state)
+
+  safeQuerySelectorAll(document, '*')
+    .slice(0, MAX_COOKIE_TEXT_SCOPE_NODES)
+    .forEach((element) => {
+      if (
+        shadowRootCount >= MAX_COOKIE_TEXT_SCOPE_SHADOW_ROOTS ||
+        state.matches.length >= MAX_COOKIE_TEXT_SCOPE_MATCHES ||
+        state.nodesVisited >= MAX_COOKIE_TEXT_SCOPE_NODES
+      ) {
+        return
+      }
+
+      const shadowRoot =
+        element?.shadowRoot
+
+      if (!shadowRoot) return
+
+      shadowRootCount += 1
+      collectCookieTextMatchesFromRoot(
+        shadowRoot,
+        'shadow',
+        state
+      )
+    })
+
+  safeQuerySelectorAll(document, 'iframe')
+    .filter(isVisibleMeaningfulIframe)
+    .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES)
+    .forEach((iframe) => {
+      if (
+        state.matches.length >= MAX_COOKIE_TEXT_SCOPE_MATCHES ||
+        state.nodesVisited >= MAX_COOKIE_TEXT_SCOPE_NODES
+      ) {
+        return
+      }
+
+      try {
+        const iframeDocument =
+          getAccessibleIframeDocument(iframe)
+
+        if (!iframeDocument?.documentElement) {
+          inaccessibleIframeCount += 1
+          const domain =
+            getIframeDiagnosticDomain(iframe)
+          if (domain) inaccessibleIframeDomains.push(domain)
+          return
+        }
+
+        accessibleIframeCount += 1
+        collectCookieTextMatchesFromRoot(
+          iframeDocument,
+          'iframe',
+          state
+        )
+      } catch {
+        inaccessibleIframeCount += 1
+        const domain =
+          getIframeDiagnosticDomain(iframe)
+        if (domain) inaccessibleIframeDomains.push(domain)
+      }
+    })
+
+  lastCookieTextScopeDiagnostics = {
+    totalMatches: state.matches.length,
+    nodesVisited: state.nodesVisited,
+    mainDocumentMatched:
+      state.matches.some((match) => match.scope === 'main'),
+    shadowRootCount,
+    shadowMatched:
+      state.matches.some((match) => match.scope === 'shadow'),
+    accessibleIframeCount,
+    inaccessibleIframeCount,
+    inaccessibleIframeDomains:
+      [...new Set(inaccessibleIframeDomains)]
+        .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
+    iframeMatched:
+      state.matches.some((match) => match.scope === 'iframe'),
+    matches:
+      state.matches.slice(0, MAX_COOKIE_TEXT_SCOPE_MATCHES),
+  }
+}
+
+function resetCookieTextScopeDiagnostics() {
+  lastCookieTextScopeDiagnostics = null
+}
+
 function recordCurrentSiteDiagnostic({
   status = 'skipped',
   reason = '',
@@ -1908,6 +2147,7 @@ function recordCurrentSiteDiagnostic({
   decisionTrace = lastDiagnosticDecisionTrace,
   rejectCandidateDiagnostics = lastRejectCandidateDiagnostics,
   directClickableDiagnostics = lastDirectClickableDiagnostics,
+  cookieTextScopeDiagnostics = lastCookieTextScopeDiagnostics,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -2064,6 +2304,39 @@ function recordCurrentSiteDiagnostic({
                 .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP),
           }
         : null,
+    cookieTextScopeDiagnostics:
+      cookieTextScopeDiagnostics &&
+      typeof cookieTextScopeDiagnostics === 'object'
+        ? {
+            totalMatches:
+              Math.max(0, Number(cookieTextScopeDiagnostics.totalMatches) || 0),
+            nodesVisited:
+              Math.max(0, Number(cookieTextScopeDiagnostics.nodesVisited) || 0),
+            mainDocumentMatched:
+              Boolean(cookieTextScopeDiagnostics.mainDocumentMatched),
+            shadowRootCount:
+              Math.max(0, Number(cookieTextScopeDiagnostics.shadowRootCount) || 0),
+            shadowMatched:
+              Boolean(cookieTextScopeDiagnostics.shadowMatched),
+            accessibleIframeCount:
+              Math.max(0, Number(cookieTextScopeDiagnostics.accessibleIframeCount) || 0),
+            inaccessibleIframeCount:
+              Math.max(0, Number(cookieTextScopeDiagnostics.inaccessibleIframeCount) || 0),
+            inaccessibleIframeDomains:
+              (Array.isArray(cookieTextScopeDiagnostics.inaccessibleIframeDomains)
+                ? cookieTextScopeDiagnostics.inaccessibleIframeDomains
+                : [])
+                .filter(Boolean)
+                .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
+            iframeMatched:
+              Boolean(cookieTextScopeDiagnostics.iframeMatched),
+            matches:
+              (Array.isArray(cookieTextScopeDiagnostics.matches)
+                ? cookieTextScopeDiagnostics.matches
+                : [])
+                .slice(0, MAX_COOKIE_TEXT_SCOPE_MATCHES),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -2115,6 +2388,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       decisionTrace: null,
       rejectCandidateDiagnostics: [],
       directClickableDiagnostics: null,
+      cookieTextScopeDiagnostics: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -11563,6 +11837,7 @@ function scanPage() {
     updateLastDiagnosticDecisionTrace(decisionTrace)
     resetRejectCandidateDiagnostics()
     resetDirectClickableDiagnostics()
+    resetCookieTextScopeDiagnostics()
 
     const modeConfig =
       getProtectionModeConfig()
@@ -11607,6 +11882,7 @@ function scanPage() {
         !modeConfig.allowSuppression ||
         !suppressReRenderedBanner(candidate)
       )
+    updateCookieTextScopeDiagnostics()
     lastScanDetectedControlCount =
       getDiagnosticControlTexts(candidates).length
     updateLastDiagnosticDecisionTrace(decisionTrace)

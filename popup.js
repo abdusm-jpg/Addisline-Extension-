@@ -168,6 +168,11 @@ const currentSiteDiagnosticDirectControls =
     'currentSiteDiagnosticDirectControls'
   )
 
+const currentSiteDiagnosticCookieTextMatches =
+  document.getElementById(
+    'currentSiteDiagnosticCookieTextMatches'
+  )
+
 const currentSiteDiagnosticTrace =
   document.getElementById(
     'currentSiteDiagnosticTrace'
@@ -1592,6 +1597,59 @@ function formatCurrentSiteDirectControls(summary) {
   return lines.join('\n')
 }
 
+function formatCurrentSiteCookieTextMatches(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const matches =
+    Array.isArray(summary.matches)
+      ? summary.matches
+          .filter((match) =>
+            match && typeof match === 'object'
+          )
+          .slice(0, 10)
+      : []
+  const domains =
+    Array.isArray(summary.inaccessibleIframeDomains)
+      ? summary.inaccessibleIframeDomains
+          .filter(Boolean)
+          .slice(0, 2)
+          .join('|')
+      : ''
+  const lines = [
+    [
+      `totalMatches: ${Math.max(0, Number(summary.totalMatches) || 0)}`,
+      `nodesVisited: ${Math.max(0, Number(summary.nodesVisited) || 0)}`,
+      `main:${Boolean(summary.mainDocumentMatched)}`,
+      `shadowRoots:${Math.max(0, Number(summary.shadowRootCount) || 0)}`,
+      `shadow:${Boolean(summary.shadowMatched)}`,
+      `iframes:${Math.max(0, Number(summary.accessibleIframeCount) || 0)}`,
+      `iframe:${Boolean(summary.iframeMatched)}`,
+      `inaccessibleIframes:${Math.max(0, Number(summary.inaccessibleIframeCount) || 0)}`,
+      `domains:${domains || 'none'}`,
+    ].join(', '),
+  ]
+
+  if (matches.length === 0) {
+    lines.push('matches: none')
+    return lines.join('\n')
+  }
+
+  lines.push('matches:')
+  matches.forEach((match, index) => {
+    lines.push([
+      `${index + 1}. ${String(match.scope || 'unknown').slice(0, 24)}`,
+      String(match.tagName || 'unknown').slice(0, 20),
+      String(match.text || 'no text').slice(0, 100),
+      `visible:${Boolean(match.visible)}`,
+      `clickable:${String(match.nearestClickableAncestorTag || 'none').slice(0, 20)}`,
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
 function renderCurrentSiteDiagnostic(diagnostic) {
   const updatedAt =
     new Date(diagnostic?.lastUpdatedAt || 0)
@@ -1640,6 +1698,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     currentSiteDiagnosticRejectCandidates.innerText =
       'Sin datos'
     currentSiteDiagnosticDirectControls.innerText =
+      'Sin datos'
+    currentSiteDiagnosticCookieTextMatches.innerText =
       'Sin datos'
     currentSiteDiagnosticTrace.innerText =
       'Sin datos'
@@ -1741,6 +1801,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticDirectControls.innerText =
     formatCurrentSiteDirectControls(
       diagnostic.directClickableDiagnostics
+    )
+  currentSiteDiagnosticCookieTextMatches.innerText =
+    formatCurrentSiteCookieTextMatches(
+      diagnostic.cookieTextScopeDiagnostics
     )
   currentSiteDiagnosticTrace.innerText =
     formatCurrentSiteDecisionTrace(diagnostic.decisionTrace)
