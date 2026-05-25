@@ -138,6 +138,11 @@ const currentSiteDiagnosticState =
     'currentSiteDiagnosticState'
   )
 
+const currentSiteDiagnosticClassification =
+  document.getElementById(
+    'currentSiteDiagnosticClassification'
+  )
+
 const currentSiteDiagnosticReason =
   document.getElementById(
     'currentSiteDiagnosticReason'
@@ -1889,6 +1894,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'No current diagnostic yet'
     currentSiteDiagnosticState.innerText =
       'Sin datos'
+    currentSiteDiagnosticClassification.innerText =
+      'Sin datos'
     currentSiteDiagnosticReason.innerText =
       'Sin datos'
     currentSiteDiagnosticControls.innerText =
@@ -1994,6 +2001,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       : 'Diagnostico disponible'
   currentSiteDiagnosticState.innerText =
     String(diagnostic.status || 'skipped')
+  currentSiteDiagnosticClassification.innerText =
+    String(diagnostic.diagnosticClassification || 'Sin datos')
   currentSiteDiagnosticReason.innerText =
     String(diagnostic.reason || 'Sin datos')
   currentSiteDiagnosticControls.innerText =

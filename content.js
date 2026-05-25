@@ -2707,6 +2707,96 @@ function scheduleLateDiagnosticSnapshot(reason = 'scan_exhausted') {
   }, LATE_DIAGNOSTIC_SNAPSHOT_DELAY_MS)
 }
 
+function getDiagnosticClassification({
+  status = '',
+  reason = '',
+  matchedRejectText = '',
+  blockedReason = '',
+  cookieTextScopeDiagnostics = null,
+  directClickableDiagnostics = null,
+  domScopeDiagnostics = null,
+  iframeAccessibilityDiagnostics = null,
+  prioritizedCmpRootsFound = 0,
+  explicitRejectControlDetected = false,
+} = {}) {
+  const cookieTextCount =
+    Math.max(0, Number(cookieTextScopeDiagnostics?.totalMatches) || 0)
+  const rejectIntentCount =
+    Math.max(0, Number(directClickableDiagnostics?.rejectIntentCount) || 0)
+  const cookieLikeCount =
+    Math.max(0, Number(directClickableDiagnostics?.cookieLikeCount) || 0)
+  const visibleDirectCount =
+    Math.max(0, Number(directClickableDiagnostics?.visibleCount) || 0)
+  const invisibleDirectCount =
+    Math.max(0, Number(directClickableDiagnostics?.invisibleCount) || 0)
+  const fixedStickyCount =
+    Math.max(0, Number(domScopeDiagnostics?.visibleFixedStickyCount) || 0)
+  const shadowRootCount =
+    Math.max(0, Number(domScopeDiagnostics?.openShadowRootCount) || 0)
+  const iframeEntries =
+    Array.isArray(iframeAccessibilityDiagnostics?.iframes)
+      ? iframeAccessibilityDiagnostics.iframes
+      : []
+  const blockedIframe =
+    iframeEntries.some((iframe) =>
+      iframe &&
+      iframe.accessible === false &&
+      iframe.visible === true
+    )
+  const accessibleIframeCookieText =
+    iframeEntries.some((iframe) =>
+      iframe &&
+      iframe.accessible === true &&
+      iframe.cookieTextExists === true
+    )
+  const cmpDetected =
+    cookieTextCount > 0 ||
+    cookieLikeCount > 0 ||
+    Number(prioritizedCmpRootsFound) > 0 ||
+    Boolean(explicitRejectControlDetected) ||
+    accessibleIframeCookieText
+  const rejectDetected =
+    rejectIntentCount > 0 ||
+    Boolean(matchedRejectText)
+
+  if (blockedIframe) {
+    return 'blocked_by_iframe_access'
+  }
+
+  if (
+    cmpDetected &&
+    !rejectDetected &&
+    (
+      visibleDirectCount === 0 ||
+      invisibleDirectCount > visibleDirectCount
+    )
+  ) {
+    return 'blocked_by_visibility_gate'
+  }
+
+  if (cmpDetected && !rejectDetected) {
+    return 'cmp_detected_no_reject'
+  }
+
+  if (
+    !cmpDetected &&
+    (
+      reason === 'no_cmp_after_bounded_scans' ||
+      reason === 'reject_candidate_not_found' ||
+      blockedReason === 'scan_budget_exhausted' ||
+      status === 'skipped'
+    ) &&
+    cookieTextCount === 0 &&
+    rejectIntentCount === 0 &&
+    fixedStickyCount === 0 &&
+    shadowRootCount === 0
+  ) {
+    return 'possible_unreachable_or_opaque_cmp'
+  }
+
+  return 'no_cmp_detected'
+}
+
 function recordCurrentSiteDiagnostic({
   status = 'skipped',
   reason = '',
@@ -2752,12 +2842,32 @@ function recordCurrentSiteDiagnostic({
     getDiagnosticRootSummary(candidates, [matchedRejectElement])
   const now =
     new Date().toISOString()
+  const diagnosticClassification =
+    getDiagnosticClassification({
+      status,
+      reason,
+      matchedRejectText:
+        matchedRejectText ||
+        (
+          matchedRejectElement
+            ? getActionText(matchedRejectElement)
+            : ''
+        ),
+      blockedReason,
+      cookieTextScopeDiagnostics,
+      directClickableDiagnostics,
+      domScopeDiagnostics,
+      iframeAccessibilityDiagnostics,
+      prioritizedCmpRootsFound,
+      explicitRejectControlDetected,
+    })
   const diagnostic = {
     domain: getCurrentDomain(),
     url: String(window.location.href || '').slice(0, 500),
     tabId: null,
     source: 'content-script',
     status,
+    diagnosticClassification,
     reason: String(reason || '').slice(0, 120),
     detectedControls:
       Array.isArray(detectedControls)
