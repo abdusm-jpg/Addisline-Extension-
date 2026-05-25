@@ -158,6 +158,11 @@ const currentSiteDiagnosticBlocked =
     'currentSiteDiagnosticBlocked'
   )
 
+const currentSiteDiagnosticTrace =
+  document.getElementById(
+    'currentSiteDiagnosticTrace'
+  )
+
 const accountStatus =
   document.getElementById(
     'accountStatus'
@@ -1392,6 +1397,51 @@ function renderCookieAudit(audit) {
       .join('')
 }
 
+function formatCurrentSiteDecisionTrace(decisionTrace) {
+  if (!decisionTrace || typeof decisionTrace !== 'object') {
+    return 'Sin datos'
+  }
+
+  const steps =
+    Array.isArray(decisionTrace.steps)
+      ? decisionTrace.steps.slice(0, 14)
+      : []
+  const summary = [
+    `source: ${String(decisionTrace.source || 'unknown').slice(0, 40)}`,
+    `scanCount: ${Math.max(0, Number(decisionTrace.scanCount) || 0)}`,
+    `mutationScanCount: ${Math.max(0, Number(decisionTrace.mutationScanCount) || 0)}`,
+    `elapsedMs: ${Math.max(0, Number(decisionTrace.elapsedMs) || 0)}`,
+  ]
+
+  if (steps.length === 0) {
+    return summary.join(', ')
+  }
+
+  const stepLines =
+    steps.map((step, index) => {
+      const parts = [
+        `${index + 1}. ${String(step.strategy || 'unknown').slice(0, 60)}`,
+        String(step.status || 'ran').slice(0, 24),
+        `found:${Math.max(0, Number(step.found) || 0)}`,
+        `scanned:${Math.max(0, Number(step.scanned) || 0)}`,
+        `elapsed:${Math.max(0, Number(step.elapsedMs) || 0)}ms`,
+      ]
+      const reason =
+        String(step.reason || '').slice(0, 80)
+
+      if (reason) {
+        parts.push(`reason:${reason}`)
+      }
+
+      return parts.join(' | ')
+    })
+
+  return [
+    summary.join(', '),
+    ...stepLines,
+  ].join('\n')
+}
+
 function renderCurrentSiteDiagnostic(diagnostic) {
   const updatedAt =
     new Date(diagnostic?.lastUpdatedAt || 0)
@@ -1436,6 +1486,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     currentSiteDiagnosticReject.innerText =
       'Sin datos'
     currentSiteDiagnosticBlocked.innerText =
+      'Sin datos'
+    currentSiteDiagnosticTrace.innerText =
       'Sin datos'
     return
   }
@@ -1528,6 +1580,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     String(diagnostic.matchedRejectText || 'Sin datos')
   currentSiteDiagnosticBlocked.innerText =
     String(diagnostic.blockedReason || 'Sin datos')
+  currentSiteDiagnosticTrace.innerText =
+    formatCurrentSiteDecisionTrace(diagnostic.decisionTrace)
 }
 
 function renderIssueReports(issueReports) {
