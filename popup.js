@@ -173,6 +173,11 @@ const currentSiteDiagnosticCookieTextMatches =
     'currentSiteDiagnosticCookieTextMatches'
   )
 
+const currentSiteDiagnosticDomScope =
+  document.getElementById(
+    'currentSiteDiagnosticDomScope'
+  )
+
 const currentSiteDiagnosticLateSnapshot =
   document.getElementById(
     'currentSiteDiagnosticLateSnapshot'
@@ -1542,9 +1547,26 @@ function formatDirectControlLine(control, index) {
   ]
   const blockReason =
     String(control.blockReason || '').slice(0, 80)
+  const visibility =
+    control.visibilityDiagnostics &&
+    typeof control.visibilityDiagnostics === 'object'
+      ? control.visibilityDiagnostics
+      : null
 
   if (blockReason) {
     parts.push(`block:${blockReason}`)
+  }
+  if (visibility) {
+    parts.push(
+      `rect:${Math.round(Number(visibility.x) || 0)},${Math.round(Number(visibility.y) || 0)},${Math.round(Number(visibility.width) || 0)}x${Math.round(Number(visibility.height) || 0)}`
+    )
+    parts.push(
+      `style:${String(visibility.display || '').slice(0, 16)}/${String(visibility.visibility || '').slice(0, 16)}/${String(visibility.opacity || '').slice(0, 8)}`
+    )
+    parts.push(`intersect:${Boolean(visibility.viewportIntersecting)}`)
+    parts.push(`ariaHidden:${String(visibility.ariaHidden || 'none').slice(0, 12)}`)
+    parts.push(`offsetParent:${Boolean(visibility.offsetParentExists)}`)
+    parts.push(`visibilityReason:${String(visibility.finalReason || 'unknown').slice(0, 40)}`)
   }
 
   return parts.join(' | ')
@@ -1649,6 +1671,58 @@ function formatCurrentSiteCookieTextMatches(summary) {
       String(match.text || 'no text').slice(0, 100),
       `visible:${Boolean(match.visible)}`,
       `clickable:${String(match.nearestClickableAncestorTag || 'none').slice(0, 20)}`,
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
+function formatCurrentSiteDomScope(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const fixedSamples =
+    Array.isArray(summary.topVisibleFixedStickyElements)
+      ? summary.topVisibleFixedStickyElements
+          .filter((sample) =>
+            sample && typeof sample === 'object'
+          )
+          .slice(0, 5)
+      : []
+  const domains =
+    Array.isArray(summary.iframeDomains)
+      ? summary.iframeDomains
+          .filter(Boolean)
+          .slice(0, 2)
+          .join('|')
+      : ''
+  const lines = [
+    [
+      `bodyTextLength: ${Math.max(0, Number(summary.bodyTextLength) || 0)}`,
+      `elementsScanned: ${Math.max(0, Number(summary.elementsScanned) || 0)}`,
+      `fixedStickyScanned: ${Math.max(0, Number(summary.fixedStickyScannedCount) || 0)}`,
+      `visibleFixedSticky: ${Math.max(0, Number(summary.visibleFixedStickyCount) || 0)}`,
+      `openShadowRoots: ${Math.max(0, Number(summary.openShadowRootCount) || 0)}`,
+      `iframeCount: ${Math.max(0, Number(summary.iframeCount) || 0)}`,
+      `iframeDomains: ${domains || 'none'}`,
+    ].join(', '),
+  ]
+
+  if (fixedSamples.length === 0) {
+    lines.push('topVisibleFixedSticky: none')
+    return lines.join('\n')
+  }
+
+  lines.push('topVisibleFixedSticky:')
+  fixedSamples.forEach((sample, index) => {
+    lines.push([
+      `${index + 1}. ${String(sample.tagName || 'unknown').slice(0, 20)}`,
+      `z:${Math.round(Number(sample.zIndex) || 0)}`,
+      `pos:${String(sample.position || 'unknown').slice(0, 20)}`,
+      `rect:${Math.round(Number(sample.x) || 0)},${Math.round(Number(sample.y) || 0)},${Math.round(Number(sample.width) || 0)}x${Math.round(Number(sample.height) || 0)}`,
+      `cookieText:${Boolean(sample.cookieText)}`,
+      String(sample.text || 'no text').slice(0, 80),
     ].join(' | '))
   })
 
@@ -1783,6 +1857,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'Sin datos'
     currentSiteDiagnosticCookieTextMatches.innerText =
       'Sin datos'
+    currentSiteDiagnosticDomScope.innerText =
+      'Sin datos'
     currentSiteDiagnosticLateSnapshot.innerText =
       'Sin datos'
     currentSiteDiagnosticTrace.innerText =
@@ -1889,6 +1965,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticCookieTextMatches.innerText =
     formatCurrentSiteCookieTextMatches(
       diagnostic.cookieTextScopeDiagnostics
+    )
+  currentSiteDiagnosticDomScope.innerText =
+    formatCurrentSiteDomScope(
+      diagnostic.domScopeDiagnostics
     )
   currentSiteDiagnosticLateSnapshot.innerText =
     formatCurrentSiteLateSnapshot(

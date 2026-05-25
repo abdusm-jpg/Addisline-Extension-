@@ -68,6 +68,7 @@ let lastRejectCandidateDiagnostics = []
 let lastDirectClickableDiagnostics = []
 let lastCookieTextScopeDiagnostics = null
 let lastLateDiagnosticSnapshot = null
+let lastDomScopeDiagnostics = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -149,6 +150,7 @@ const MAX_COOKIE_TEXT_SCOPE_MATCHES = 10
 const MAX_LATE_DIAGNOSTIC_SNAPSHOT_SAMPLES = 5
 const MAX_COOKIE_TEXT_SCOPE_NODES = 800
 const MAX_COOKIE_TEXT_SCOPE_SHADOW_ROOTS = 20
+const MAX_DOM_SCOPE_FIXED_STICKY_SAMPLES = 5
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -1786,6 +1788,83 @@ function getDirectClickableIntentSummary(control) {
   }
 }
 
+function getViewportIntersectionState(rect) {
+  if (!rect) return false
+
+  const viewportWidth =
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    0
+  const viewportHeight =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    0
+
+  return (
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < viewportHeight &&
+    rect.left < viewportWidth
+  )
+}
+
+function getVisibilityDiagnostic(element) {
+  const rect =
+    getSafeClientRect(element)
+  const style =
+    safeGetComputedStyle(element)
+  const hasGeometry =
+    Boolean(
+      rect &&
+      (
+        (element?.offsetWidth || 0) > 0 ||
+        (element?.offsetHeight || 0) > 0 ||
+        rect.width > 0 ||
+        rect.height > 0
+      )
+    )
+  const display =
+    style?.display || ''
+  const visibility =
+    style?.visibility || ''
+  const opacity =
+    style?.opacity || ''
+  const finalVisible =
+    isVisible(element)
+  let finalReason = 'visible'
+
+  if (!isGeometryElement(element)) {
+    finalReason = 'not_geometry_element'
+  } else if (!rect) {
+    finalReason = 'missing_rect'
+  } else if (!style) {
+    finalReason = 'missing_computed_style'
+  } else if (!hasGeometry) {
+    finalReason = 'zero_geometry'
+  } else if (display === 'none') {
+    finalReason = 'display_none'
+  } else if (visibility === 'hidden') {
+    finalReason = 'visibility_hidden'
+  } else if (Number(opacity) === 0) {
+    finalReason = 'opacity_zero'
+  }
+
+  return {
+    x: rect ? Math.round(rect.x) : 0,
+    y: rect ? Math.round(rect.y) : 0,
+    width: rect ? Math.round(rect.width) : 0,
+    height: rect ? Math.round(rect.height) : 0,
+    display: String(display || '').slice(0, 40),
+    visibility: String(visibility || '').slice(0, 40),
+    opacity: String(opacity || '').slice(0, 20),
+    viewportIntersecting: getViewportIntersectionState(rect),
+    ariaHidden: String(element?.getAttribute?.('aria-hidden') || '').slice(0, 20),
+    offsetParentExists: Boolean(element?.offsetParent),
+    finalVisible,
+    finalReason,
+  }
+}
+
 function getDirectClickableDiagnostic(control, index) {
   const type =
     String(control?.getAttribute?.('type') || '').slice(0, 40)
@@ -1808,6 +1887,7 @@ function getDirectClickableDiagnostic(control, index) {
     rejectIntent: intents.rejectIntent,
     settingsIntent: intents.settingsIntent,
     acceptIntent: intents.acceptIntent,
+    visibilityDiagnostics: getVisibilityDiagnostic(control),
     blockReason: String(blockReason || '').slice(0, 80),
   }
 }
@@ -2122,6 +2202,111 @@ function resetCookieTextScopeDiagnostics() {
   lastCookieTextScopeDiagnostics = null
 }
 
+function getZIndexNumber(style) {
+  const value =
+    Number(style?.zIndex)
+
+  return Number.isFinite(value) ? value : 0
+}
+
+function getDomScopeFixedStickySample(element) {
+  const style =
+    safeGetComputedStyle(element)
+  const rect =
+    getSafeClientRect(element)
+
+  return {
+    tagName: element?.tagName?.toLowerCase?.() || '',
+    id: String(element?.id || '').slice(0, 60),
+    className: getClassNameText(element).slice(0, 80),
+    text:
+      normalizeMatchText([
+        getActionText(element),
+        element?.textContent?.slice(0, 200),
+      ].join(' '))
+        .slice(0, 100),
+    visible: isVisible(element),
+    position: String(style?.position || '').slice(0, 20),
+    zIndex: getZIndexNumber(style),
+    x: rect ? Math.round(rect.x) : 0,
+    y: rect ? Math.round(rect.y) : 0,
+    width: rect ? Math.round(rect.width) : 0,
+    height: rect ? Math.round(rect.height) : 0,
+    cookieText:
+      textMatchesCookieScopeDiagnostic([
+        getActionText(element),
+        element?.textContent?.slice(0, 300),
+      ].join(' ')),
+  }
+}
+
+function updateDomScopeDiagnostics() {
+  const allElements =
+    safeQuerySelectorAll(document, '*')
+      .slice(0, MAX_COOKIE_TEXT_SCOPE_NODES)
+  const fixedStickyElements = []
+  let openShadowRootCount = 0
+
+  allElements.forEach((element) => {
+    if (element?.shadowRoot) {
+      openShadowRootCount += 1
+    }
+
+    const style =
+      safeGetComputedStyle(element)
+
+    if (
+      style &&
+      (
+        style.position === 'fixed' ||
+        style.position === 'sticky'
+      )
+    ) {
+      fixedStickyElements.push(element)
+    }
+  })
+
+  const visibleFixedSticky =
+    fixedStickyElements
+      .filter(isVisible)
+      .sort((first, second) =>
+        getZIndexNumber(safeGetComputedStyle(second)) -
+        getZIndexNumber(safeGetComputedStyle(first))
+      )
+      .slice(0, MAX_DOM_SCOPE_FIXED_STICKY_SAMPLES)
+      .map(getDomScopeFixedStickySample)
+  const iframeDomains = []
+  const iframes =
+    safeQuerySelectorAll(document, 'iframe')
+
+  iframes
+    .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES)
+    .forEach((iframe) => {
+      const domain =
+        getIframeDiagnosticDomain(iframe)
+      if (domain) iframeDomains.push(domain)
+    })
+
+  lastDomScopeDiagnostics = {
+    bodyTextLength:
+      Math.max(0, Number(document.body?.innerText?.length) || 0),
+    elementsScanned: allElements.length,
+    fixedStickyScannedCount: fixedStickyElements.length,
+    visibleFixedStickyCount:
+      fixedStickyElements.filter(isVisible).length,
+    topVisibleFixedStickyElements: visibleFixedSticky,
+    openShadowRootCount,
+    iframeCount: iframes.length,
+    iframeDomains:
+      [...new Set(iframeDomains)]
+        .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
+  }
+}
+
+function resetDomScopeDiagnostics() {
+  lastDomScopeDiagnostics = null
+}
+
 function getDiagnosticClickableControlsFromRoot(root) {
   return safeQuerySelectorAll(
     root,
@@ -2429,6 +2614,7 @@ function recordCurrentSiteDiagnostic({
   directClickableDiagnostics = lastDirectClickableDiagnostics,
   cookieTextScopeDiagnostics = lastCookieTextScopeDiagnostics,
   lateDiagnosticSnapshot = lastLateDiagnosticSnapshot,
+  domScopeDiagnostics = lastDomScopeDiagnostics,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -2623,6 +2809,35 @@ function recordCurrentSiteDiagnostic({
       typeof lateDiagnosticSnapshot === 'object'
         ? lateDiagnosticSnapshot
         : null,
+    domScopeDiagnostics:
+      domScopeDiagnostics &&
+      typeof domScopeDiagnostics === 'object'
+        ? {
+            bodyTextLength:
+              Math.max(0, Number(domScopeDiagnostics.bodyTextLength) || 0),
+            elementsScanned:
+              Math.max(0, Number(domScopeDiagnostics.elementsScanned) || 0),
+            fixedStickyScannedCount:
+              Math.max(0, Number(domScopeDiagnostics.fixedStickyScannedCount) || 0),
+            visibleFixedStickyCount:
+              Math.max(0, Number(domScopeDiagnostics.visibleFixedStickyCount) || 0),
+            topVisibleFixedStickyElements:
+              (Array.isArray(domScopeDiagnostics.topVisibleFixedStickyElements)
+                ? domScopeDiagnostics.topVisibleFixedStickyElements
+                : [])
+                .slice(0, MAX_DOM_SCOPE_FIXED_STICKY_SAMPLES),
+            openShadowRootCount:
+              Math.max(0, Number(domScopeDiagnostics.openShadowRootCount) || 0),
+            iframeCount:
+              Math.max(0, Number(domScopeDiagnostics.iframeCount) || 0),
+            iframeDomains:
+              (Array.isArray(domScopeDiagnostics.iframeDomains)
+                ? domScopeDiagnostics.iframeDomains
+                : [])
+                .filter(Boolean)
+                .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -2676,6 +2891,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       directClickableDiagnostics: null,
       cookieTextScopeDiagnostics: null,
       lateDiagnosticSnapshot: lastLateDiagnosticSnapshot,
+      domScopeDiagnostics: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -12126,6 +12342,7 @@ function scanPage() {
     resetRejectCandidateDiagnostics()
     resetDirectClickableDiagnostics()
     resetCookieTextScopeDiagnostics()
+    resetDomScopeDiagnostics()
 
     const modeConfig =
       getProtectionModeConfig()
@@ -12171,6 +12388,7 @@ function scanPage() {
         !suppressReRenderedBanner(candidate)
       )
     updateCookieTextScopeDiagnostics()
+    updateDomScopeDiagnostics()
     lastScanDetectedControlCount =
       getDiagnosticControlTexts(candidates).length
     updateLastDiagnosticDecisionTrace(decisionTrace)
