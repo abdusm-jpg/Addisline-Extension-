@@ -1678,6 +1678,8 @@ function formatCurrentSiteLateSnapshot(snapshot) {
   const lines = [
     [
       `reason: ${String(snapshot.reason || 'unknown').slice(0, 80)}`,
+      `scheduled: ${Boolean(snapshot.scheduled)}`,
+      `ran: ${Boolean(snapshot.ran)}`,
       `delayedMs: ${Math.max(0, Number(snapshot.delayedMs) || 0)}`,
       `capturedAt: ${String(snapshot.capturedAt || 'unknown').slice(0, 40)}`,
       `cookieTextAppeared: ${Boolean(snapshot.cookieTextAppeared)}`,
@@ -1692,6 +1694,11 @@ function formatCurrentSiteLateSnapshot(snapshot) {
   ]
 
   if (samples.length === 0) {
+    const error =
+      String(snapshot.error || '').slice(0, 120)
+    if (error) {
+      lines.push(`error: ${error}`)
+    }
     lines.push('samples: none')
     return lines.join('\n')
   }

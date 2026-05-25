@@ -67,6 +67,7 @@ let lastDiagnosticDecisionTrace = null
 let lastRejectCandidateDiagnostics = []
 let lastDirectClickableDiagnostics = []
 let lastCookieTextScopeDiagnostics = null
+let lastLateDiagnosticSnapshot = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -2293,6 +2294,44 @@ function buildLateDiagnosticSnapshot(reason = 'scan_exhausted') {
 function storeLateDiagnosticSnapshot(snapshot) {
   if (!hasExtensionContext() || !snapshot) return
 
+  lastLateDiagnosticSnapshot = snapshot
+
+  safeStorageGet({
+    [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
+  }, (data) => {
+    const current =
+      data?.[CURRENT_SITE_DIAGNOSTIC_KEY]
+
+    if (!current || typeof current !== 'object') {
+      return
+    }
+
+    safeStorageSet({
+      [CURRENT_SITE_DIAGNOSTIC_KEY]: {
+        ...current,
+        lateDiagnosticSnapshot: snapshot,
+        lastUpdatedAt: new Date().toISOString(),
+      },
+    })
+  })
+}
+
+function mergeLateDiagnosticSnapshotMarker(partial = {}) {
+  const snapshot = {
+    ...(lastLateDiagnosticSnapshot || {}),
+    ...partial,
+    reason:
+      String(
+        partial.reason ||
+          lastLateDiagnosticSnapshot?.reason ||
+          'scan_exhausted'
+      ).slice(0, 80),
+  }
+
+  lastLateDiagnosticSnapshot = snapshot
+
+  if (!hasExtensionContext()) return
+
   safeStorageGet({
     [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
   }, (data) => {
@@ -2323,13 +2362,32 @@ function scheduleLateDiagnosticSnapshot(reason = 'scan_exhausted') {
   }
 
   lateDiagnosticSnapshotScheduled = true
+  mergeLateDiagnosticSnapshotMarker({
+    scheduled: true,
+    ran: false,
+    reason,
+    delayedMs: LATE_DIAGNOSTIC_SNAPSHOT_DELAY_MS,
+  })
 
   setTimeout(() => {
     try {
-      storeLateDiagnosticSnapshot(
+      const snapshot =
         buildLateDiagnosticSnapshot(reason)
-      )
+
+      storeLateDiagnosticSnapshot({
+        ...snapshot,
+        scheduled: true,
+        ran: true,
+      })
     } catch (error) {
+      mergeLateDiagnosticSnapshotMarker({
+        scheduled: true,
+        ran: false,
+        reason,
+        error:
+          String(error?.message || error || 'snapshot_failed')
+            .slice(0, 120),
+      })
       logRuntimeError('late_diagnostic_snapshot', error)
     }
   }, LATE_DIAGNOSTIC_SNAPSHOT_DELAY_MS)
@@ -2370,7 +2428,7 @@ function recordCurrentSiteDiagnostic({
   rejectCandidateDiagnostics = lastRejectCandidateDiagnostics,
   directClickableDiagnostics = lastDirectClickableDiagnostics,
   cookieTextScopeDiagnostics = lastCookieTextScopeDiagnostics,
-  lateDiagnosticSnapshot = null,
+  lateDiagnosticSnapshot = lastLateDiagnosticSnapshot,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -2617,7 +2675,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       rejectCandidateDiagnostics: [],
       directClickableDiagnostics: null,
       cookieTextScopeDiagnostics: null,
-      lateDiagnosticSnapshot: null,
+      lateDiagnosticSnapshot: lastLateDiagnosticSnapshot,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
