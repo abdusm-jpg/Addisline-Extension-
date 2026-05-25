@@ -139,7 +139,7 @@ const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
-const MAX_DIRECT_CLICKABLE_DIAGNOSTICS = 10
+const MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT = 80
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
@@ -1731,11 +1731,60 @@ function hasCookieIntentSignal(control) {
   )
 }
 
+function hasSettingsIntentSignal(control) {
+  const signal =
+    normalizeMatchText([
+      getActionText(control),
+      control?.id,
+      getClassNameText(control),
+      control?.getAttribute?.('aria-label'),
+      control?.getAttribute?.('title'),
+      control?.value,
+      control?.getAttribute?.('value'),
+    ].join(' '))
+
+  return (
+    textMatchesDictionaryCookieIntent(signal, 'openSettings') ||
+    textMatchesDictionaryCookieIntent(signal, 'manageSettings') ||
+    textMatchesLightweightSettingsOpen(signal) ||
+    textHasAny(signal, settingsTexts)
+  )
+}
+
+function hasAcceptIntentSignal(control) {
+  const signal =
+    normalizeMatchText([
+      getActionText(control),
+      control?.id,
+      getClassNameText(control),
+      control?.getAttribute?.('aria-label'),
+      control?.getAttribute?.('title'),
+      control?.value,
+      control?.getAttribute?.('value'),
+    ].join(' '))
+
+  return (
+    textMatchesDictionaryCookieIntent(signal, 'avoidAcceptAll') ||
+    getCookieIntentScore(control, document, 'acceptAll') >= 8
+  )
+}
+
+function getDirectClickableIntentSummary(control) {
+  return {
+    cookieIntent: hasCookieIntentSignal(control),
+    rejectIntent: hasRejectCandidateDiagnosticSignal(control),
+    settingsIntent: hasSettingsIntentSignal(control),
+    acceptIntent: hasAcceptIntentSignal(control),
+  }
+}
+
 function getDirectClickableDiagnostic(control, index) {
   const type =
     String(control?.getAttribute?.('type') || '').slice(0, 40)
   const blockReason =
     getBasicRejectBlockReason(control)
+  const intents =
+    getDirectClickableIntentSummary(control)
 
   return {
     index: Math.max(0, Number(index) || 0),
@@ -1747,23 +1796,82 @@ function getDirectClickableDiagnostic(control, index) {
         .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT),
     visible: isVisible(control),
     disabled: getCookieDebugDisabledState(control) === 'disabled',
-    rejectIntent: hasRejectCandidateDiagnosticSignal(control),
-    cookieIntent: hasCookieIntentSignal(control),
+    cookieIntent: intents.cookieIntent,
+    rejectIntent: intents.rejectIntent,
+    settingsIntent: intents.settingsIntent,
+    acceptIntent: intents.acceptIntent,
     blockReason: String(blockReason || '').slice(0, 80),
   }
 }
 
 function recordDirectClickableDiagnostics(controls = []) {
-  lastDirectClickableDiagnostics =
-    (Array.isArray(controls) ? controls : [])
-      .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS)
-      .map((control, index) =>
-        getDirectClickableDiagnostic(control, index)
+  const safeControls =
+    Array.isArray(controls) ? controls : []
+  const diagnostics =
+    safeControls.map((control, index) => ({
+      control,
+      diagnostic: getDirectClickableDiagnostic(control, index),
+    }))
+  const intentDiagnostics =
+    diagnostics
+      .filter(({ diagnostic }) =>
+        diagnostic.cookieIntent ||
+        diagnostic.rejectIntent ||
+        diagnostic.settingsIntent ||
+        diagnostic.acceptIntent
       )
+      .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP)
+      .map(({ diagnostic }) => diagnostic)
+  const visibleDiagnostics =
+    diagnostics
+      .filter(({ diagnostic }) => diagnostic.visible)
+      .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP)
+      .map(({ diagnostic }) => diagnostic)
+  const invisibleDiagnostics =
+    diagnostics
+      .filter(({ diagnostic }) => !diagnostic.visible)
+      .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP)
+      .map(({ diagnostic }) => diagnostic)
+
+  lastDirectClickableDiagnostics = {
+    totalScanned: safeControls.length,
+    cookieLikeCount: diagnostics
+      .filter(({ diagnostic }) => diagnostic.cookieIntent)
+      .length,
+    rejectIntentCount: diagnostics
+      .filter(({ diagnostic }) => diagnostic.rejectIntent)
+      .length,
+    settingsIntentCount: diagnostics
+      .filter(({ diagnostic }) => diagnostic.settingsIntent)
+      .length,
+    acceptIntentCount: diagnostics
+      .filter(({ diagnostic }) => diagnostic.acceptIntent)
+      .length,
+    visibleCount: diagnostics
+      .filter(({ diagnostic }) => diagnostic.visible)
+      .length,
+    invisibleCount: diagnostics
+      .filter(({ diagnostic }) => !diagnostic.visible)
+      .length,
+    intentControls: intentDiagnostics,
+    visibleControls: visibleDiagnostics,
+    invisibleControls: invisibleDiagnostics,
+  }
 }
 
 function resetDirectClickableDiagnostics() {
-  lastDirectClickableDiagnostics = []
+  lastDirectClickableDiagnostics = {
+    totalScanned: 0,
+    cookieLikeCount: 0,
+    rejectIntentCount: 0,
+    settingsIntentCount: 0,
+    acceptIntentCount: 0,
+    visibleCount: 0,
+    invisibleCount: 0,
+    intentControls: [],
+    visibleControls: [],
+    invisibleControls: [],
+  }
 }
 
 function recordCurrentSiteDiagnostic({
@@ -1922,10 +2030,40 @@ function recordCurrentSiteDiagnostic({
         : [])
         .slice(0, MAX_REJECT_CANDIDATE_DIAGNOSTICS),
     directClickableDiagnostics:
-      (Array.isArray(directClickableDiagnostics)
-        ? directClickableDiagnostics
-        : [])
-        .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS),
+      directClickableDiagnostics &&
+      typeof directClickableDiagnostics === 'object'
+        ? {
+            totalScanned:
+              Math.max(0, Number(directClickableDiagnostics.totalScanned) || 0),
+            cookieLikeCount:
+              Math.max(0, Number(directClickableDiagnostics.cookieLikeCount) || 0),
+            rejectIntentCount:
+              Math.max(0, Number(directClickableDiagnostics.rejectIntentCount) || 0),
+            settingsIntentCount:
+              Math.max(0, Number(directClickableDiagnostics.settingsIntentCount) || 0),
+            acceptIntentCount:
+              Math.max(0, Number(directClickableDiagnostics.acceptIntentCount) || 0),
+            visibleCount:
+              Math.max(0, Number(directClickableDiagnostics.visibleCount) || 0),
+            invisibleCount:
+              Math.max(0, Number(directClickableDiagnostics.invisibleCount) || 0),
+            intentControls:
+              (Array.isArray(directClickableDiagnostics.intentControls)
+                ? directClickableDiagnostics.intentControls
+                : [])
+                .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP),
+            visibleControls:
+              (Array.isArray(directClickableDiagnostics.visibleControls)
+                ? directClickableDiagnostics.visibleControls
+                : [])
+                .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP),
+            invisibleControls:
+              (Array.isArray(directClickableDiagnostics.invisibleControls)
+                ? directClickableDiagnostics.invisibleControls
+                : [])
+                .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -1976,7 +2114,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       settingsSaveVerification: '',
       decisionTrace: null,
       rejectCandidateDiagnostics: [],
-      directClickableDiagnostics: [],
+      directClickableDiagnostics: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })

@@ -1507,52 +1507,89 @@ function formatCurrentSiteRejectCandidates(candidates) {
     .join('\n')
 }
 
-function formatCurrentSiteDirectControls(controls) {
+function formatDirectControlLine(control, index) {
+  const role =
+    String(control.role || '').slice(0, 32)
+  const type =
+    String(control.type || '').slice(0, 32)
+  const kind =
+    [
+      String(control.tagName || 'unknown').slice(0, 20),
+      role ? `role:${role}` : '',
+      type ? `type:${type}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  const parts = [
+    `${index + 1}. #${Math.max(0, Number(control.index) || 0)} ${kind}`,
+    String(control.text || 'no text').slice(0, 80),
+    `visible:${Boolean(control.visible)}`,
+    `disabled:${Boolean(control.disabled)}`,
+    `cookie:${Boolean(control.cookieIntent)}`,
+    `reject:${Boolean(control.rejectIntent)}`,
+    `settings:${Boolean(control.settingsIntent)}`,
+    `accept:${Boolean(control.acceptIntent)}`,
+  ]
+  const blockReason =
+    String(control.blockReason || '').slice(0, 80)
+
+  if (blockReason) {
+    parts.push(`block:${blockReason}`)
+  }
+
+  return parts.join(' | ')
+}
+
+function getDirectControlGroupLines(label, controls) {
   const safeControls =
     Array.isArray(controls)
       ? controls
           .filter((control) =>
             control && typeof control === 'object'
           )
-          .slice(0, 10)
+          .slice(0, 5)
       : []
 
   if (safeControls.length === 0) {
+    return [`${label}: none`]
+  }
+
+  return [
+    `${label}:`,
+    ...safeControls.map(formatDirectControlLine),
+  ]
+}
+
+function formatCurrentSiteDirectControls(summary) {
+  if (!summary || typeof summary !== 'object') {
     return 'Sin datos'
   }
 
-  return safeControls
-    .map((control, index) => {
-      const role =
-        String(control.role || '').slice(0, 32)
-      const type =
-        String(control.type || '').slice(0, 32)
-      const kind =
-        [
-          String(control.tagName || 'unknown').slice(0, 20),
-          role ? `role:${role}` : '',
-          type ? `type:${type}` : '',
-        ]
-          .filter(Boolean)
-          .join(' ')
-      const parts = [
-        `${index + 1}. ${kind}`,
-        String(control.text || 'no text').slice(0, 80),
-        `visible:${Boolean(control.visible)}`,
-        `disabled:${Boolean(control.disabled)}`,
-        `rejectIntent:${Boolean(control.rejectIntent)}`,
-        `cookieIntent:${Boolean(control.cookieIntent)}`,
-      ]
-      const blockReason =
-        String(control.blockReason || '').slice(0, 80)
+  const lines = [
+    [
+      `totalScanned: ${Math.max(0, Number(summary.totalScanned) || 0)}`,
+      `cookieLikeCount: ${Math.max(0, Number(summary.cookieLikeCount) || 0)}`,
+      `rejectIntentCount: ${Math.max(0, Number(summary.rejectIntentCount) || 0)}`,
+      `settingsIntentCount: ${Math.max(0, Number(summary.settingsIntentCount) || 0)}`,
+      `acceptIntentCount: ${Math.max(0, Number(summary.acceptIntentCount) || 0)}`,
+      `visibleCount: ${Math.max(0, Number(summary.visibleCount) || 0)}`,
+      `invisibleCount: ${Math.max(0, Number(summary.invisibleCount) || 0)}`,
+    ].join(', '),
+    ...getDirectControlGroupLines(
+      'intentControls',
+      summary.intentControls
+    ),
+    ...getDirectControlGroupLines(
+      'visibleControls',
+      summary.visibleControls
+    ),
+    ...getDirectControlGroupLines(
+      'invisibleControls',
+      summary.invisibleControls
+    ),
+  ]
 
-      if (blockReason) {
-        parts.push(`block:${blockReason}`)
-      }
-
-      return parts.join(' | ')
-    })
-    .join('\n')
+  return lines.join('\n')
 }
 
 function renderCurrentSiteDiagnostic(diagnostic) {
