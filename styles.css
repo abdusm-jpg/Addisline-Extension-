@@ -376,6 +376,12 @@ h1 {
   text-align: right;
 }
 
+#currentSiteDiagnosticRejectCandidates,
+#currentSiteDiagnosticTrace {
+  white-space: pre-wrap;
+  text-align: left;
+}
+
 .stats {
   display: grid;
   grid-template-columns: 1fr 1fr;

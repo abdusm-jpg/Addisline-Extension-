@@ -158,6 +158,11 @@ const currentSiteDiagnosticBlocked =
     'currentSiteDiagnosticBlocked'
   )
 
+const currentSiteDiagnosticRejectCandidates =
+  document.getElementById(
+    'currentSiteDiagnosticRejectCandidates'
+  )
+
 const currentSiteDiagnosticTrace =
   document.getElementById(
     'currentSiteDiagnosticTrace'
@@ -1404,7 +1409,9 @@ function formatCurrentSiteDecisionTrace(decisionTrace) {
 
   const steps =
     Array.isArray(decisionTrace.steps)
-      ? decisionTrace.steps.slice(0, 14)
+      ? decisionTrace.steps
+          .filter((step) => step && typeof step === 'object')
+          .slice(0, 14)
       : []
   const summary = [
     `source: ${String(decisionTrace.source || 'unknown').slice(0, 40)}`,
@@ -1440,6 +1447,59 @@ function formatCurrentSiteDecisionTrace(decisionTrace) {
     summary.join(', '),
     ...stepLines,
   ].join('\n')
+}
+
+function formatCurrentSiteRejectCandidates(candidates) {
+  const safeCandidates =
+    Array.isArray(candidates)
+      ? candidates
+          .filter((candidate) =>
+            candidate && typeof candidate === 'object'
+          )
+          .slice(0, 5)
+      : []
+
+  if (safeCandidates.length === 0) {
+    return 'Sin datos'
+  }
+
+  return safeCandidates
+    .map((candidate, index) => {
+      const matchedBy =
+        Array.isArray(candidate.matchedBy)
+          ? candidate.matchedBy
+              .filter(Boolean)
+              .slice(0, 5)
+              .join('|')
+          : ''
+      const rejectedBy =
+        Array.isArray(candidate.rejectedBy)
+          ? candidate.rejectedBy
+              .filter(Boolean)
+              .slice(0, 8)
+              .join('|')
+          : ''
+      const parts = [
+        `${index + 1}. ${String(candidate.source || 'unknown').slice(0, 40)}`,
+        String(candidate.text || 'no text').slice(0, 80),
+        `visible:${Boolean(candidate.visible)}`,
+        `disabled:${String(candidate.disabledState || 'unknown').slice(0, 20)}`,
+        `container:${Boolean(candidate.containerFound)}`,
+        `containerPotential:${Boolean(candidate.containerPotential)}`,
+        `matched:${matchedBy || 'none'}`,
+        `rejected:${rejectedBy || 'none'}`,
+        `scores:${Math.max(0, Number(candidate.rejectAllScore) || 0)}/${Math.max(0, Number(candidate.essentialOnlyScore) || 0)}/${Math.max(0, Number(candidate.legacyRejectScore) || 0)}`,
+      ]
+      const blockReason =
+        String(candidate.blockReason || '').slice(0, 80)
+
+      if (blockReason) {
+        parts.push(`block:${blockReason}`)
+      }
+
+      return parts.join(' | ')
+    })
+    .join('\n')
 }
 
 function renderCurrentSiteDiagnostic(diagnostic) {
@@ -1486,6 +1546,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     currentSiteDiagnosticReject.innerText =
       'Sin datos'
     currentSiteDiagnosticBlocked.innerText =
+      'Sin datos'
+    currentSiteDiagnosticRejectCandidates.innerText =
       'Sin datos'
     currentSiteDiagnosticTrace.innerText =
       'Sin datos'
@@ -1580,6 +1642,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     String(diagnostic.matchedRejectText || 'Sin datos')
   currentSiteDiagnosticBlocked.innerText =
     String(diagnostic.blockedReason || 'Sin datos')
+  currentSiteDiagnosticRejectCandidates.innerText =
+    formatCurrentSiteRejectCandidates(
+      diagnostic.rejectCandidateDiagnostics
+    )
   currentSiteDiagnosticTrace.innerText =
     formatCurrentSiteDecisionTrace(diagnostic.decisionTrace)
 }

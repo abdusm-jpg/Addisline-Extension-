@@ -63,6 +63,7 @@ let lastSettingsSaveDetected = false
 let lastSettingsSaveClicked = false
 let lastSettingsSaveVerification = ''
 let lastDiagnosticDecisionTrace = null
+let lastRejectCandidateDiagnostics = []
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -136,6 +137,7 @@ const MAX_COOKIE_CANDIDATES_PER_SCAN = 10
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
+const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -1541,6 +1543,170 @@ function updateLastDiagnosticDecisionTrace(trace) {
   return lastDiagnosticDecisionTrace
 }
 
+function getRejectCandidateMatchDetails(control, container = document) {
+  const text =
+    getActionText(control)
+  const classText =
+    getClassNameText(control)
+  const idText =
+    control?.id || ''
+  const matchedBy = []
+
+  if (textMatchesDictionaryCookieIntent(text, 'rejectAll')) {
+    matchedBy.push('dictionary_reject_all')
+  }
+  if (textHasAny(text, totalRejectTexts)) {
+    matchedBy.push('total_reject_text')
+  }
+  if (textHasAny(text, rejectTexts)) {
+    matchedBy.push('reject_text')
+  }
+  if (isNoAceptoControl(control)) {
+    matchedBy.push('no_acepto')
+  }
+  if (
+    textHasAny(classText, directSafeRejectClassSignals) ||
+    textHasAny(idText, directSafeRejectClassSignals)
+  ) {
+    matchedBy.push('direct_safe_signal')
+  }
+
+  return {
+    matchedBy,
+    rejectAllScore:
+      getCookieIntentScore(control, container, 'rejectAll'),
+    essentialOnlyScore:
+      getCookieIntentScore(control, container, 'essentialOnly'),
+    legacyRejectScore:
+      scoreTextAgainstKeywords(text, rejectTexts, 8),
+  }
+}
+
+function getRejectCandidateDiagnostic(control, source, container = document) {
+  const nearestContainer =
+    getCookieContainer(control) || container || document
+  const details =
+    getRejectCandidateMatchDetails(control, nearestContainer)
+  const rejectedBy = []
+  const signature =
+    getBannerActionSignature(control)
+  const lastActionAt =
+    bannerActionCooldowns.get(signature) || 0
+  const blockedByCooldown =
+    Boolean(
+      signature &&
+      Date.now() - lastActionAt < BANNER_ACTION_COOLDOWN_MS
+    )
+
+  if (!isVisible(control)) rejectedBy.push('not_visible')
+  if (getCookieDebugDisabledState(control) === 'disabled') {
+    rejectedBy.push('disabled')
+  }
+  if (isInsideNonCookieModal(control)) {
+    rejectedBy.push('non_cookie_modal')
+  }
+  if (hasUnsafeAcceptText(control)) {
+    rejectedBy.push('unsafe_accept_text')
+  }
+  if (hasVisibleSettingsIntent(control)) {
+    rejectedBy.push('settings_intent')
+  }
+  if (processedActionElements.has(control)) {
+    rejectedBy.push('processed_state')
+  }
+  if (blockedByCooldown) {
+    rejectedBy.push('cooldown')
+  }
+  if (isSensitiveActionControl(control, nearestContainer)) {
+    rejectedBy.push('sensitive_context')
+  }
+  if (details.matchedBy.length === 0) {
+    rejectedBy.push('no_reject_match')
+  } else if (
+    details.rejectAllScore < 8 &&
+    details.essentialOnlyScore < 8 &&
+    details.legacyRejectScore < 8
+  ) {
+    rejectedBy.push('score_below_threshold')
+  }
+
+  return {
+    source: String(source || 'unknown').slice(0, 40),
+    text: getActionText(control).slice(0, 120),
+    tagName: control?.tagName?.toLowerCase?.() || '',
+    role: String(control?.getAttribute?.('role') || '').slice(0, 40),
+    visible: isVisible(control),
+    disabledState: getCookieDebugDisabledState(control),
+    containerFound: Boolean(nearestContainer && nearestContainer !== document),
+    containerPotential:
+      nearestContainer && nearestContainer !== document
+        ? isPotentialCookieContainer(nearestContainer)
+        : false,
+    matchedBy: details.matchedBy.slice(0, 5),
+    rejectedBy: rejectedBy.slice(0, 8),
+    rejectAllScore: Math.max(0, Number(details.rejectAllScore) || 0),
+    essentialOnlyScore:
+      Math.max(0, Number(details.essentialOnlyScore) || 0),
+    legacyRejectScore:
+      Math.max(0, Number(details.legacyRejectScore) || 0),
+    blockReason: getBasicRejectBlockReason(control),
+  }
+}
+
+function hasRejectCandidateDiagnosticSignal(control) {
+  const signal =
+    normalizeMatchText([
+      getActionText(control),
+      control?.id,
+      getClassNameText(control),
+      control?.getAttribute?.('aria-label'),
+      control?.getAttribute?.('title'),
+      control?.value,
+      control?.getAttribute?.('value'),
+    ].join(' '))
+
+  return (
+    textMatchesDictionaryCookieIntent(signal, 'rejectAll') ||
+    textHasAny(signal, totalRejectTexts) ||
+    textHasAny(signal, rejectTexts) ||
+    textHasAny(signal, directSafeRejectClassSignals) ||
+    textHasPhrase(signal, 'no acepto')
+  )
+}
+
+function recordRejectCandidateDiagnostics(
+  source,
+  controls = [],
+  container = document
+) {
+  const diagnostics =
+    uniqueElements(Array.isArray(controls) ? controls : [])
+      .filter(hasRejectCandidateDiagnosticSignal)
+      .slice(0, MAX_REJECT_CANDIDATE_DIAGNOSTICS)
+      .map((control) =>
+        getRejectCandidateDiagnostic(control, source, container)
+      )
+
+  if (diagnostics.length === 0) return
+
+  lastRejectCandidateDiagnostics =
+    (
+      source === 'direct_scan'
+        ? [
+            ...diagnostics,
+            ...lastRejectCandidateDiagnostics,
+          ]
+        : [
+            ...lastRejectCandidateDiagnostics,
+            ...diagnostics,
+          ]
+    ).slice(0, MAX_REJECT_CANDIDATE_DIAGNOSTICS)
+}
+
+function resetRejectCandidateDiagnostics() {
+  lastRejectCandidateDiagnostics = []
+}
+
 function recordCurrentSiteDiagnostic({
   status = 'skipped',
   reason = '',
@@ -1573,6 +1739,7 @@ function recordCurrentSiteDiagnostic({
   settingsSaveClicked = lastSettingsSaveClicked,
   settingsSaveVerification = lastSettingsSaveVerification,
   decisionTrace = lastDiagnosticDecisionTrace,
+  rejectCandidateDiagnostics = lastRejectCandidateDiagnostics,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -1689,6 +1856,11 @@ function recordCurrentSiteDiagnostic({
                 .slice(0, MAX_DIAGNOSTIC_DECISION_TRACE_STEPS),
           }
         : null,
+    rejectCandidateDiagnostics:
+      (Array.isArray(rejectCandidateDiagnostics)
+        ? rejectCandidateDiagnostics
+        : [])
+        .slice(0, MAX_REJECT_CANDIDATE_DIAGNOSTICS),
     lastUpdatedAt: now,
   }
 
@@ -1738,6 +1910,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       settingsSaveClicked: false,
       settingsSaveVerification: '',
       decisionTrace: null,
+      rejectCandidateDiagnostics: [],
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -6046,6 +6219,11 @@ function findDirectSafeRejectControl(decisionTrace = null) {
     getDirectClickableControls(document)
 
   traceDirectRejectExtraction(controls)
+  recordRejectCandidateDiagnostics(
+    'direct_scan',
+    controls,
+    document
+  )
 
   const control = controls
     .find((control) => {
@@ -7306,8 +7484,15 @@ function decideCookieAction(container, decisionTrace = null) {
     })
   }
 
+  const controls =
+    getActionControls(container)
   const scannedControls =
-    getActionControls(container).length
+    controls.length
+  recordRejectCandidateDiagnostics(
+    'candidate_scan',
+    controls,
+    container
+  )
 
   const rejectAllStartedAt = Date.now()
   const totalReject =
@@ -11171,6 +11356,7 @@ function scanPage() {
     const decisionTrace =
       createDiagnosticDecisionTrace('scanPage')
     updateLastDiagnosticDecisionTrace(decisionTrace)
+    resetRejectCandidateDiagnostics()
 
     const modeConfig =
       getProtectionModeConfig()
