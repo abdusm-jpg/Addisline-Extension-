@@ -173,6 +173,11 @@ const currentSiteDiagnosticCookieTextMatches =
     'currentSiteDiagnosticCookieTextMatches'
   )
 
+const currentSiteDiagnosticLateSnapshot =
+  document.getElementById(
+    'currentSiteDiagnosticLateSnapshot'
+  )
+
 const currentSiteDiagnosticTrace =
   document.getElementById(
     'currentSiteDiagnosticTrace'
@@ -1650,6 +1655,76 @@ function formatCurrentSiteCookieTextMatches(summary) {
   return lines.join('\n')
 }
 
+function formatCurrentSiteLateSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return 'Sin datos'
+  }
+
+  const samples =
+    Array.isArray(snapshot.samples)
+      ? snapshot.samples
+          .filter((sample) =>
+            sample && typeof sample === 'object'
+          )
+          .slice(0, 5)
+      : []
+  const domains =
+    Array.isArray(snapshot.inaccessibleIframeDomains)
+      ? snapshot.inaccessibleIframeDomains
+          .filter(Boolean)
+          .slice(0, 2)
+          .join('|')
+      : ''
+  const lines = [
+    [
+      `reason: ${String(snapshot.reason || 'unknown').slice(0, 80)}`,
+      `delayedMs: ${Math.max(0, Number(snapshot.delayedMs) || 0)}`,
+      `capturedAt: ${String(snapshot.capturedAt || 'unknown').slice(0, 40)}`,
+      `cookieTextAppeared: ${Boolean(snapshot.cookieTextAppeared)}`,
+      `textMatchCount: ${Math.max(0, Number(snapshot.textMatchCount) || 0)}`,
+      `visibleClickableControlsCount: ${Math.max(0, Number(snapshot.visibleClickableControlsCount) || 0)}`,
+      `cookieLikeDirectControlsCount: ${Math.max(0, Number(snapshot.cookieLikeDirectControlsCount) || 0)}`,
+      `rejectLikeDirectControlsCount: ${Math.max(0, Number(snapshot.rejectLikeDirectControlsCount) || 0)}`,
+      `accessibleIframeCount: ${Math.max(0, Number(snapshot.accessibleIframeCount) || 0)}`,
+      `inaccessibleIframeCount: ${Math.max(0, Number(snapshot.inaccessibleIframeCount) || 0)}`,
+      `domains: ${domains || 'none'}`,
+    ].join(', '),
+  ]
+
+  if (samples.length === 0) {
+    lines.push('samples: none')
+    return lines.join('\n')
+  }
+
+  lines.push('samples:')
+  samples.forEach((sample, index) => {
+    if (sample.type === 'control') {
+      lines.push([
+        `${index + 1}. control`,
+        String(sample.tagName || 'unknown').slice(0, 24),
+        String(sample.text || 'no text').slice(0, 100),
+        `visible:${Boolean(sample.visible)}`,
+        `cookie:${Boolean(sample.cookieIntent)}`,
+        `reject:${Boolean(sample.rejectIntent)}`,
+        `settings:${Boolean(sample.settingsIntent)}`,
+        `accept:${Boolean(sample.acceptIntent)}`,
+      ].join(' | '))
+      return
+    }
+
+    lines.push([
+      `${index + 1}. text`,
+      String(sample.scope || 'unknown').slice(0, 24),
+      String(sample.tagName || 'unknown').slice(0, 24),
+      String(sample.text || 'no text').slice(0, 100),
+      `visible:${Boolean(sample.visible)}`,
+      `clickable:${String(sample.nearestClickableAncestorTag || 'none').slice(0, 24)}`,
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
 function renderCurrentSiteDiagnostic(diagnostic) {
   const updatedAt =
     new Date(diagnostic?.lastUpdatedAt || 0)
@@ -1700,6 +1775,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     currentSiteDiagnosticDirectControls.innerText =
       'Sin datos'
     currentSiteDiagnosticCookieTextMatches.innerText =
+      'Sin datos'
+    currentSiteDiagnosticLateSnapshot.innerText =
       'Sin datos'
     currentSiteDiagnosticTrace.innerText =
       'Sin datos'
@@ -1805,6 +1882,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticCookieTextMatches.innerText =
     formatCurrentSiteCookieTextMatches(
       diagnostic.cookieTextScopeDiagnostics
+    )
+  currentSiteDiagnosticLateSnapshot.innerText =
+    formatCurrentSiteLateSnapshot(
+      diagnostic.lateDiagnosticSnapshot
     )
   currentSiteDiagnosticTrace.innerText =
     formatCurrentSiteDecisionTrace(diagnostic.decisionTrace)

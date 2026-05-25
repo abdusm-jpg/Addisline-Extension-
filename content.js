@@ -40,6 +40,7 @@ let lateBannerRecoveryCheckScheduled = false
 let lateHydrationRecheckScheduled = false
 let lateHydrationRecheckRan = false
 let lateHydrationRecheckActive = false
+let lateDiagnosticSnapshotScheduled = false
 let lastScanDetectedControlCount = 0
 let lastPrioritizedCmpRootsFound = 0
 let lastPrioritizedRootTexts = []
@@ -131,6 +132,7 @@ const PAGE_LOADING_SCAN_DELAY_MS = 1500
 const LATE_CMP_RESCAN_DELAY_MS = 3500
 const LATE_BANNER_RECOVERY_CHECK_DELAY_MS = 4000
 const LATE_HYDRATION_RECHECK_DELAY_MS = 1000
+const LATE_DIAGNOSTIC_SNAPSHOT_DELAY_MS = 2000
 const MAX_SCANS_PER_PAGE = 8
 const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_NO_CMP_SCANS = 3
@@ -143,6 +145,7 @@ const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT = 80
 const MAX_COOKIE_TEXT_SCOPE_MATCHES = 10
+const MAX_LATE_DIAGNOSTIC_SNAPSHOT_SAMPLES = 5
 const MAX_COOKIE_TEXT_SCOPE_NODES = 800
 const MAX_COOKIE_TEXT_SCOPE_SHADOW_ROOTS = 20
 const MAX_PRIORITIZED_CMP_ROOTS = 4
@@ -2017,6 +2020,11 @@ function getIframeDiagnosticDomain(iframe) {
 }
 
 function updateCookieTextScopeDiagnostics() {
+  lastCookieTextScopeDiagnostics =
+    buildCookieTextScopeDiagnostics()
+}
+
+function buildCookieTextScopeDiagnostics() {
   const state = {
     matches: [],
     nodesVisited: 0,
@@ -2089,7 +2097,7 @@ function updateCookieTextScopeDiagnostics() {
       }
     })
 
-  lastCookieTextScopeDiagnostics = {
+  return {
     totalMatches: state.matches.length,
     nodesVisited: state.nodesVisited,
     mainDocumentMatched:
@@ -2111,6 +2119,220 @@ function updateCookieTextScopeDiagnostics() {
 
 function resetCookieTextScopeDiagnostics() {
   lastCookieTextScopeDiagnostics = null
+}
+
+function getDiagnosticClickableControlsFromRoot(root) {
+  return safeQuerySelectorAll(
+    root,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input',
+      '[onclick]',
+      '[tabindex]',
+    ].join(',')
+  )
+    .slice(0, MAX_PRIORITIZED_CMP_ROOT_SCAN)
+}
+
+function collectLateDiagnosticControls() {
+  const controls = []
+  const addControls = (root) => {
+    controls.push(...getDiagnosticClickableControlsFromRoot(root))
+  }
+
+  addControls(document)
+
+  safeQuerySelectorAll(document, '*')
+    .slice(0, MAX_COOKIE_TEXT_SCOPE_NODES)
+    .forEach((element) => {
+      if (controls.length >= MAX_DOM_QUERY_RESULTS) return
+      if (!element?.shadowRoot) return
+
+      addControls(element.shadowRoot)
+    })
+
+  let accessibleIframeCount = 0
+  let inaccessibleIframeCount = 0
+  const inaccessibleIframeDomains = []
+
+  safeQuerySelectorAll(document, 'iframe')
+    .filter(isVisibleMeaningfulIframe)
+    .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES)
+    .forEach((iframe) => {
+      if (controls.length >= MAX_DOM_QUERY_RESULTS) return
+
+      try {
+        const iframeDocument =
+          getAccessibleIframeDocument(iframe)
+
+        if (!iframeDocument?.documentElement) {
+          inaccessibleIframeCount += 1
+          const domain =
+            getIframeDiagnosticDomain(iframe)
+          if (domain) inaccessibleIframeDomains.push(domain)
+          return
+        }
+
+        accessibleIframeCount += 1
+        addControls(iframeDocument)
+      } catch {
+        inaccessibleIframeCount += 1
+        const domain =
+          getIframeDiagnosticDomain(iframe)
+        if (domain) inaccessibleIframeDomains.push(domain)
+      }
+    })
+
+  return {
+    controls: uniqueElements(controls).slice(0, MAX_DOM_QUERY_RESULTS),
+    accessibleIframeCount,
+    inaccessibleIframeCount,
+    inaccessibleIframeDomains:
+      [...new Set(inaccessibleIframeDomains)]
+        .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
+  }
+}
+
+function getLateDiagnosticControlSample(control) {
+  const intents =
+    getDirectClickableIntentSummary(control)
+
+  return {
+    type: 'control',
+    tagName: control?.tagName?.toLowerCase?.() || '',
+    text:
+      normalizeMatchText(getActionText(control))
+        .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT),
+    visible: isVisible(control),
+    cookieIntent: intents.cookieIntent,
+    rejectIntent: intents.rejectIntent,
+    settingsIntent: intents.settingsIntent,
+    acceptIntent: intents.acceptIntent,
+  }
+}
+
+function buildLateDiagnosticSnapshot(reason = 'scan_exhausted') {
+  const textDiagnostics =
+    buildCookieTextScopeDiagnostics()
+  const controlDiagnostics =
+    collectLateDiagnosticControls()
+  const controls =
+    controlDiagnostics.controls
+  const visibleControls =
+    controls.filter(isVisible)
+  const cookieLikeControls =
+    controls.filter(hasCookieIntentSignal)
+  const rejectLikeControls =
+    controls.filter(hasRejectCandidateDiagnosticSignal)
+  const controlSamples =
+    uniqueElements([
+      ...rejectLikeControls,
+      ...cookieLikeControls,
+      ...visibleControls,
+    ])
+      .slice(0, MAX_LATE_DIAGNOSTIC_SNAPSHOT_SAMPLES)
+      .map(getLateDiagnosticControlSample)
+  const textSamples =
+    (Array.isArray(textDiagnostics.matches)
+      ? textDiagnostics.matches
+      : [])
+      .slice(
+        0,
+        Math.max(
+          0,
+          MAX_LATE_DIAGNOSTIC_SNAPSHOT_SAMPLES -
+            controlSamples.length
+        )
+      )
+      .map((match) => ({
+        type: 'text',
+        scope: String(match.scope || '').slice(0, 24),
+        tagName: String(match.tagName || '').slice(0, 24),
+        text: String(match.text || '').slice(0, 120),
+        visible: Boolean(match.visible),
+        nearestClickableAncestorTag:
+          String(match.nearestClickableAncestorTag || '').slice(0, 24),
+      }))
+
+  return {
+    reason: String(reason || 'scan_exhausted').slice(0, 80),
+    delayedMs: LATE_DIAGNOSTIC_SNAPSHOT_DELAY_MS,
+    capturedAt: new Date().toISOString(),
+    cookieTextAppeared:
+      Math.max(0, Number(textDiagnostics.totalMatches) || 0) > 0,
+    textMatchCount:
+      Math.max(0, Number(textDiagnostics.totalMatches) || 0),
+    visibleClickableControlsCount: visibleControls.length,
+    cookieLikeDirectControlsCount: cookieLikeControls.length,
+    rejectLikeDirectControlsCount: rejectLikeControls.length,
+    accessibleIframeCount:
+      Math.max(0, Number(textDiagnostics.accessibleIframeCount) || 0) +
+      controlDiagnostics.accessibleIframeCount,
+    inaccessibleIframeCount:
+      Math.max(0, Number(textDiagnostics.inaccessibleIframeCount) || 0) +
+      controlDiagnostics.inaccessibleIframeCount,
+    inaccessibleIframeDomains:
+      [
+        ...(Array.isArray(textDiagnostics.inaccessibleIframeDomains)
+          ? textDiagnostics.inaccessibleIframeDomains
+          : []),
+        ...controlDiagnostics.inaccessibleIframeDomains,
+      ]
+        .filter(Boolean)
+        .slice(0, MAX_SAME_ORIGIN_CMP_IFRAMES),
+    samples:
+      [
+        ...controlSamples,
+        ...textSamples,
+      ].slice(0, MAX_LATE_DIAGNOSTIC_SNAPSHOT_SAMPLES),
+  }
+}
+
+function storeLateDiagnosticSnapshot(snapshot) {
+  if (!hasExtensionContext() || !snapshot) return
+
+  safeStorageGet({
+    [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
+  }, (data) => {
+    const current =
+      data?.[CURRENT_SITE_DIAGNOSTIC_KEY]
+
+    if (!current || typeof current !== 'object') {
+      return
+    }
+
+    safeStorageSet({
+      [CURRENT_SITE_DIAGNOSTIC_KEY]: {
+        ...current,
+        lateDiagnosticSnapshot: snapshot,
+        lastUpdatedAt: new Date().toISOString(),
+      },
+    })
+  })
+}
+
+function scheduleLateDiagnosticSnapshot(reason = 'scan_exhausted') {
+  if (
+    lateDiagnosticSnapshotScheduled ||
+    !hasExtensionContext() ||
+    !shouldRunOnThisSite()
+  ) {
+    return
+  }
+
+  lateDiagnosticSnapshotScheduled = true
+
+  setTimeout(() => {
+    try {
+      storeLateDiagnosticSnapshot(
+        buildLateDiagnosticSnapshot(reason)
+      )
+    } catch (error) {
+      logRuntimeError('late_diagnostic_snapshot', error)
+    }
+  }, LATE_DIAGNOSTIC_SNAPSHOT_DELAY_MS)
 }
 
 function recordCurrentSiteDiagnostic({
@@ -2148,6 +2370,7 @@ function recordCurrentSiteDiagnostic({
   rejectCandidateDiagnostics = lastRejectCandidateDiagnostics,
   directClickableDiagnostics = lastDirectClickableDiagnostics,
   cookieTextScopeDiagnostics = lastCookieTextScopeDiagnostics,
+  lateDiagnosticSnapshot = null,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -2337,6 +2560,11 @@ function recordCurrentSiteDiagnostic({
                 .slice(0, MAX_COOKIE_TEXT_SCOPE_MATCHES),
           }
         : null,
+    lateDiagnosticSnapshot:
+      lateDiagnosticSnapshot &&
+      typeof lateDiagnosticSnapshot === 'object'
+        ? lateDiagnosticSnapshot
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -2389,6 +2617,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       rejectCandidateDiagnostics: [],
       directClickableDiagnostics: null,
       cookieTextScopeDiagnostics: null,
+      lateDiagnosticSnapshot: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -11808,6 +12037,7 @@ function canRunPageScan(source = 'scan') {
       reason: 'scan_budget_exhausted',
       blockedReason: source,
     })
+    scheduleLateDiagnosticSnapshot('scan_budget_exhausted')
     if (scheduleLateHydrationRecheck(source)) {
       return false
     }
@@ -12234,6 +12464,7 @@ function scanPage() {
           candidates,
           blockedReason: 'scan_budget_exhausted',
         })
+        scheduleLateDiagnosticSnapshot('no_cmp_after_bounded_scans')
         if (scheduleLateHydrationRecheck('no_cmp_after_bounded_scans')) {
           return
         }
