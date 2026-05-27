@@ -3742,7 +3742,6 @@ function isDiagnosticLifecycleStillActive(diagnostic) {
     diagnostic &&
       typeof diagnostic === 'object' &&
       diagnostic.source === 'content-script' &&
-      diagnostic.domain === getCurrentDomain() &&
       diagnostic.status === 'active' &&
       diagnostic.reason === 'content_script_running'
   )
@@ -3752,20 +3751,32 @@ function finalizeStuckDiagnosticLifecycle(reason = 'scan_lifecycle_timeout') {
   const elapsedMs =
     Math.max(0, Date.now() - diagnosticLifecycleStartedAt)
 
-  recordCurrentSiteDiagnostic({
-    status: 'skipped',
-    reason,
-    blockedReason: 'scan_not_finalized',
-    elapsedMs,
-    decisionTrace: lastDiagnosticDecisionTrace,
+  safeStorageGet({
+    [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
+  }, (data) => {
+    const diagnostic =
+      data?.[CURRENT_SITE_DIAGNOSTIC_KEY]
+
+    if (!isDiagnosticLifecycleStillActive(diagnostic)) {
+      return
+    }
+
+    safeStorageSet({
+      [CURRENT_SITE_DIAGNOSTIC_KEY]: {
+        ...diagnostic,
+        status: 'skipped',
+        reason,
+        blockedReason: 'scan_not_finalized',
+        elapsedMs,
+        decisionTrace: lastDiagnosticDecisionTrace,
+        lastUpdatedAt: new Date().toISOString(),
+      },
+    })
   })
 }
 
 function scheduleDiagnosticLifecycleWatchdog() {
-  if (
-    diagnosticLifecycleWatchdogTimer ||
-    !hasExtensionContext()
-  ) {
+  if (diagnosticLifecycleWatchdogTimer) {
     return
   }
 
@@ -3775,28 +3786,17 @@ function scheduleDiagnosticLifecycleWatchdog() {
 
       if (!hasExtensionContext()) return
 
-      safeStorageGet({
-        [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
-      }, (data) => {
-        const diagnostic =
-          data?.[CURRENT_SITE_DIAGNOSTIC_KEY]
-
-        if (!isDiagnosticLifecycleStillActive(diagnostic)) {
-          return
-        }
-
-        finalizeStuckDiagnosticLifecycle('scan_lifecycle_timeout')
-      })
+      finalizeStuckDiagnosticLifecycle('scan_lifecycle_timeout')
     }, DIAGNOSTIC_LIFECYCLE_WATCHDOG_MS)
 }
 
 diagnosticLifecycleStartedAt = Date.now()
+scheduleDiagnosticLifecycleWatchdog()
 recordCurrentSiteDiagnostic({
   status: 'active',
   reason: 'content_script_running',
   detectedControls: [],
 })
-scheduleDiagnosticLifecycleWatchdog()
 
 function normalizeDomain(value) {
   return (value || '')
