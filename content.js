@@ -9889,6 +9889,59 @@ function buildRejectVerificationDiagnostics(context, state) {
   return lastRejectVerificationDiagnostics
 }
 
+function isRejectVerificationRemovedOrInactiveSuccess(
+  diagnostics,
+  state
+) {
+  if (!diagnostics || typeof diagnostics !== 'object') {
+    return false
+  }
+
+  const successfulOutcomes = [
+    'verification_dom_stale',
+    'banner_removed',
+    'banner_hidden',
+    'root_persisted_but_inactive',
+  ]
+  const clickedStillVisible =
+    Boolean(
+      diagnostics.clickedControlConnected &&
+      diagnostics.clickedControlVisible
+    )
+  const rootStillVisible =
+    Boolean(
+      diagnostics.rootConnected &&
+      diagnostics.rootVisible
+    )
+  const visibleActiveBanner =
+    Boolean(
+      state?.bannerVisible ||
+      state?.modalPresent ||
+      state?.overlayPresent
+    )
+  const clickedGoneOrHidden =
+    Boolean(
+      !diagnostics.clickedControlConnected ||
+      !diagnostics.clickedControlVisible
+    )
+  const rootGoneOrHidden =
+    Boolean(
+      !diagnostics.rootConnected ||
+      !diagnostics.rootVisible ||
+      diagnostics.ariaHidden ||
+      diagnostics.cssHidden
+    )
+
+  return (
+    successfulOutcomes.includes(diagnostics.outcome) &&
+    clickedGoneOrHidden &&
+    rootGoneOrHidden &&
+    !clickedStillVisible &&
+    !rootStillVisible &&
+    !visibleActiveBanner
+  )
+}
+
 function runSingleVerificationFollowUp(context, state) {
   const modeConfig =
     getProtectionModeConfig()
@@ -10114,11 +10167,20 @@ function schedulePostActionVerification(context = {}) {
       })
     }
 
-    if (!state.active) {
+    const rejectRemovedOrInactiveSuccess =
+      context.type === 'reject' &&
+      isRejectVerificationRemovedOrInactiveSuccess(
+        verificationDiagnostics,
+        state
+      )
+
+    if (!state.active || rejectRemovedOrInactiveSuccess) {
       if (context.type === 'reject') {
         recordCurrentSiteDiagnostic({
           status: 'rejected',
-          reason: 'reject_verified',
+          reason: rejectRemovedOrInactiveSuccess
+            ? 'reject_verified_after_banner_removal'
+            : 'reject_verified',
           candidates: state.container || context.container
             ? [state.container || context.container]
             : [],
@@ -10132,6 +10194,8 @@ function schedulePostActionVerification(context = {}) {
           bannerVisible: state.bannerVisible,
           modalPresent: state.modalPresent,
           overlayPresent: state.overlayPresent,
+          outcome:
+            verificationDiagnostics?.outcome || '',
         })
       }
 
