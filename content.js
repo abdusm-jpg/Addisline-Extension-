@@ -16,6 +16,7 @@ const ENABLE_SETTINGS_RETRY_FLOW = false
 const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = true
 const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
+const ENABLE_VERBOSE_DIAGNOSTICS = false
 const REJECT_FLOW_DEBUG = false
 
 let protectionEnabled = false
@@ -1703,6 +1704,8 @@ function recordRejectCandidateDiagnostics(
   controls = [],
   container = document
 ) {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return
+
   const diagnostics =
     uniqueElements(Array.isArray(controls) ? controls : [])
       .filter(hasRejectCandidateDiagnosticSignal)
@@ -1904,6 +1907,8 @@ function getDirectClickableDiagnostic(control, index) {
 }
 
 function recordDirectClickableDiagnostics(controls = []) {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return
+
   const safeControls =
     Array.isArray(controls) ? controls : []
   const diagnostics =
@@ -2220,6 +2225,8 @@ function getIframeAccessibilityDiagnostic(iframe, index) {
 }
 
 function updateIframeAccessibilityDiagnostics() {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return
+
   const iframes =
     safeQuerySelectorAll(document, 'iframe')
 
@@ -2239,6 +2246,8 @@ function resetIframeAccessibilityDiagnostics() {
 }
 
 function updateCookieTextScopeDiagnostics() {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return
+
   lastCookieTextScopeDiagnostics =
     buildCookieTextScopeDiagnostics()
 }
@@ -2379,6 +2388,8 @@ function getDomScopeFixedStickySample(element) {
 }
 
 function updateDomScopeDiagnostics() {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return
+
   const allElements =
     safeQuerySelectorAll(document, '*')
       .slice(0, MAX_COOKIE_TEXT_SCOPE_NODES)
@@ -2562,6 +2573,8 @@ function getBottomBannerDiagnostic(element) {
 }
 
 function updateBottomBannerDiagnostics() {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return
+
   const candidates =
     safeQuerySelectorAll(
       document,
@@ -2817,6 +2830,8 @@ function buildExperimentalBottomBannerProbe() {
 }
 
 function updateExperimentalBottomBannerProbe(diagnosticClassification, reason) {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return null
+
   if (
     diagnosticClassification !== 'non_blocking_bottom_cookie_banner_possible' &&
     reason !== 'reject_candidate_not_found'
@@ -3069,6 +3084,10 @@ function mergeLateDiagnosticSnapshotMarker(partial = {}) {
 }
 
 function scheduleLateDiagnosticSnapshot(reason = 'scan_exhausted') {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) {
+    return
+  }
+
   if (
     lateDiagnosticSnapshotScheduled ||
     !hasExtensionContext() ||
@@ -3472,6 +3491,7 @@ function recordCurrentSiteDiagnostic({
           }
         : null,
     lateDiagnosticSnapshot:
+      ENABLE_VERBOSE_DIAGNOSTICS &&
       lateDiagnosticSnapshot &&
       typeof lateDiagnosticSnapshot === 'object'
         ? lateDiagnosticSnapshot
@@ -6808,6 +6828,8 @@ function getDirectRejectDiagnostic(control) {
 }
 
 function traceDirectRejectExtraction(controls) {
+  if (!ENABLE_VERBOSE_DIAGNOSTICS) return
+
   const safeControls =
     Array.isArray(controls) ? controls : []
 
