@@ -77,6 +77,12 @@ let lastRejectVerificationDiagnostics = null
 let lastFundingChoicesControlDiagnostics = null
 let lastFundingChoicesClickedSliderKeys = []
 let lastFundingChoicesPreferenceToggleActions = []
+let lastFundingChoicesMainRequiredActiveBefore = 0
+let lastFundingChoicesMainRequiredActiveAfter = 0
+let lastFundingChoicesProviderPreferenceOpened = false
+let lastFundingChoicesProviderToggleCount = 0
+let lastFundingChoicesActiveProviderToggleCount = 0
+let lastFundingChoicesProviderClickedCount = 0
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -164,6 +170,7 @@ const FUNDING_CHOICES_HELPER_BUDGET_MS = 800
 const FUNDING_CHOICES_PANEL_DELAY_MS = 500
 const FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS = 300
 const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
+const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -183,7 +190,7 @@ const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
 const MAX_LIGHTWEIGHT_VISIBLE_TOGGLE_ACTIONS = 5
-const MAX_PAGE_ACTIONS = 16
+const MAX_PAGE_ACTIONS = 40
 const MAX_PAGE_TRAVERSALS = 500
 const TOGGLE_PERSISTENCE_VERIFY_MS = 650
 const PREFERENCE_EXPANSION_TTL_MS = 60000
@@ -433,6 +440,16 @@ const fundingChoicesManageOptionTexts = [
   'personalizar opciones',
 ]
 
+const fundingChoicesProviderPreferenceTexts = [
+  'preferencies de proveidors',
+  'preferencias de proveedores',
+  'preferencies dels proveidors',
+  'vendor preferences',
+  'partner preferences',
+  'llista de partners',
+  'lista de partners',
+]
+
 const fundingChoicesSafeActionTexts = [
   ...negativeConsentRejectTexts,
   'rechazar',
@@ -449,7 +466,10 @@ const fundingChoicesSafeActionTexts = [
   'desar',
   'desa',
   'confirmar mis opciones',
+  'confirmar opciones',
   'confirmar les meves opcions',
+  'confirma les opcions',
+  'guardar opciones',
   'confirm choices',
   'save choices',
 ]
@@ -3857,6 +3877,18 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.preferenceToggleCount) || 0),
             activePreferenceToggleCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.activePreferenceToggleCount) || 0),
+            mainRequiredActiveBefore:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.mainRequiredActiveBefore) || 0),
+            mainRequiredActiveAfter:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.mainRequiredActiveAfter) || 0),
+            providerPreferenceOpened:
+              Boolean(fundingChoicesControlDiagnostics.providerPreferenceOpened),
+            providerToggleCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerToggleCount) || 0),
+            activeProviderToggleCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.activeProviderToggleCount) || 0),
+            providerClickedCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerClickedCount) || 0),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             preferenceToggleActions:
@@ -3867,6 +3899,8 @@ function recordCurrentSiteDiagnostic({
                 .map((action) => ({
                   ariaLabel:
                     String(action?.ariaLabel || '').slice(0, 90),
+                  scope:
+                    String(action?.scope || '').slice(0, 20),
                   inputId:
                     String(action?.inputId || '').slice(0, 60),
                   inputName:
@@ -8519,9 +8553,20 @@ function getFundingChoicesPreferenceToggleInputs(root, startedAt, budgetMs) {
   return inputs
 }
 
-function handleFundingChoicesPreferenceCategoryToggles(root) {
+function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   const startedAt =
     Date.now()
+  const scope =
+    String(options.scope || 'main')
+  const maxClicks =
+    Math.max(
+      0,
+      Number(options.maxClicks) || MAX_FUNDING_CHOICES_TOGGLE_CLICKS
+    )
+  const preferenceTrace =
+    options.preferenceTrace || 'fc.preference_toggles'
+  const disableTrace =
+    options.disableTrace || 'fc.disable_required_categories'
   const inputs =
     prioritizeFundingChoicesPreferenceToggleInputs(
       getFundingChoicesPreferenceToggleInputs(
@@ -8535,14 +8580,26 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
     inputs.filter((input) =>
       getFundingChoicesPreferenceToggleState(input) === 'enabled'
     )
+
+  if (scope === 'provider') {
+    lastFundingChoicesProviderToggleCount = inputs.length
+    lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+  } else {
+    lastFundingChoicesMainRequiredActiveBefore = activeInputs.length
+  }
+
   const actionDiagnostics =
     new Map()
-  lastFundingChoicesPreferenceToggleActions =
+  const diagnostics =
     inputs
       .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
       .map((input) => {
         const diagnostic =
           getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
+
+        if (scope === 'provider') {
+          diagnostic.scope = 'provider'
+        }
 
         if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
           diagnostic.skippedReason = 'inactive'
@@ -8552,8 +8609,16 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
         return diagnostic
       })
 
+  lastFundingChoicesPreferenceToggleActions =
+    scope === 'provider'
+      ? [
+          ...diagnostics,
+          ...lastFundingChoicesPreferenceToggleActions,
+        ].slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+      : diagnostics
+
   appendLastDiagnosticDecisionStep({
-    strategy: 'fc.preference_toggles',
+    strategy: preferenceTrace,
     status: inputs.length > 0 ? 'found' : 'not_found',
     found: inputs.length,
     scanned: inputs.length,
@@ -8566,7 +8631,10 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
   if (inputs.length === 0) {
     return {
       ok: false,
-      reason: 'fc_preference_sliders_not_found',
+      reason:
+        scope === 'provider'
+          ? 'fc_provider_toggles_not_safely_handled'
+          : 'fc_preference_sliders_not_found',
       blockedReason: 'no_matching_preference_sliders',
       disabledCount: 0,
       activeCount: 0,
@@ -8575,12 +8643,25 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
 
   let disabledCount = 0
 
-  for (const input of activeInputs.slice(0, MAX_FUNDING_CHOICES_TOGGLE_CLICKS)) {
+  if (scope !== 'provider') {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.matched_required_toggles',
+      status: activeInputs.length > 0 ? 'found' : 'not_found',
+      found: activeInputs.length,
+      scanned: inputs.length,
+      elapsedMs: Date.now() - startedAt,
+    })
+  }
+
+  for (const input of activeInputs.slice(0, maxClicks)) {
     const actionDiagnostic =
       actionDiagnostics.get(input) ||
       getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
 
     if (!actionDiagnostics.has(input)) {
+      if (scope === 'provider') {
+        actionDiagnostic.scope = 'provider'
+      }
       lastFundingChoicesPreferenceToggleActions.push(actionDiagnostic)
     }
 
@@ -8641,6 +8722,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
 
       if (getFundingChoicesPreferenceToggleState(currentInput) !== 'enabled') {
         disabledCount += 1
+        if (scope === 'provider') {
+          lastFundingChoicesProviderClickedCount += 1
+        }
         if (sliderKey) {
           lastFundingChoicesClickedSliderKeys.push(sliderKey)
         }
@@ -8679,12 +8763,19 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
       .filter((input) =>
         getFundingChoicesPreferenceToggleState(input) === 'enabled'
       )
+
+  if (scope === 'provider') {
+    lastFundingChoicesActiveProviderToggleCount = remainingActive.length
+  } else {
+    lastFundingChoicesMainRequiredActiveAfter = remainingActive.length
+  }
+
   const incompleteDisable =
     activeInputs.length > disabledCount ||
     hasElapsedBudget(startedAt, FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS)
 
   appendLastDiagnosticDecisionStep({
-    strategy: 'fc.disable_required_categories',
+    strategy: disableTrace,
     status:
       remainingActive.length === 0 && !incompleteDisable
         ? 'done'
@@ -8700,7 +8791,10 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
   if (remainingActive.length > 0 || incompleteDisable) {
     return {
       ok: false,
-      reason: 'fc_required_toggles_still_active',
+      reason:
+        scope === 'provider'
+          ? 'fc_provider_toggles_not_safely_handled'
+          : 'fc_required_toggles_still_active',
       blockedReason: 'matching_toggles_still_active',
       disabledCount,
       activeCount: activeInputs.length,
@@ -9307,6 +9401,12 @@ function collectFundingChoicesControlDiagnostics(root) {
     activeSliderCount: activeSliders.length,
     preferenceToggleCount: preferenceToggleInputs.length,
     activePreferenceToggleCount,
+    mainRequiredActiveBefore: lastFundingChoicesMainRequiredActiveBefore,
+    mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
+    providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
+    providerToggleCount: lastFundingChoicesProviderToggleCount,
+    activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
+    providerClickedCount: lastFundingChoicesProviderClickedCount,
     clickableOwnerCount,
     preferenceToggleActions,
     controls,
@@ -9326,6 +9426,74 @@ function recordFundingChoicesSkipped(root, reason, blockedReason = '') {
   })
   rejectFlowCompleted = true
   stopObserver()
+}
+
+function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
+  const control =
+    findFundingChoicesControl(
+      root,
+      fundingChoicesProviderPreferenceTexts,
+      startedAt,
+      budgetMs
+    )
+
+  if (
+    !control ||
+    hasUnsafeAcceptText(control) ||
+    textHasAny(getActionText(control), fundingChoicesUnsafePositiveTexts)
+  ) {
+    return null
+  }
+
+  return control
+}
+
+function openFundingChoicesProviderPreferences(root) {
+  const startedAt =
+    Date.now()
+  const providerControl =
+    findFundingChoicesProviderPreferenceControl(
+      root,
+      startedAt,
+      FUNDING_CHOICES_HELPER_BUDGET_MS
+    )
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_preferences',
+    status: providerControl ? 'found' : 'not_found',
+    reason: hasElapsedBudget(startedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+      ? 'budget_capped'
+      : '',
+    found: providerControl ? 1 : 0,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  if (!providerControl) {
+    return {
+      ok: true,
+      opened: false,
+      reason: '',
+      blockedReason: '',
+    }
+  }
+
+  if (!clickCMPSpecificControl(providerControl)) {
+    return {
+      ok: false,
+      opened: false,
+      reason: 'fc_provider_toggles_not_safely_handled',
+      blockedReason: 'provider_preferences_click_failed',
+    }
+  }
+
+  lastFundingChoicesProviderPreferenceOpened = true
+
+  return {
+    ok: true,
+    opened: true,
+    reason: '',
+    blockedReason: '',
+  }
 }
 
 function completeFundingChoicesManageOptionsFlow(root, openedControl) {
@@ -9348,10 +9516,21 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
   try {
     lastFundingChoicesClickedSliderKeys = []
     lastFundingChoicesPreferenceToggleActions = []
+    lastFundingChoicesMainRequiredActiveBefore = 0
+    lastFundingChoicesMainRequiredActiveAfter = 0
+    lastFundingChoicesProviderPreferenceOpened = false
+    lastFundingChoicesProviderToggleCount = 0
+    lastFundingChoicesActiveProviderToggleCount = 0
+    lastFundingChoicesProviderClickedCount = 0
     collectFundingChoicesControlDiagnostics(currentRoot)
 
     const preferenceToggleResult =
-      handleFundingChoicesPreferenceCategoryToggles(currentRoot)
+      handleFundingChoicesPreferenceCategoryToggles(currentRoot, {
+        scope: 'main',
+        maxClicks: MAX_FUNDING_CHOICES_TOGGLE_CLICKS,
+        preferenceTrace: 'fc.preference_toggles',
+        disableTrace: 'fc.disable_required_categories',
+      })
 
     if (!preferenceToggleResult.ok) {
       recordFundingChoicesSkipped(
@@ -9360,6 +9539,39 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
         preferenceToggleResult.blockedReason
       )
       return
+    }
+
+    const providerPreferenceResult =
+      openFundingChoicesProviderPreferences(currentRoot)
+
+    if (!providerPreferenceResult.ok) {
+      recordFundingChoicesSkipped(
+        currentRoot,
+        providerPreferenceResult.reason,
+        providerPreferenceResult.blockedReason
+      )
+      return
+    }
+
+    if (providerPreferenceResult.opened) {
+      const providerRoot =
+        getFundingChoicesRoot(currentRoot) || currentRoot
+      const providerToggleResult =
+        handleFundingChoicesPreferenceCategoryToggles(providerRoot, {
+          scope: 'provider',
+          maxClicks: MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS,
+          preferenceTrace: 'fc.provider_toggles',
+          disableTrace: 'fc.disable_provider_toggles',
+        })
+
+      if (!providerToggleResult.ok) {
+        recordFundingChoicesSkipped(
+          providerRoot,
+          providerToggleResult.reason,
+          providerToggleResult.blockedReason
+        )
+        return
+      }
     }
 
     const toggleResult =

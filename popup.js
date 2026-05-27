@@ -2334,6 +2334,12 @@ function formatFundingChoicesControls(summary) {
       `activeSliderCount: ${Math.max(0, Number(summary.activeSliderCount) || 0)}`,
       `preferenceToggleCount: ${Math.max(0, Number(summary.preferenceToggleCount) || 0)}`,
       `activePreferenceToggleCount: ${Math.max(0, Number(summary.activePreferenceToggleCount) || 0)}`,
+      `mainRequiredActiveBefore: ${Math.max(0, Number(summary.mainRequiredActiveBefore) || 0)}`,
+      `mainRequiredActiveAfter: ${Math.max(0, Number(summary.mainRequiredActiveAfter) || 0)}`,
+      `providerPreferenceOpened: ${Boolean(summary.providerPreferenceOpened)}`,
+      `providerToggleCount: ${Math.max(0, Number(summary.providerToggleCount) || 0)}`,
+      `activeProviderToggleCount: ${Math.max(0, Number(summary.activeProviderToggleCount) || 0)}`,
+      `providerClickedCount: ${Math.max(0, Number(summary.providerClickedCount) || 0)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', '),
@@ -2382,6 +2388,7 @@ function formatFundingChoicesControls(summary) {
     preferenceActions.forEach((action, index) => {
       lines.push([
         `${index + 1}. ${String(action.ariaLabel || 'no label').slice(0, 80)}`,
+        `scope:${String(action.scope || 'main').slice(0, 20)}`,
         `id:${String(action.inputId || 'none').slice(0, 30)}`,
         `name:${String(action.inputName || 'none').slice(0, 30)}`,
         `class:${String(action.inputClass || 'none').slice(0, 50)}`,
