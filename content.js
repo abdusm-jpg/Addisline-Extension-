@@ -157,6 +157,8 @@ const MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT = 160
 const DIRECT_REJECT_SCAN_BUDGET_MS = 450
 const SETTINGS_FALLBACK_BUDGET_MS = 350
 const SETTINGS_SAVE_LOOKUP_BUDGET_MS = 250
+const FUNDING_CHOICES_HELPER_BUDGET_MS = 800
+const FUNDING_CHOICES_PANEL_DELAY_MS = 500
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -411,6 +413,52 @@ const negativeConsentRejectTexts = [
   'continuar sin consentimiento',
   'rechazar consentimiento',
   'denegar consentimiento',
+]
+
+const fundingChoicesManageOptionTexts = [
+  'gestionar opcions',
+  'gestionar opciones',
+  'manage options',
+  'more options',
+  'mas opciones',
+  'mes opcions',
+  'configurar opcions',
+  'configurar opciones',
+  'personalizar opciones',
+]
+
+const fundingChoicesSafeActionTexts = [
+  ...negativeConsentRejectTexts,
+  'rechazar',
+  'rechazar todo',
+  'rechazar todas',
+  'rebutjar',
+  'rebutjar tot',
+  'continuar sin consentir',
+  'continuar sin consentimiento',
+  'continuar sense consentir',
+  'guardar',
+  'guardar preferencias',
+  'guardar cambios',
+  'desar',
+  'desa',
+  'confirmar mis opciones',
+  'confirmar les meves opcions',
+  'confirm choices',
+  'save choices',
+]
+
+const fundingChoicesUnsafePositiveTexts = [
+  'aceptar',
+  'aceptar todo',
+  'accept',
+  'accept all',
+  'acceptar',
+  'acceptar tot',
+  'consentir',
+  'dar consentimiento',
+  'donar consentiment',
+  'allow all',
 ]
 
 const directSafeRejectClassSignals = [
@@ -1611,6 +1659,40 @@ function finalizeDiagnosticDecisionTrace(trace) {
 function updateLastDiagnosticDecisionTrace(trace) {
   lastDiagnosticDecisionTrace =
     finalizeDiagnosticDecisionTrace(trace)
+  return lastDiagnosticDecisionTrace
+}
+
+function appendLastDiagnosticDecisionStep(step = {}) {
+  const trace =
+    lastDiagnosticDecisionTrace &&
+    typeof lastDiagnosticDecisionTrace === 'object'
+      ? {
+          ...lastDiagnosticDecisionTrace,
+          steps:
+            Array.isArray(lastDiagnosticDecisionTrace.steps)
+              ? [...lastDiagnosticDecisionTrace.steps]
+              : [],
+        }
+      : {
+          source: 'async',
+          scanCount: pageScanCount,
+          mutationScanCount: observerMutationScanCount,
+          elapsedMs: 0,
+          steps: [],
+        }
+
+  addDiagnosticDecisionStep(trace, step)
+  lastDiagnosticDecisionTrace = {
+    source: String(trace.source || 'async').slice(0, 40),
+    scanCount: Math.max(0, Number(trace.scanCount) || 0),
+    mutationScanCount:
+      Math.max(0, Number(trace.mutationScanCount) || 0),
+    elapsedMs: Math.max(0, Number(trace.elapsedMs) || 0),
+    steps:
+      (Array.isArray(trace.steps) ? trace.steps : [])
+        .slice(0, MAX_DIAGNOSTIC_DECISION_TRACE_STEPS),
+  }
+
   return lastDiagnosticDecisionTrace
 }
 
@@ -7831,6 +7913,275 @@ function clickCMPSpecificControl(control) {
     canProcessBannerAction(control) &&
     clickElementSafely(control)
   )
+}
+
+function getFundingChoicesRoot(root = document) {
+  const scopedRoot =
+    safeClosest(
+      root,
+      '[class*="fc-consent-root" i], [id*="fc-consent" i], [class*="fundingchoices" i], [id*="fundingchoices" i]'
+    )
+
+  if (scopedRoot) return scopedRoot
+
+  return safeQuerySelectorAll(
+    document,
+    '[class*="fc-consent-root" i], [id*="fc-consent" i], [class*="fundingchoices" i], [id*="fundingchoices" i]'
+  )
+    .find((element) =>
+      isVisible(element)
+    ) || null
+}
+
+function isFundingChoicesRoot(root) {
+  return Boolean(getFundingChoicesRoot(root))
+}
+
+function isFundingChoicesSafeAction(control, root) {
+  if (
+    !control ||
+    !root ||
+    !root.contains(control) ||
+    !isVisible(control) ||
+    isInsideNonCookieModal(control) ||
+    isSensitiveActionControl(control, root)
+  ) {
+    return false
+  }
+
+  const text =
+    getActionText(control)
+  const hasNegativeConsent =
+    textHasAny(text, negativeConsentRejectTexts)
+
+  if (
+    !hasNegativeConsent &&
+    (
+      hasUnsafeAcceptText(control) ||
+      textHasAny(text, fundingChoicesUnsafePositiveTexts)
+    )
+  ) {
+    return false
+  }
+
+  return (
+    hasNegativeConsent ||
+    textHasAny(text, fundingChoicesSafeActionTexts) ||
+    textMatchesDictionaryCookieIntent(text, 'rejectAll') ||
+    textMatchesDictionaryCookieIntent(text, 'savePreferences')
+  )
+}
+
+function findFundingChoicesControl(root, texts, startedAt, budgetMs) {
+  const controls =
+    getDirectClickableControls(root, {
+      startedAt,
+      budgetMs,
+    })
+
+  for (const control of controls) {
+    if (hasElapsedBudget(startedAt, budgetMs)) {
+      return null
+    }
+
+    if (
+      root.contains(control) &&
+      isVisible(control) &&
+      !hasUnsafeAcceptText(control) &&
+      !isSensitiveActionControl(control, root) &&
+      textHasAny(getActionText(control), texts)
+    ) {
+      return control
+    }
+  }
+
+  return null
+}
+
+function findFundingChoicesSafeAction(root, startedAt, budgetMs) {
+  const controls =
+    getDirectClickableControls(root, {
+      startedAt,
+      budgetMs,
+    })
+
+  for (const control of controls) {
+    if (hasElapsedBudget(startedAt, budgetMs)) {
+      return null
+    }
+
+    if (isFundingChoicesSafeAction(control, root)) {
+      return control
+    }
+  }
+
+  return null
+}
+
+function recordFundingChoicesSkipped(root, reason, blockedReason = '') {
+  recordCurrentSiteDiagnostic({
+    status: 'skipped',
+    reason,
+    candidates: root ? [root] : [],
+    blockedReason,
+  })
+  rejectFlowCompleted = true
+  stopObserver()
+}
+
+function completeFundingChoicesManageOptionsFlow(root, openedControl) {
+  const startedAt =
+    Date.now()
+  const currentRoot =
+    getFundingChoicesRoot(root || document)
+
+  if (!currentRoot) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.reject_or_save',
+      status: 'not_found',
+      reason: 'fc_root_not_found',
+      elapsedMs: Date.now() - startedAt,
+    })
+    recordFundingChoicesSkipped(root, 'fc_settings_safe_action_not_found', 'fc_root_not_found')
+    return
+  }
+
+  const safeAction =
+    findFundingChoicesSafeAction(
+      currentRoot,
+      startedAt,
+      FUNDING_CHOICES_HELPER_BUDGET_MS
+    )
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.reject_or_save',
+    status: safeAction ? 'found' : 'not_found',
+    reason: hasElapsedBudget(startedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+      ? 'budget_capped'
+      : '',
+    found: safeAction ? 1 : 0,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  if (!safeAction) {
+    recordFundingChoicesSkipped(
+      currentRoot,
+      'fc_settings_safe_action_not_found',
+      hasElapsedBudget(startedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+        ? 'budget_capped'
+        : ''
+    )
+    return
+  }
+
+  if (!clickCMPSpecificControl(safeAction)) {
+    recordCurrentSiteDiagnostic({
+      status: 'failed',
+      reason: 'fc_safe_action_click_failed',
+      candidates: [currentRoot],
+      matchedRejectElement: safeAction,
+      matchedRejectText: getActionText(safeAction),
+      blockedReason: 'click_failed',
+    })
+    rejectFlowCompleted = true
+    stopObserver()
+    return
+  }
+
+  incrementStat('autoRejects')
+  schedulePostActionVerification({
+    type: hasVisibleRejectIntent(safeAction) ? 'reject' : 'save',
+    container: currentRoot,
+    element: safeAction,
+  })
+  setLastAction('auto_reject')
+  setLastError('')
+}
+
+function attemptFundingChoicesManageOptionsFlow(root = document, decisionTrace = null) {
+  if (
+    !shouldRunOnThisSite() ||
+    !getProtectionModeConfig().allowSettingsOpen ||
+    lightweightSettingsOpenAttempted
+  ) {
+    return false
+  }
+
+  const startedAt =
+    Date.now()
+  const fcRoot =
+    getFundingChoicesRoot(root)
+
+  if (!fcRoot) {
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'fc.manage_options',
+      status: 'skipped',
+      reason: 'fc_root_not_found',
+      elapsedMs: Date.now() - startedAt,
+    })
+    return false
+  }
+
+  const manageControl =
+    findFundingChoicesControl(
+      fcRoot,
+      fundingChoicesManageOptionTexts,
+      startedAt,
+      FUNDING_CHOICES_HELPER_BUDGET_MS
+    )
+
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'fc.manage_options',
+    status: manageControl ? 'found' : 'not_found',
+    reason: hasElapsedBudget(startedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+      ? 'budget_capped'
+      : '',
+    found: manageControl ? 1 : 0,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  if (!manageControl) {
+    return false
+  }
+
+  if (!clickCMPSpecificControl(manageControl)) {
+    recordCurrentSiteDiagnostic({
+      status: 'failed',
+      reason: 'fc_manage_options_click_failed',
+      candidates: [fcRoot],
+      matchedRejectElement: manageControl,
+      matchedRejectText: getActionText(manageControl),
+      blockedReason: 'click_failed',
+    })
+    rejectFlowCompleted = true
+    stopObserver()
+    return true
+  }
+
+  lightweightSettingsOpenAttempted = true
+  recordCurrentSiteDiagnostic({
+    status: 'settingsOpened',
+    reason: 'fc_manage_options_clicked',
+    candidates: [fcRoot],
+    matchedRejectElement: manageControl,
+    matchedRejectText: getActionText(manageControl),
+  })
+  stopObserver()
+  setLastAction('settings_opened')
+  setLastError('')
+
+  setTimeout(() => {
+    try {
+      if (!shouldRunOnThisSite() || rejectFlowCompleted) return
+
+      completeFundingChoicesManageOptionsFlow(fcRoot, manageControl)
+    } catch (error) {
+      logRuntimeError('funding_choices_followup', error)
+      recordFundingChoicesSkipped(fcRoot, 'fc_settings_safe_action_not_found', 'followup_error')
+    }
+  }, FUNDING_CHOICES_PANEL_DELAY_MS)
+
+  return true
 }
 
 function attemptCMPSpecificReject(root = document) {
@@ -14120,6 +14471,12 @@ function scanPage() {
         control: getCookieDebugElementSummary(directRejectControl),
       })
     }
+
+    if (attemptFundingChoicesManageOptionsFlow(candidates[0] || document, decisionTrace)) {
+      updateLastDiagnosticDecisionTrace(decisionTrace)
+      return
+    }
+    updateLastDiagnosticDecisionTrace(decisionTrace)
 
     if (attemptCMPSpecificSettingsOpen(candidates[0] || document)) {
       addDiagnosticDecisionStep(decisionTrace, {
