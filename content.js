@@ -148,6 +148,8 @@ const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_NO_CMP_SCANS = 3
 const MAX_DOM_QUERY_RESULTS = 300
 const MAX_COOKIE_CANDIDATES_PER_SCAN = 10
+const MAX_SELECTOR_CANDIDATE_EVALUATIONS = 90
+const SELECTOR_CANDIDATE_BUDGET_MS = 180
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
@@ -4935,6 +4937,37 @@ function getCookieContainer(element) {
   return bestMatch
 }
 
+function getCookieContainerWithCache(element, potentialCache) {
+  let current = element
+  let bestMatch = null
+  let depth = 0
+
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement &&
+    depth < 8
+  ) {
+    let isPotential =
+      potentialCache.get(current)
+
+    if (typeof isPotential !== 'boolean') {
+      isPotential =
+        isPotentialCookieContainer(current)
+      potentialCache.set(current, isPotential)
+    }
+
+    if (isPotential) {
+      bestMatch = current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return bestMatch
+}
+
 function hasVisibleClickableControl(root) {
   return safeQuerySelectorAll(
     root,
@@ -5836,7 +5869,7 @@ function findCookieBannerCandidates(decisionTrace = null) {
   })
 
   const selectorStartedAt = Date.now()
-  const rawCandidates = [
+  const selectorMatches = [
     ...prioritizedRoots,
     ...Array.from(
       querySelectorAllDeep(
@@ -5885,26 +5918,59 @@ function findCookieBannerCandidates(decisionTrace = null) {
       )
     ),
   ]
+  const containers = []
+  const potentialCache = new WeakMap()
+  let selectorEvaluatedCount = 0
+  let selectorBudgetExceeded = false
 
-  const containers = rawCandidates
-    .map((candidate) =>
-      getCookieContainer(candidate) ||
+  for (const candidate of selectorMatches) {
+    if (
+      selectorEvaluatedCount >= MAX_SELECTOR_CANDIDATE_EVALUATIONS ||
+      Date.now() - selectorStartedAt >= SELECTOR_CANDIDATE_BUDGET_MS
+    ) {
+      selectorBudgetExceeded = true
+      break
+    }
+
+    selectorEvaluatedCount += 1
+
+    const container =
+      getCookieContainerWithCache(candidate, potentialCache) ||
       (
         prioritizedRootSet.has(candidate) &&
         isLikelyVisibleCMPModalRoot(candidate)
           ? candidate
           : null
       )
-    )
-    .filter(Boolean)
 
-  const candidates = Array.from(new Set(containers))
-    .filter((candidate) =>
-      !containers.some((otherCandidate) =>
-        otherCandidate !== candidate &&
-        otherCandidate.contains(candidate) &&
-        isPotentialCookieContainer(otherCandidate)
-      )
+    if (container) {
+      containers.push(container)
+    }
+  }
+
+  const uniqueContainers =
+    Array.from(new Set(containers))
+  const candidates =
+    uniqueContainers.filter((candidate) =>
+      !uniqueContainers.some((otherCandidate) => {
+        if (
+          otherCandidate === candidate ||
+          !otherCandidate.contains(candidate)
+        ) {
+          return false
+        }
+
+        let otherIsPotential =
+          potentialCache.get(otherCandidate)
+
+        if (typeof otherIsPotential !== 'boolean') {
+          otherIsPotential =
+            isPotentialCookieContainer(otherCandidate)
+          potentialCache.set(otherCandidate, otherIsPotential)
+        }
+
+        return otherIsPotential
+      })
     )
 
   activeCookieContainer =
@@ -5912,8 +5978,9 @@ function findCookieBannerCandidates(decisionTrace = null) {
   addDiagnosticDecisionStep(decisionTrace, {
     strategy: 'cmp.selector_candidates',
     status: candidates.length > 0 ? 'found' : 'not_found',
+    reason: selectorBudgetExceeded ? 'budget_capped' : '',
     found: candidates.length,
-    scanned: rawCandidates.length,
+    scanned: selectorEvaluatedCount,
     elapsedMs: Date.now() - selectorStartedAt,
   })
 
