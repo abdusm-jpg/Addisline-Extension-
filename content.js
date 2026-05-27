@@ -8499,6 +8499,28 @@ function dispatchFundingChoicesPreferenceToggleClick(element, root) {
     const eventView =
       element.ownerDocument?.defaultView || window
 
+    if (typeof eventView.PointerEvent === 'function') {
+      element.dispatchEvent(
+        new eventView.PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          view: eventView,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+
+      element.dispatchEvent(
+        new eventView.PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          view: eventView,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+    }
+
     element.dispatchEvent(
       new eventView.MouseEvent('mousedown', {
         bubbles: true,
@@ -8516,6 +8538,14 @@ function dispatchFundingChoicesPreferenceToggleClick(element, root) {
     )
 
     element.click()
+
+    element.dispatchEvent(
+      new eventView.Event('change', {
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
     return true
   } catch (error) {
     log('Funding Choices toggle click failed:', error)
@@ -8735,6 +8765,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       getFundingChoicesPreferenceClickTargets(input, root)
     const sliderKey =
       getFundingChoicesSliderKey(input, root)
+    let dispatchedForInput = false
 
     if (clickTargets.length === 0) {
       actionDiagnostic.skippedReason = 'click_target_not_found'
@@ -8750,6 +8781,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         continue
       }
 
+      dispatchedForInput = true
       actionDiagnostic.clickTarget =
         actionDiagnostic.clickTarget
           ? `${actionDiagnostic.clickTarget},${type}`
@@ -8792,9 +8824,17 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
     if (actionDiagnostic.stillActive && !actionDiagnostic.skippedReason) {
       actionDiagnostic.skippedReason =
-        actionDiagnostic.clickDispatched
+        dispatchedForInput
           ? 'click_did_not_disable'
           : 'click_not_dispatched'
+    }
+
+    if (
+      scope === 'provider' &&
+      actionDiagnostic.stillActive &&
+      actionDiagnostic.skippedReason === 'click_did_not_disable'
+    ) {
+      actionDiagnostic.skippedReason = 'provider_toggle_click_failed'
     }
   }
 
@@ -8830,9 +8870,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     found: disabledCount,
     scanned: activeInputs.length,
     elapsedMs: Date.now() - startedAt,
-    reason: remainingActive.length > 0 || incompleteDisable
-      ? 'fc_required_toggles_still_active'
-      : '',
+    reason:
+      remainingActive.length > 0 || incompleteDisable
+        ? scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
+          ? 'provider_toggle_click_failed'
+          : 'fc_required_toggles_still_active'
+        : '',
   })
 
   if (remainingActive.length > 0 || incompleteDisable) {
@@ -8840,7 +8883,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       strategy: `${disableTrace}.return`,
       status: 'skipped',
       reason:
-        scope === 'provider'
+        scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
+          ? 'provider_toggle_click_failed'
+          : scope === 'provider'
           ? 'fc_provider_toggles_still_active'
           : 'fc_required_toggles_still_active',
       found: remainingActive.length,
@@ -8854,7 +8899,10 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         scope === 'provider'
           ? 'fc_provider_toggles_still_active'
           : 'fc_required_toggles_still_active',
-      blockedReason: 'matching_toggles_still_active',
+      blockedReason:
+        scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
+          ? 'provider_toggle_click_failed'
+          : 'matching_toggles_still_active',
       disabledCount,
       activeCount: activeInputs.length,
     }
