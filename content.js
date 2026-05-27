@@ -8271,6 +8271,26 @@ function getFundingChoicesPreferenceToggleState(input) {
 }
 
 function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
+  if (!input) {
+    return {
+      ariaLabel: '',
+      inputId: 'none',
+      inputName: 'none',
+      inputClass: '',
+      ariaPressedBefore: '',
+      checkedBefore: false,
+      visibleInput: false,
+      labelClass: '',
+      wrapperClass: '',
+      clickTarget: '',
+      clickDispatched: false,
+      ariaPressedAfter: '',
+      checkedAfter: false,
+      stillActive: false,
+      skippedReason: 'fc_toggle_input_not_found',
+    }
+  }
+
   const label =
     safeClosest(input, 'label.fc-preference-slider-container')
   const wrapper =
@@ -8280,9 +8300,9 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
     ariaLabel:
       normalizeMatchText(input?.getAttribute?.('aria-label') || '').slice(0, 90),
     inputId:
-      String(input?.id || '').slice(0, 60),
+      String(input?.id || 'none').slice(0, 60),
     inputName:
-      String(input?.getAttribute?.('name') || '').slice(0, 60),
+      String(input?.name || input?.getAttribute?.('name') || 'none').slice(0, 60),
     inputClass:
       getClassNameText(input).slice(0, 90),
     ariaPressedBefore:
@@ -8408,7 +8428,7 @@ function getFundingChoicesPreferenceToggleInputs(root, startedAt, budgetMs) {
       break
     }
 
-    if (!root.contains(input) || seen.has(input)) {
+    if (!input || !root.contains(input) || seen.has(input)) {
       continue
     }
 
@@ -9201,35 +9221,64 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     return
   }
 
-  lastFundingChoicesClickedSliderKeys = []
-  lastFundingChoicesPreferenceToggleActions = []
-  collectFundingChoicesControlDiagnostics(currentRoot)
+  try {
+    lastFundingChoicesClickedSliderKeys = []
+    lastFundingChoicesPreferenceToggleActions = []
+    collectFundingChoicesControlDiagnostics(currentRoot)
 
-  const preferenceToggleResult =
-    handleFundingChoicesPreferenceCategoryToggles(currentRoot)
+    const preferenceToggleResult =
+      handleFundingChoicesPreferenceCategoryToggles(currentRoot)
 
-  if (!preferenceToggleResult.ok) {
+    if (!preferenceToggleResult.ok) {
+      recordFundingChoicesSkipped(
+        currentRoot,
+        preferenceToggleResult.reason,
+        preferenceToggleResult.blockedReason
+      )
+      return
+    }
+
+    const toggleResult =
+      handleFundingChoicesActiveToggles(currentRoot)
+
+    if (!toggleResult.ok) {
+      recordFundingChoicesSkipped(
+        currentRoot,
+        toggleResult.reason,
+        toggleResult.blockedReason
+      )
+      return
+    }
+
+    collectFundingChoicesControlDiagnostics(currentRoot)
+  } catch (error) {
+    log('Funding Choices toggle diagnostics failed:', error)
+    lastFundingChoicesPreferenceToggleActions = [
+      {
+        ariaLabel: '',
+        inputId: 'none',
+        inputName: 'none',
+        inputClass: '',
+        ariaPressedBefore: '',
+        checkedBefore: false,
+        visibleInput: false,
+        labelClass: '',
+        wrapperClass: '',
+        clickTarget: '',
+        clickDispatched: false,
+        ariaPressedAfter: '',
+        checkedAfter: false,
+        stillActive: false,
+        skippedReason: 'fc_toggle_input_not_found',
+      },
+    ]
     recordFundingChoicesSkipped(
       currentRoot,
-      preferenceToggleResult.reason,
-      preferenceToggleResult.blockedReason
+      'fc_active_toggles_not_safely_handled',
+      'fc_toggle_input_not_found'
     )
     return
   }
-
-  const toggleResult =
-    handleFundingChoicesActiveToggles(currentRoot)
-
-  if (!toggleResult.ok) {
-    recordFundingChoicesSkipped(
-      currentRoot,
-      toggleResult.reason,
-      toggleResult.blockedReason
-    )
-    return
-  }
-
-  collectFundingChoicesControlDiagnostics(currentRoot)
 
   const saveStartedAt =
     Date.now()
