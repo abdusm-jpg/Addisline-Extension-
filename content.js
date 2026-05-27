@@ -71,6 +71,7 @@ let lastLateDiagnosticSnapshot = null
 let lastDomScopeDiagnostics = null
 let lastIframeAccessibilityDiagnostics = null
 let lastBottomBannerDiagnostics = null
+let lastExperimentalBottomBannerProbe = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -156,6 +157,7 @@ const MAX_DOM_SCOPE_FIXED_STICKY_SAMPLES = 5
 const MAX_IFRAME_ACCESSIBILITY_DIAGNOSTICS = 5
 const MAX_BOTTOM_BANNER_DIAGNOSTICS = 5
 const MAX_BOTTOM_BANNER_CONTROL_TEXTS = 5
+const MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES = 5
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -2600,6 +2602,234 @@ function resetBottomBannerDiagnostics() {
   lastBottomBannerDiagnostics = null
 }
 
+function getExperimentalBottomProbeControls(element) {
+  return safeQuerySelectorAll(
+    element,
+    [
+      'button',
+      'a',
+      '[role="button"]',
+      'input[type="button"]',
+      'input[type="submit"]',
+      '[onclick]',
+      '[tabindex]',
+    ].join(',')
+  )
+    .slice(0, MAX_CLICKABLE_CONTROLS_PER_SCAN)
+}
+
+function getExperimentalBottomProbeControlSummary(element) {
+  const controls =
+    getExperimentalBottomProbeControls(element)
+
+  return controls
+    .map((control) => ({
+      text:
+        normalizeMatchText(getActionText(control)).slice(0, 80),
+      visible: isVisible(control),
+      tagName: control?.tagName?.toLowerCase?.() || '',
+      reject: hasRejectCandidateDiagnosticSignal(control),
+      accept: hasAcceptIntentSignal(control),
+      settings: hasSettingsIntentSignal(control),
+      cookie: hasCookieIntentSignal(control),
+    }))
+    .filter((control) =>
+      control.text ||
+      control.reject ||
+      control.accept ||
+      control.settings ||
+      control.cookie
+    )
+    .slice(0, MAX_BOTTOM_BANNER_CONTROL_TEXTS)
+}
+
+function getExperimentalBottomProbeFlags(element) {
+  const signals =
+    getBottomBannerTextSignals(element)
+  const controls =
+    getExperimentalBottomProbeControlSummary(element)
+
+  return {
+    cookie:
+      signals.cookie ||
+      controls.some((control) => control.cookie),
+    reject:
+      signals.reject ||
+      controls.some((control) => control.reject),
+    accept:
+      signals.accept ||
+      controls.some((control) => control.accept),
+    settings:
+      signals.settings ||
+      controls.some((control) => control.settings),
+    controls,
+  }
+}
+
+function isPageStructureElement(element) {
+  return Boolean(
+    safeClosest(
+      element,
+      [
+        'footer',
+        'nav',
+        'menu',
+        '[role="navigation"]',
+        '[role="contentinfo"]',
+        '[class*="footer" i]',
+        '[class*="sitemap" i]',
+        '[class*="breadcrumb" i]',
+      ].join(',')
+    )
+  )
+}
+
+function isExperimentalBottomProbeCandidate(element) {
+  if (!isElementLike(element) || !isVisible(element)) {
+    return false
+  }
+
+  const rect =
+    getSafeClientRect(element)
+  if (!rect) return false
+
+  const viewportWidth =
+    window.innerWidth ||
+    document.documentElement.clientWidth ||
+    1
+  const viewportHeight =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    1
+  const bottomDistance =
+    viewportHeight - rect.bottom
+
+  if (
+    bottomDistance < -4 ||
+    bottomDistance > 40 ||
+    rect.height < 40 ||
+    rect.height > 400 ||
+    rect.width < viewportWidth * 0.4
+  ) {
+    return false
+  }
+
+  const flags =
+    getExperimentalBottomProbeFlags(element)
+  const hasAnySignal =
+    flags.cookie ||
+    flags.reject ||
+    flags.accept ||
+    flags.settings
+  const strongCookieWithAction =
+    flags.cookie &&
+    (
+      flags.reject ||
+      flags.accept ||
+      flags.settings
+    )
+
+  if (!hasAnySignal) return false
+  if (isPageStructureElement(element) && !strongCookieWithAction) {
+    return false
+  }
+
+  return true
+}
+
+function getExperimentalBottomProbeCandidate(element) {
+  const rect =
+    getSafeClientRect(element)
+  const style =
+    safeGetComputedStyle(element)
+  const viewportHeight =
+    window.innerHeight ||
+    document.documentElement.clientHeight ||
+    0
+  const flags =
+    getExperimentalBottomProbeFlags(element)
+
+  return {
+    tagName: element?.tagName?.toLowerCase?.() || '',
+    id: String(element?.id || '').slice(0, 60),
+    className: getClassNameText(element).slice(0, 100),
+    text:
+      normalizeMatchText([
+        getActionText(element),
+        element?.textContent?.slice(0, 500),
+      ].join(' '))
+        .slice(0, 160),
+    x: rect ? Math.round(rect.x) : 0,
+    y: rect ? Math.round(rect.y) : 0,
+    width: rect ? Math.round(rect.width) : 0,
+    height: rect ? Math.round(rect.height) : 0,
+    bottomDistance:
+      rect ? Math.round(viewportHeight - rect.bottom) : 0,
+    position: String(style?.position || '').slice(0, 24),
+    zIndex: getZIndexNumber(style),
+    cookie: flags.cookie,
+    reject: flags.reject,
+    accept: flags.accept,
+    settings: flags.settings,
+    controls: flags.controls,
+  }
+}
+
+function buildExperimentalBottomBannerProbe() {
+  const selectors = [
+    'div',
+    'section',
+    'aside',
+    'dialog',
+    '[role="dialog"]',
+    '[role="region"]',
+    '[class*="banner" i]',
+    '[class*="cookie" i]',
+    '[class*="consent" i]',
+    '[class*="privacy" i]',
+    '[id*="cookie" i]',
+    '[id*="consent" i]',
+    '[id*="privacy" i]',
+  ].join(',')
+  const candidates =
+    safeQuerySelectorAll(document, selectors)
+      .slice(0, MAX_COOKIE_TEXT_SCOPE_NODES)
+      .filter(isExperimentalBottomProbeCandidate)
+      .map(getExperimentalBottomProbeCandidate)
+      .sort((first, second) => {
+        if (first.bottomDistance !== second.bottomDistance) {
+          return first.bottomDistance - second.bottomDistance
+        }
+
+        return second.zIndex - first.zIndex
+      })
+      .slice(0, MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES)
+
+  return {
+    ran: true,
+    candidateCount: candidates.length,
+    candidates,
+  }
+}
+
+function updateExperimentalBottomBannerProbe(diagnosticClassification, reason) {
+  if (
+    diagnosticClassification !== 'non_blocking_bottom_cookie_banner_possible' &&
+    reason !== 'reject_candidate_not_found'
+  ) {
+    return null
+  }
+
+  lastExperimentalBottomBannerProbe =
+    buildExperimentalBottomBannerProbe()
+
+  return lastExperimentalBottomBannerProbe
+}
+
+function resetExperimentalBottomBannerProbe() {
+  lastExperimentalBottomBannerProbe = null
+}
+
 function getDiagnosticClickableControlsFromRoot(root) {
   return safeQuerySelectorAll(
     root,
@@ -3010,6 +3240,7 @@ function recordCurrentSiteDiagnostic({
   domScopeDiagnostics = lastDomScopeDiagnostics,
   iframeAccessibilityDiagnostics = lastIframeAccessibilityDiagnostics,
   bottomBannerDiagnostics = lastBottomBannerDiagnostics,
+  experimentalBottomBannerProbe = lastExperimentalBottomBannerProbe,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -3037,6 +3268,12 @@ function recordCurrentSiteDiagnostic({
       prioritizedCmpRootsFound,
       explicitRejectControlDetected,
     })
+  const resolvedExperimentalBottomBannerProbe =
+    updateExperimentalBottomBannerProbe(
+      diagnosticClassification,
+      reason
+    ) ||
+    experimentalBottomBannerProbe
   const diagnostic = {
     domain: getCurrentDomain(),
     url: String(window.location.href || '').slice(0, 500),
@@ -3280,6 +3517,21 @@ function recordCurrentSiteDiagnostic({
                 .slice(0, MAX_BOTTOM_BANNER_DIAGNOSTICS),
           }
         : null,
+    experimentalBottomBannerProbe:
+      resolvedExperimentalBottomBannerProbe &&
+      typeof resolvedExperimentalBottomBannerProbe === 'object'
+        ? {
+            ran:
+              Boolean(resolvedExperimentalBottomBannerProbe.ran),
+            candidateCount:
+              Math.max(0, Number(resolvedExperimentalBottomBannerProbe.candidateCount) || 0),
+            candidates:
+              (Array.isArray(resolvedExperimentalBottomBannerProbe.candidates)
+                ? resolvedExperimentalBottomBannerProbe.candidates
+                : [])
+                .slice(0, MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -3336,6 +3588,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       domScopeDiagnostics: null,
       iframeAccessibilityDiagnostics: null,
       bottomBannerDiagnostics: null,
+      experimentalBottomBannerProbe: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -12789,6 +13042,7 @@ function scanPage() {
     resetDomScopeDiagnostics()
     resetIframeAccessibilityDiagnostics()
     resetBottomBannerDiagnostics()
+    resetExperimentalBottomBannerProbe()
 
     const modeConfig =
       getProtectionModeConfig()

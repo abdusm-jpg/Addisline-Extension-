@@ -188,6 +188,11 @@ const currentSiteDiagnosticBottomBanner =
     'currentSiteDiagnosticBottomBanner'
   )
 
+const currentSiteDiagnosticExperimentalBottomProbe =
+  document.getElementById(
+    'currentSiteDiagnosticExperimentalBottomProbe'
+  )
+
 const currentSiteDiagnosticIframeAccess =
   document.getElementById(
     'currentSiteDiagnosticIframeAccess'
@@ -1794,6 +1799,71 @@ function formatCurrentSiteBottomBanner(summary) {
   return lines.join('\n')
 }
 
+function formatExperimentalBottomProbe(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const candidates =
+    Array.isArray(summary.candidates)
+      ? summary.candidates
+          .filter((candidate) =>
+            candidate && typeof candidate === 'object'
+          )
+          .slice(0, 5)
+      : []
+  const lines = [
+    [
+      `ran: ${Boolean(summary.ran)}`,
+      `candidateCount: ${Math.max(0, Number(summary.candidateCount) || 0)}`,
+    ].join(', '),
+  ]
+
+  if (candidates.length === 0) {
+    lines.push('candidates: none')
+    return lines.join('\n')
+  }
+
+  lines.push('candidates:')
+  candidates.forEach((candidate, index) => {
+    const controls =
+      Array.isArray(candidate.controls)
+        ? candidate.controls
+            .filter((control) =>
+              control && typeof control === 'object'
+            )
+            .slice(0, 5)
+            .map((control) =>
+              [
+                String(control.tagName || 'unknown').slice(0, 12),
+                String(control.text || 'no text').slice(0, 40),
+                `r:${Boolean(control.reject)}`,
+                `a:${Boolean(control.accept)}`,
+                `s:${Boolean(control.settings)}`,
+                `c:${Boolean(control.cookie)}`,
+              ].join('/')
+            )
+            .join('|')
+        : ''
+
+    lines.push([
+      `${index + 1}. ${String(candidate.tagName || 'unknown').slice(0, 20)}`,
+      `pos:${String(candidate.position || 'unknown').slice(0, 20)}`,
+      `z:${Math.round(Number(candidate.zIndex) || 0)}`,
+      `rect:${Math.round(Number(candidate.x) || 0)},${Math.round(Number(candidate.y) || 0)},${Math.round(Number(candidate.width) || 0)}x${Math.round(Number(candidate.height) || 0)}`,
+      `bottom:${Math.round(Number(candidate.bottomDistance) || 0)}`,
+      `cookie:${Boolean(candidate.cookie)}`,
+      `reject:${Boolean(candidate.reject)}`,
+      `accept:${Boolean(candidate.accept)}`,
+      `settings:${Boolean(candidate.settings)}`,
+      `controls:${controls || 'none'}`,
+      String(candidate.text || 'no text').slice(0, 100),
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
 function formatCurrentSiteIframeAccess(summary) {
   if (!summary || typeof summary !== 'object') {
     return 'Sin datos'
@@ -1969,6 +2039,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'Sin datos'
     currentSiteDiagnosticBottomBanner.innerText =
       'Sin datos'
+    currentSiteDiagnosticExperimentalBottomProbe.innerText =
+      'Sin datos'
     currentSiteDiagnosticIframeAccess.innerText =
       'Sin datos'
     currentSiteDiagnosticLateSnapshot.innerText =
@@ -2087,6 +2159,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticBottomBanner.innerText =
     formatCurrentSiteBottomBanner(
       diagnostic.bottomBannerDiagnostics
+    )
+  currentSiteDiagnosticExperimentalBottomProbe.innerText =
+    formatExperimentalBottomProbe(
+      diagnostic.experimentalBottomBannerProbe
     )
   currentSiteDiagnosticIframeAccess.innerText =
     formatCurrentSiteIframeAccess(
