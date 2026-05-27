@@ -527,6 +527,18 @@ const fundingChoicesOptionalToggleTexts = [
   'socios',
 ]
 
+const fundingChoicesPreferenceCategoryTexts = [
+  'consentiment',
+  'consentimiento',
+  'consent',
+  'interes legitim',
+  'interes legitimo',
+  'interessos legitims',
+  'intereses legitimos',
+  'legitimate interest',
+  'legitimate interests',
+]
+
 const directSafeRejectClassSignals = [
   'ch2denyallbtn',
   'denyall',
@@ -8160,6 +8172,199 @@ function getFundingChoicesSliderKey(control, root) {
   ].join(' ')).slice(0, 120)
 }
 
+function getFundingChoicesPreferenceToggleLabel(input, root) {
+  const container =
+    safeClosest(input, 'label.fc-preference-slider-container') ||
+    safeClosest(input, '.fc-preference-slider')?.parentElement ||
+    input?.parentElement
+
+  const parts = [
+    input?.getAttribute?.('aria-label'),
+    getActionText(input),
+    getAssociatedLabelText(input),
+  ]
+
+  if (container && root?.contains?.(container)) {
+    parts.push(getActionText(container).slice(0, 300))
+    parts.push(getText(container).slice(0, 500))
+  }
+
+  return normalizeMatchText(parts.join(' '))
+}
+
+function isFundingChoicesPreferenceCategoryToggle(input, root) {
+  return textHasAny(
+    getFundingChoicesPreferenceToggleLabel(input, root),
+    fundingChoicesPreferenceCategoryTexts
+  )
+}
+
+function getFundingChoicesPreferenceToggleState(input) {
+  const ariaPressed =
+    normalizeMatchText(input?.getAttribute?.('aria-pressed') || '')
+  const ariaChecked =
+    normalizeMatchText(input?.getAttribute?.('aria-checked') || '')
+
+  if (ariaPressed === 'true' || ariaChecked === 'true' || input?.checked === true) {
+    return 'enabled'
+  }
+
+  if (ariaPressed === 'false' || ariaChecked === 'false' || input?.checked === false) {
+    return 'disabled'
+  }
+
+  return 'unknown'
+}
+
+function getFundingChoicesPreferenceToggleClickTarget(input, root) {
+  if (!input || !root?.contains?.(input)) return null
+  if (isVisible(input)) return input
+
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  if (label && root.contains(label) && isVisible(label)) return label
+
+  const wrapper =
+    safeClosest(input, '.fc-preference-slider')
+  if (wrapper && root.contains(wrapper) && isVisible(wrapper)) return wrapper
+
+  return null
+}
+
+function getFundingChoicesPreferenceToggleInputs(root, startedAt, budgetMs) {
+  if (!root) return []
+
+  const inputs = []
+  const seen = new Set()
+  const selectors = [
+    'label.fc-preference-slider-container .fc-preference-slider input[type="checkbox"][role="button"]',
+    '.fc-preference-slider input[type="checkbox"][role="button"]',
+    '.fc-preference-slider input[type="checkbox"]',
+    '.fc-preference-slider [role="button"][aria-pressed]',
+    '.fc-preference-slider [aria-checked]',
+  ].join(',')
+
+  for (const input of safeQuerySelectorAll(root, selectors)) {
+    if (
+      inputs.length >= MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT ||
+      hasElapsedBudget(startedAt, budgetMs)
+    ) {
+      break
+    }
+
+    if (!root.contains(input) || seen.has(input)) {
+      continue
+    }
+
+    seen.add(input)
+
+    if (isFundingChoicesPreferenceCategoryToggle(input, root)) {
+      inputs.push(input)
+    }
+  }
+
+  return inputs
+}
+
+function handleFundingChoicesPreferenceCategoryToggles(root) {
+  const startedAt =
+    Date.now()
+  const inputs =
+    getFundingChoicesPreferenceToggleInputs(
+      root,
+      startedAt,
+      FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+    )
+  const activeInputs =
+    inputs.filter((input) =>
+      getFundingChoicesPreferenceToggleState(input) === 'enabled'
+    )
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.preference_toggles',
+    status: inputs.length > 0 ? 'found' : 'not_found',
+    found: inputs.length,
+    scanned: inputs.length,
+    elapsedMs: Date.now() - startedAt,
+    reason: hasElapsedBudget(startedAt, FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS)
+      ? 'budget_capped'
+      : '',
+  })
+
+  let disabledCount = 0
+
+  for (const input of activeInputs.slice(0, MAX_FUNDING_CHOICES_TOGGLE_CLICKS)) {
+    if (!shouldRunOnThisSite()) break
+    const target =
+      getFundingChoicesPreferenceToggleClickTarget(input, root)
+    if (!root.contains(input) || !target) continue
+    if (
+      input.disabled ||
+      input.getAttribute?.('disabled') !== null ||
+      input.getAttribute?.('aria-disabled') === 'true'
+    ) {
+      continue
+    }
+
+    if (clickElementSafely(target)) {
+      const key =
+        getFundingChoicesSliderKey(input, root)
+      if (key) {
+        lastFundingChoicesClickedSliderKeys.push(key)
+      }
+
+      if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+        disabledCount += 1
+      }
+    }
+  }
+
+  const remainingActive =
+    getFundingChoicesPreferenceToggleInputs(
+      root,
+      Date.now(),
+      FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+    )
+      .filter((input) =>
+        getFundingChoicesPreferenceToggleState(input) === 'enabled'
+      )
+  const incompleteDisable =
+    activeInputs.length > disabledCount ||
+    hasElapsedBudget(startedAt, FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS)
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.disable_required_categories',
+    status:
+      remainingActive.length === 0 && !incompleteDisable
+        ? 'done'
+        : 'blocked',
+    found: disabledCount,
+    scanned: activeInputs.length,
+    elapsedMs: Date.now() - startedAt,
+    reason: remainingActive.length > 0 || incompleteDisable
+      ? 'fc_required_toggles_still_active'
+      : '',
+  })
+
+  if (remainingActive.length > 0 || incompleteDisable) {
+    return {
+      ok: false,
+      reason: 'fc_required_toggles_still_active',
+      blockedReason: 'matching_toggles_still_active',
+      disabledCount,
+      activeCount: activeInputs.length,
+    }
+  }
+
+  return {
+    ok: true,
+    reason: '',
+    blockedReason: '',
+    disabledCount,
+    activeCount: activeInputs.length,
+  }
+}
+
 function getFundingChoicesToggleClickTarget(control, root) {
   if (!control || !root || !root.contains(control)) return null
 
@@ -8451,7 +8656,6 @@ function getFundingChoicesToggleCandidates(root) {
 function handleFundingChoicesActiveToggles(root) {
   const startedAt =
     Date.now()
-  lastFundingChoicesClickedSliderKeys = []
   const toggles =
     getFundingChoicesToggleCandidates(root)
   const activeToggles =
@@ -8758,7 +8962,20 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     return
   }
 
+  lastFundingChoicesClickedSliderKeys = []
   collectFundingChoicesControlDiagnostics(currentRoot)
+
+  const preferenceToggleResult =
+    handleFundingChoicesPreferenceCategoryToggles(currentRoot)
+
+  if (!preferenceToggleResult.ok) {
+    recordFundingChoicesSkipped(
+      currentRoot,
+      preferenceToggleResult.reason,
+      preferenceToggleResult.blockedReason
+    )
+    return
+  }
 
   const toggleResult =
     handleFundingChoicesActiveToggles(currentRoot)
@@ -8771,6 +8988,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     )
     return
   }
+
+  collectFundingChoicesControlDiagnostics(currentRoot)
 
   const saveStartedAt =
     Date.now()
