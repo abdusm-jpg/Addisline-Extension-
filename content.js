@@ -173,7 +173,7 @@ const FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS = 300
 const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_DIAGNOSTIC_CONTROLS = 5
-const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 24
+const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 48
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT = 80
@@ -8633,6 +8633,22 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       : '',
   })
 
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.after_preference_scan',
+    status: 'ran',
+    found: inputs.length,
+    scanned: inputs.length,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.before_required_match',
+    status: 'ran',
+    found: activeInputs.length,
+    scanned: inputs.length,
+    elapsedMs: Date.now() - startedAt,
+  })
+
   if (inputs.length === 0) {
     appendLastDiagnosticDecisionStep({
       strategy:
@@ -8675,6 +8691,14 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       elapsedMs: Date.now() - startedAt,
     })
   }
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.after_required_match',
+    status: 'ran',
+    found: activeInputs.length,
+    scanned: inputs.length,
+    elapsedMs: Date.now() - startedAt,
+  })
 
   for (const input of activeInputs.slice(0, maxClicks)) {
     const actionDiagnostic =
@@ -9647,8 +9671,8 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
     ]
     recordFundingChoicesSkipped(
       currentRoot,
-      'fc_active_toggles_not_safely_handled',
-      'fc_toggle_input_not_found'
+      'fc_post_preference_flow_error',
+      error?.message || 'unknown_error'
     )
     return
   }
@@ -9770,6 +9794,14 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
       })
     }
 
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.before_provider_preferences',
+      status: 'ran',
+      reason: preferenceToggleResult.ok ? '' : preferenceToggleResult.reason,
+      found: preferenceToggleResult.disabledCount,
+      scanned: preferenceToggleResult.activeCount,
+    })
+
     const providerPreferenceResult =
       openFundingChoicesProviderPreferences(currentRoot)
 
@@ -9835,8 +9867,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     ]
     recordFundingChoicesSkipped(
       currentRoot,
-      'fc_active_toggles_not_safely_handled',
-      'fc_toggle_input_not_found'
+      'fc_post_preference_flow_error',
+      error?.message || 'unknown_error'
     )
     return
   }
