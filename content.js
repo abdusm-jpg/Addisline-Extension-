@@ -8210,6 +8210,25 @@ function getFundingChoicesSliderKey(control, root) {
   ].join(' ')).slice(0, 120)
 }
 
+function isFundingChoicesPreferencesPanel(root) {
+  if (!root) return false
+
+  if (
+    safeQuerySelectorAll(
+      root,
+      'label.fc-preference-slider-container, .fc-preference-slider'
+    ).length > 0
+  ) {
+    return true
+  }
+
+  return textHasAny(getText(root).slice(0, 1000), [
+    'preferencies',
+    'preferencias',
+    'preferences',
+  ])
+}
+
 function findFundingChoicesPreferenceInputByKey(root, key) {
   if (!root || !key) return null
 
@@ -8482,6 +8501,16 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
       ? 'budget_capped'
       : '',
   })
+
+  if (inputs.length === 0) {
+    return {
+      ok: false,
+      reason: 'fc_preference_sliders_not_found',
+      blockedReason: 'no_matching_preference_sliders',
+      disabledCount: 0,
+      activeCount: 0,
+    }
+  }
 
   let disabledCount = 0
 
@@ -9338,8 +9367,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
 function attemptFundingChoicesManageOptionsFlow(root = document, decisionTrace = null) {
   if (
     !shouldRunOnThisSite() ||
-    !getProtectionModeConfig().allowSettingsOpen ||
-    lightweightSettingsOpenAttempted
+    !getProtectionModeConfig().allowSettingsOpen
   ) {
     return false
   }
@@ -9356,6 +9384,28 @@ function attemptFundingChoicesManageOptionsFlow(root = document, decisionTrace =
       reason: 'fc_root_not_found',
       elapsedMs: Date.now() - startedAt,
     })
+    return false
+  }
+
+  const preferencesPanelDetected =
+    isFundingChoicesPreferencesPanel(fcRoot)
+
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'fc.preferences_panel_detected',
+    status: preferencesPanelDetected ? 'found' : 'not_found',
+    reason: '',
+    found: preferencesPanelDetected ? 1 : 0,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  if (preferencesPanelDetected) {
+    lightweightSettingsOpenAttempted = true
+    updateLastDiagnosticDecisionTrace(decisionTrace)
+    completeFundingChoicesManageOptionsFlow(fcRoot, null)
+    return true
+  }
+
+  if (lightweightSettingsOpenAttempted) {
     return false
   }
 
