@@ -75,6 +75,8 @@ let lastExperimentalBottomBannerProbe = null
 let lastRejectVerificationDiagnostics = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
+let diagnosticLifecycleStartedAt = Date.now()
+let diagnosticLifecycleWatchdogTimer = null
 let lastPassiveIntelligenceAt = 0
 let scanBurstCount = 0
 let noCMPScanCount = 0
@@ -139,6 +141,7 @@ const LATE_CMP_RESCAN_DELAY_MS = 3500
 const LATE_BANNER_RECOVERY_CHECK_DELAY_MS = 4000
 const LATE_HYDRATION_RECHECK_DELAY_MS = 1000
 const LATE_DIAGNOSTIC_SNAPSHOT_DELAY_MS = 2000
+const DIAGNOSTIC_LIFECYCLE_WATCHDOG_MS = 7000
 const MAX_SCANS_PER_PAGE = 8
 const MAX_MUTATION_SCANS_PER_PAGE = 5
 const MAX_NO_CMP_SCANS = 3
@@ -3247,6 +3250,7 @@ function recordCurrentSiteDiagnostic({
   bottomBannerDiagnostics = lastBottomBannerDiagnostics,
   experimentalBottomBannerProbe = lastExperimentalBottomBannerProbe,
   rejectVerificationDiagnostics = lastRejectVerificationDiagnostics,
+  elapsedMs = null,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -3311,6 +3315,10 @@ function recordCurrentSiteDiagnostic({
           )
       ),
     blockedReason: String(blockedReason || '').slice(0, 120),
+    elapsedMs:
+      elapsedMs === null
+        ? null
+        : Math.max(0, Number(elapsedMs) || 0),
     rootTag: rootSummary.rootTag,
     rootClass: rootSummary.rootClass,
     rootReason: rootSummary.rootReason,
@@ -3626,6 +3634,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       matchedRejectText: '',
       matchedRejectPhraseNormalized: '',
       blockedReason: '',
+      elapsedMs: 0,
       rootTag: '',
       rootClass: '',
       rootReason: '',
@@ -3668,11 +3677,66 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
   })
 }
 
+function isDiagnosticLifecycleStillActive(diagnostic) {
+  return Boolean(
+    diagnostic &&
+      typeof diagnostic === 'object' &&
+      diagnostic.source === 'content-script' &&
+      diagnostic.domain === getCurrentDomain() &&
+      diagnostic.status === 'active' &&
+      diagnostic.reason === 'content_script_running'
+  )
+}
+
+function finalizeStuckDiagnosticLifecycle(reason = 'scan_lifecycle_timeout') {
+  const elapsedMs =
+    Math.max(0, Date.now() - diagnosticLifecycleStartedAt)
+
+  recordCurrentSiteDiagnostic({
+    status: 'skipped',
+    reason,
+    blockedReason: 'scan_not_finalized',
+    elapsedMs,
+    decisionTrace: lastDiagnosticDecisionTrace,
+  })
+}
+
+function scheduleDiagnosticLifecycleWatchdog() {
+  if (
+    diagnosticLifecycleWatchdogTimer ||
+    !hasExtensionContext()
+  ) {
+    return
+  }
+
+  diagnosticLifecycleWatchdogTimer =
+    setTimeout(() => {
+      diagnosticLifecycleWatchdogTimer = null
+
+      if (!hasExtensionContext()) return
+
+      safeStorageGet({
+        [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
+      }, (data) => {
+        const diagnostic =
+          data?.[CURRENT_SITE_DIAGNOSTIC_KEY]
+
+        if (!isDiagnosticLifecycleStillActive(diagnostic)) {
+          return
+        }
+
+        finalizeStuckDiagnosticLifecycle('scan_lifecycle_timeout')
+      })
+    }, DIAGNOSTIC_LIFECYCLE_WATCHDOG_MS)
+}
+
+diagnosticLifecycleStartedAt = Date.now()
 recordCurrentSiteDiagnostic({
   status: 'active',
   reason: 'content_script_running',
   detectedControls: [],
 })
+scheduleDiagnosticLifecycleWatchdog()
 
 function normalizeDomain(value) {
   return (value || '')
@@ -13949,6 +14013,15 @@ function scanPage() {
     }
   } catch (error) {
     setLastError(error?.message || 'Error en content script')
+    recordCurrentSiteDiagnostic({
+      status: 'skipped',
+      reason: 'scan_not_finalized',
+      blockedReason:
+        String(error?.message || 'scan_error').slice(0, 120),
+      elapsedMs:
+        Math.max(0, Date.now() - diagnosticLifecycleStartedAt),
+      decisionTrace: lastDiagnosticDecisionTrace,
+    })
     updateAddislineTestReport({
       event: 'scanPage:error',
       lastActionResult: 'error',
