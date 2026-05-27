@@ -173,7 +173,7 @@ const FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS = 300
 const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_DIAGNOSTIC_CONTROLS = 5
-const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
+const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 24
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP = 5
 const MAX_DIRECT_CLICKABLE_DIAGNOSTIC_TEXT = 80
@@ -8634,12 +8634,27 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   })
 
   if (inputs.length === 0) {
+    appendLastDiagnosticDecisionStep({
+      strategy:
+        scope === 'provider'
+          ? 'fc.provider_toggles'
+          : 'fc.matched_required_toggles',
+      status: 'not_found',
+      reason:
+        scope === 'provider'
+          ? 'fc_provider_toggles_not_found'
+          : 'fc_matching_required_toggles_not_found',
+      found: 0,
+      scanned: 0,
+      elapsedMs: Date.now() - startedAt,
+    })
+
     return {
       ok: false,
       reason:
         scope === 'provider'
           ? 'fc_provider_toggles_not_safely_handled'
-          : 'fc_preference_sliders_not_found',
+          : 'fc_matching_required_toggles_not_found',
       blockedReason: 'no_matching_preference_sliders',
       disabledCount: 0,
       activeCount: 0,
@@ -8652,6 +8667,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.matched_required_toggles',
       status: activeInputs.length > 0 ? 'found' : 'not_found',
+      reason: activeInputs.length > 0
+        ? ''
+        : 'fc_matching_required_toggles_not_found',
       found: activeInputs.length,
       scanned: inputs.length,
       elapsedMs: Date.now() - startedAt,
@@ -8794,11 +8812,23 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   })
 
   if (remainingActive.length > 0 || incompleteDisable) {
+    appendLastDiagnosticDecisionStep({
+      strategy: `${disableTrace}.return`,
+      status: 'skipped',
+      reason:
+        scope === 'provider'
+          ? 'fc_provider_toggles_still_active'
+          : 'fc_required_toggles_still_active',
+      found: remainingActive.length,
+      scanned: activeInputs.length,
+      elapsedMs: Date.now() - startedAt,
+    })
+
     return {
       ok: false,
       reason:
         scope === 'provider'
-          ? 'fc_provider_toggles_not_safely_handled'
+          ? 'fc_provider_toggles_still_active'
           : 'fc_required_toggles_still_active',
       blockedReason: 'matching_toggles_still_active',
       disabledCount,
@@ -9552,7 +9582,7 @@ function openFundingChoicesProviderPreferences(root) {
   }
 }
 
-function finishFundingChoicesFlowAfterProvider(currentRoot) {
+function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = null) {
   try {
     const providerRoot =
       getFundingChoicesRoot(currentRoot) || currentRoot
@@ -9619,6 +9649,22 @@ function finishFundingChoicesFlowAfterProvider(currentRoot) {
       currentRoot,
       'fc_active_toggles_not_safely_handled',
       'fc_toggle_input_not_found'
+    )
+    return
+  }
+
+  if (mainToggleResult && !mainToggleResult.ok) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.confirm_save',
+      status: 'skipped',
+      reason: mainToggleResult.reason,
+      found: 0,
+      scanned: mainToggleResult.activeCount,
+    })
+    recordFundingChoicesSkipped(
+      getFundingChoicesRoot(currentRoot) || currentRoot,
+      mainToggleResult.reason,
+      mainToggleResult.blockedReason
     )
     return
   }
@@ -9715,18 +9761,26 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
       })
 
     if (!preferenceToggleResult.ok) {
-      recordFundingChoicesSkipped(
-        currentRoot,
-        preferenceToggleResult.reason,
-        preferenceToggleResult.blockedReason
-      )
-      return
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.disable_required_categories.branch',
+        status: 'continuing',
+        reason: preferenceToggleResult.reason,
+        found: preferenceToggleResult.disabledCount,
+        scanned: preferenceToggleResult.activeCount,
+      })
     }
 
     const providerPreferenceResult =
       openFundingChoicesProviderPreferences(currentRoot)
 
     if (!providerPreferenceResult.ok) {
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_preferences.return',
+        status: 'skipped',
+        reason: providerPreferenceResult.blockedReason || providerPreferenceResult.reason,
+        found: 0,
+        scanned: 1,
+      })
       recordFundingChoicesSkipped(
         currentRoot,
         providerPreferenceResult.reason,
@@ -9738,8 +9792,24 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     if (providerPreferenceResult.opened) {
       setTimeout(() => {
         if (!shouldRunOnThisSite() || rejectFlowCompleted) return
-        finishFundingChoicesFlowAfterProvider(currentRoot)
+        finishFundingChoicesFlowAfterProvider(currentRoot, preferenceToggleResult)
       }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
+      return
+    }
+
+    if (!preferenceToggleResult.ok) {
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_preferences.branch',
+        status: 'skipped',
+        reason: 'main_required_toggles_still_active',
+        found: 0,
+        scanned: preferenceToggleResult.activeCount,
+      })
+      recordFundingChoicesSkipped(
+        currentRoot,
+        preferenceToggleResult.reason,
+        preferenceToggleResult.blockedReason
+      )
       return
     }
   } catch (error) {
