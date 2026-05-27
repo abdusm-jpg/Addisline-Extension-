@@ -3853,6 +3853,10 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.sliderCount) || 0),
             activeSliderCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.activeSliderCount) || 0),
+            preferenceToggleCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.preferenceToggleCount) || 0),
+            activePreferenceToggleCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.activePreferenceToggleCount) || 0),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             preferenceToggleActions:
@@ -3873,6 +3877,8 @@ function recordCurrentSiteDiagnostic({
                     String(action?.ariaPressedBefore || '').slice(0, 20),
                   checkedBefore:
                     Boolean(action?.checkedBefore),
+                  activeBefore:
+                    Boolean(action?.activeBefore),
                   visibleInput:
                     Boolean(action?.visibleInput),
                   labelClass:
@@ -3881,12 +3887,16 @@ function recordCurrentSiteDiagnostic({
                     String(action?.wrapperClass || '').slice(0, 90),
                   clickTarget:
                     String(action?.clickTarget || '').slice(0, 40),
+                  clicked:
+                    Boolean(action?.clicked),
                   clickDispatched:
                     Boolean(action?.clickDispatched),
                   ariaPressedAfter:
                     String(action?.ariaPressedAfter || '').slice(0, 20),
                   checkedAfter:
                     Boolean(action?.checkedAfter),
+                  activeAfter:
+                    Boolean(action?.activeAfter),
                   stillActive:
                     Boolean(action?.stillActive),
                   skippedReason:
@@ -8289,6 +8299,44 @@ function getFundingChoicesPreferenceToggleState(input) {
   return 'unknown'
 }
 
+function getFundingChoicesPreferenceToggleRank(input, root) {
+  const label =
+    getFundingChoicesPreferenceToggleLabel(input, root)
+  const active =
+    getFundingChoicesPreferenceToggleState(input) === 'enabled'
+
+  let rank = active ? 100 : 0
+
+  if (textHasAny(label, [
+    'interes legitim',
+    'interes legitimo',
+    'interessos legitims',
+    'intereses legitimos',
+    'legitimate interest',
+    'legitimate interests',
+  ])) {
+    rank += 20
+  }
+
+  if (textHasAny(label, [
+    'consentiment',
+    'consentimiento',
+    'consent',
+  ])) {
+    rank += 10
+  }
+
+  return rank
+}
+
+function prioritizeFundingChoicesPreferenceToggleInputs(inputs, root) {
+  return [...inputs]
+    .sort((a, b) =>
+      getFundingChoicesPreferenceToggleRank(b, root) -
+      getFundingChoicesPreferenceToggleRank(a, root)
+    )
+}
+
 function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
   if (!input) {
     return {
@@ -8298,13 +8346,16 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
       inputClass: '',
       ariaPressedBefore: '',
       checkedBefore: false,
+      activeBefore: false,
       visibleInput: false,
       labelClass: '',
       wrapperClass: '',
       clickTarget: '',
+      clicked: false,
       clickDispatched: false,
       ariaPressedAfter: '',
       checkedAfter: false,
+      activeAfter: false,
       stillActive: false,
       skippedReason: 'fc_toggle_input_not_found',
     }
@@ -8314,6 +8365,8 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
     safeClosest(input, 'label.fc-preference-slider-container')
   const wrapper =
     safeClosest(input, '.fc-preference-slider')
+  const activeBefore =
+    getFundingChoicesPreferenceToggleState(input) === 'enabled'
 
   return {
     ariaLabel:
@@ -8328,6 +8381,7 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
       String(input?.getAttribute?.('aria-pressed') || '').slice(0, 20),
     checkedBefore:
       Boolean(input?.checked),
+    activeBefore,
     visibleInput:
       Boolean(input && isVisible(input)),
     labelClass:
@@ -8336,14 +8390,18 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
       getClassNameText(wrapper).slice(0, 90),
     clickTarget:
       '',
+    clicked:
+      false,
     clickDispatched:
       false,
     ariaPressedAfter:
       '',
     checkedAfter:
       false,
+    activeAfter:
+      activeBefore,
     stillActive:
-      getFundingChoicesPreferenceToggleState(input) === 'enabled',
+      activeBefore,
     skippedReason:
       '',
   }
@@ -8465,10 +8523,13 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
   const startedAt =
     Date.now()
   const inputs =
-    getFundingChoicesPreferenceToggleInputs(
-      root,
-      startedAt,
-      FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+    prioritizeFundingChoicesPreferenceToggleInputs(
+      getFundingChoicesPreferenceToggleInputs(
+        root,
+        startedAt,
+        FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+      ),
+      root
     )
   const activeInputs =
     inputs.filter((input) =>
@@ -8566,6 +8627,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
           ? `${actionDiagnostic.clickTarget},${type}`
           : type
       actionDiagnostic.clickDispatched = true
+      actionDiagnostic.clicked = true
       actionDiagnostic.ariaPressedAfter =
         String(
           (findFundingChoicesPreferenceInputByKey(root, sliderKey) || input)
@@ -8592,8 +8654,10 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
       String(currentInput?.getAttribute?.('aria-pressed') || '').slice(0, 20)
     actionDiagnostic.checkedAfter =
       Boolean(currentInput?.checked)
-    actionDiagnostic.stillActive =
+    actionDiagnostic.activeAfter =
       getFundingChoicesPreferenceToggleState(currentInput) === 'enabled'
+    actionDiagnostic.stillActive =
+      actionDiagnostic.activeAfter
 
     if (actionDiagnostic.stillActive && !actionDiagnostic.skippedReason) {
       actionDiagnostic.skippedReason =
@@ -8604,10 +8668,13 @@ function handleFundingChoicesPreferenceCategoryToggles(root) {
   }
 
   const remainingActive =
-    getFundingChoicesPreferenceToggleInputs(
-      root,
-      Date.now(),
-      FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+    prioritizeFundingChoicesPreferenceToggleInputs(
+      getFundingChoicesPreferenceToggleInputs(
+        root,
+        Date.now(),
+        FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+      ),
+      root
     )
       .filter((input) =>
         getFundingChoicesPreferenceToggleState(input) === 'enabled'
@@ -9190,8 +9257,34 @@ function collectFundingChoicesControlDiagnostics(root) {
     sliders.filter((control) =>
       Boolean(getFundingChoicesToggleClickTarget(control, root))
     ).length
+  const preferenceToggleInputs =
+    prioritizeFundingChoicesPreferenceToggleInputs(
+      getFundingChoicesPreferenceToggleInputs(
+        root,
+        Date.now(),
+        FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+      ),
+      root
+    )
+  const activePreferenceToggleCount =
+    preferenceToggleInputs.filter((input) =>
+      getFundingChoicesPreferenceToggleState(input) === 'enabled'
+    ).length
   const preferenceToggleActions =
-    lastFundingChoicesPreferenceToggleActions
+    (
+      lastFundingChoicesPreferenceToggleActions.length > 0
+        ? lastFundingChoicesPreferenceToggleActions
+        : preferenceToggleInputs.map((input) => {
+            const diagnostic =
+              getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
+
+            if (!diagnostic.activeBefore) {
+              diagnostic.skippedReason = 'inactive'
+            }
+
+            return diagnostic
+          })
+    )
       .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
   const controls =
     uniqueElements([
@@ -9212,6 +9305,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     controlCount: controls.length,
     sliderCount: sliders.length,
     activeSliderCount: activeSliders.length,
+    preferenceToggleCount: preferenceToggleInputs.length,
+    activePreferenceToggleCount,
     clickableOwnerCount,
     preferenceToggleActions,
     controls,

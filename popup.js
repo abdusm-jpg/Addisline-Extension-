@@ -2332,6 +2332,8 @@ function formatFundingChoicesControls(summary) {
       `controlCount: ${Math.max(0, Number(summary.controlCount) || 0)}`,
       `sliderCount: ${Math.max(0, Number(summary.sliderCount) || 0)}`,
       `activeSliderCount: ${Math.max(0, Number(summary.activeSliderCount) || 0)}`,
+      `preferenceToggleCount: ${Math.max(0, Number(summary.preferenceToggleCount) || 0)}`,
+      `activePreferenceToggleCount: ${Math.max(0, Number(summary.activePreferenceToggleCount) || 0)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', '),
@@ -2376,7 +2378,7 @@ function formatFundingChoicesControls(summary) {
       : []
 
   if (preferenceActions.length > 0) {
-    lines.push('preference toggle actions:')
+    lines.push('matched required toggles:')
     preferenceActions.forEach((action, index) => {
       lines.push([
         `${index + 1}. ${String(action.ariaLabel || 'no label').slice(0, 80)}`,
@@ -2385,13 +2387,16 @@ function formatFundingChoicesControls(summary) {
         `class:${String(action.inputClass || 'none').slice(0, 50)}`,
         `before:${String(action.ariaPressedBefore || 'none').slice(0, 12)}`,
         `checkedBefore:${Boolean(action.checkedBefore)}`,
+        `activeBefore:${Boolean(action.activeBefore)}`,
         `visibleInput:${Boolean(action.visibleInput)}`,
         `labelClass:${String(action.labelClass || 'none').slice(0, 50)}`,
         `wrapperClass:${String(action.wrapperClass || 'none').slice(0, 50)}`,
         `target:${String(action.clickTarget || 'none').slice(0, 30)}`,
+        `clicked:${Boolean(action.clicked)}`,
         `dispatched:${Boolean(action.clickDispatched)}`,
         `after:${String(action.ariaPressedAfter || 'none').slice(0, 12)}`,
         `checkedAfter:${Boolean(action.checkedAfter)}`,
+        `activeAfter:${Boolean(action.activeAfter)}`,
         `stillActive:${Boolean(action.stillActive)}`,
         `skipped:${String(action.skippedReason || 'none').slice(0, 60)}`,
       ].join(' | '))
