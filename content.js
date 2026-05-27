@@ -160,6 +160,7 @@ const SETTINGS_FALLBACK_BUDGET_MS = 350
 const SETTINGS_SAVE_LOOKUP_BUDGET_MS = 250
 const FUNDING_CHOICES_HELPER_BUDGET_MS = 800
 const FUNDING_CHOICES_PANEL_DELAY_MS = 500
+const FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS = 300
 const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
@@ -3830,6 +3831,12 @@ function recordCurrentSiteDiagnostic({
               String(fundingChoicesControlDiagnostics.collectedAt || '').slice(0, 40),
             controlCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.controlCount) || 0),
+            sliderCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.sliderCount) || 0),
+            activeSliderCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.activeSliderCount) || 0),
+            clickableOwnerCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             controls:
               (Array.isArray(fundingChoicesControlDiagnostics.controls)
                 ? fundingChoicesControlDiagnostics.controls
@@ -8098,12 +8105,49 @@ function findFundingChoicesSafeAction(root, startedAt, budgetMs) {
 function getFundingChoicesToggleClickTarget(control, root) {
   if (!control || !root || !root.contains(control)) return null
 
-  return (
+  const directOwner =
     safeClosest(
       control,
-      'button, label, [role="switch"], [role="checkbox"], [aria-checked], [aria-pressed], input[type="checkbox"], input[type="radio"], [class*="fc-slider" i]'
-    ) || control
-  )
+      'button, label, [role="switch"], [role="checkbox"], [aria-checked], [aria-pressed], input[type="checkbox"], input[type="radio"]'
+    )
+
+  if (directOwner && root.contains(directOwner)) {
+    return directOwner
+  }
+
+  let current =
+    control.parentElement
+  let depth = 0
+
+  while (
+    current &&
+    current !== root &&
+    root.contains(current) &&
+    depth < 5
+  ) {
+    if (
+      typeof current.click === 'function' &&
+      (
+        current.getAttribute?.('onclick') ||
+        current.getAttribute?.('tabindex') ||
+        textHasAny(getClassNameText(current), [
+          'fc slider',
+          'fc toggle',
+          'slider',
+          'toggle',
+          'switch',
+        ]) ||
+        safeQuerySelectorAll(current, 'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [aria-checked], [aria-pressed]').length > 0
+      )
+    ) {
+      return current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return null
 }
 
 function getFundingChoicesToggleContextText(control, root) {
@@ -8141,6 +8185,8 @@ function getFundingChoicesToggleState(control, root) {
       getClassNameText(target),
       getClassNameText(control?.parentElement),
       getClassNameText(target?.parentElement),
+      getClassNameText(control?.parentElement?.parentElement),
+      getClassNameText(target?.parentElement?.parentElement),
     ].join(' '))
   const ariaChecked =
     normalizeMatchText(
@@ -8205,6 +8251,18 @@ function getFundingChoicesToggleState(control, root) {
     return 'enabled'
   }
 
+  if (
+    textHasAny(classSignal, [
+      'fc slider active',
+      'fc active',
+      'fc selected',
+      'slider active',
+      'slider selected',
+    ])
+  ) {
+    return 'enabled'
+  }
+
   return 'unknown'
 }
 
@@ -8224,7 +8282,7 @@ function getFundingChoicesToggleSafety(control, root) {
     return { state, safe: false, reason: 'missing_click_target', target }
   }
 
-  if (!isVisible(control) || !isVisible(target)) {
+  if (!isVisible(control) && !isVisible(target)) {
     return { state, safe: false, reason: 'not_visible', target }
   }
 
@@ -8258,29 +8316,44 @@ function getFundingChoicesToggleSafety(control, root) {
 function getFundingChoicesToggleCandidates(root) {
   if (!root) return []
 
-  return uniqueElements(
-    safeQuerySelectorAll(
-      root,
-      [
-        '.fc-slider-el',
-        '[role="switch"]',
-        '[role="checkbox"]',
-        '[aria-checked]',
-        '[aria-pressed]',
-        'input[type="checkbox"]',
-        'input[type="radio"]',
-        '[class*="toggle" i]',
-        '[class*="switch" i]',
-        '[class*="slider" i]',
-      ].join(',')
-    )
-      .filter((control) =>
-        root.contains(control) &&
-        isVisible(control) &&
-        isFundingChoicesToggleLike(control)
-      )
-      .slice(0, MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT)
-  )
+  const startedAt =
+    Date.now()
+  const selector =
+    [
+      '.fc-slider-el',
+      '[role="switch"]',
+      '[role="checkbox"]',
+      '[aria-checked]',
+      '[aria-pressed]',
+      'input[type="checkbox"]',
+      'input[type="radio"]',
+      '[class*="toggle" i]',
+      '[class*="switch" i]',
+      '[class*="slider" i]',
+    ].join(',')
+  const controls = []
+
+  for (const control of safeQuerySelectorAll(root, selector)) {
+    if (
+      controls.length >= MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT ||
+      hasElapsedBudget(startedAt, FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS)
+    ) {
+      break
+    }
+
+    if (!root.contains(control) || !isFundingChoicesToggleLike(control)) {
+      continue
+    }
+
+    const target =
+      getFundingChoicesToggleClickTarget(control, root)
+
+    if (isVisible(control) || (target && isVisible(target))) {
+      controls.push(control)
+    }
+  }
+
+  return uniqueElements(controls)
 }
 
 function handleFundingChoicesActiveToggles(root) {
@@ -8304,12 +8377,20 @@ function handleFundingChoicesActiveToggles(root) {
     found: activeToggles.length,
     scanned: toggles.length,
     elapsedMs: Date.now() - startedAt,
+    reason: hasElapsedBudget(startedAt, FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS)
+      ? 'budget_capped'
+      : '',
   })
 
   const unsafeActiveToggle =
     activeToggles.find(({ safety }) => !safety.safe)
 
   if (unsafeActiveToggle) {
+    const terminalReason =
+      unsafeActiveToggle.safety.reason === 'missing_click_target'
+        ? 'fc_slider_owner_not_found'
+        : 'fc_active_toggles_not_safely_handled'
+
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.disable_toggles',
       status: 'skipped',
@@ -8321,7 +8402,7 @@ function handleFundingChoicesActiveToggles(root) {
 
     return {
       ok: false,
-      reason: 'fc_active_toggles_not_safely_handled',
+      reason: terminalReason,
       blockedReason: unsafeActiveToggle.safety.reason,
       disabledCount: 0,
       activeCount: activeToggles.length,
@@ -8351,11 +8432,28 @@ function handleFundingChoicesActiveToggles(root) {
     elapsedMs: Date.now() - startedAt,
   })
 
-  if (disabledCount < activeToggles.length) {
+  const remainingActiveToggles =
+    getFundingChoicesToggleCandidates(root)
+      .map((control) => ({
+        control,
+        safety: getFundingChoicesToggleSafety(control, root),
+      }))
+      .filter(({ safety }) =>
+        safety.state === 'enabled' &&
+        safety.safe
+      )
+
+  if (
+    disabledCount < activeToggles.length ||
+    remainingActiveToggles.length > 0
+  ) {
     return {
       ok: false,
       reason: 'fc_active_toggles_not_safely_handled',
-      blockedReason: 'toggle_click_failed_or_capped',
+      blockedReason:
+        remainingActiveToggles.length > 0
+          ? 'active_optional_toggles_remaining'
+          : 'toggle_click_failed_or_capped',
       disabledCount,
       activeCount: activeToggles.length,
     }
@@ -8423,6 +8521,12 @@ function getFundingChoicesBlockedReason(control, root) {
 function getFundingChoicesControlDiagnostic(control, root) {
   const text =
     getActionText(control)
+  const owner =
+    getFundingChoicesToggleClickTarget(control, root)
+  const safety =
+    isFundingChoicesToggleLike(control)
+      ? getFundingChoicesToggleSafety(control, root)
+      : null
   const saveIntent =
     textMatchesLightweightSettingsSave(text) ||
     textMatchesDictionaryCookieIntent(text, 'savePreferences')
@@ -8441,7 +8545,7 @@ function getFundingChoicesControlDiagnostic(control, root) {
     text:
       normalizeMatchText(text).slice(0, 90),
     visible:
-      Boolean(control && isVisible(control)),
+      Boolean(control && (isVisible(control) || (owner && isVisible(owner)))),
     toggleLike:
       isFundingChoicesToggleLike(control),
     checked:
@@ -8451,6 +8555,12 @@ function getFundingChoicesControlDiagnostic(control, root) {
           control?.getAttribute?.('aria-pressed') ??
           ''
       ).slice(0, 20),
+    sliderState:
+      String(safety?.state || '').slice(0, 20),
+    clickableOwnerFound:
+      Boolean(owner),
+    ownerText:
+      normalizeMatchText(getActionText(owner)).slice(0, 90),
     rejectIntent:
       Boolean(rejectIntent && !acceptIntent),
     saveIntent:
@@ -8458,7 +8568,7 @@ function getFundingChoicesControlDiagnostic(control, root) {
     acceptIntent:
       Boolean(acceptIntent),
     blockedReason:
-      String(getFundingChoicesBlockedReason(control, root)).slice(0, 80),
+      String(safety?.reason || getFundingChoicesBlockedReason(control, root)).slice(0, 80),
   }
 }
 
@@ -8468,12 +8578,25 @@ function collectFundingChoicesControlDiagnostics(root) {
     return null
   }
 
+  const sliders =
+    getFundingChoicesToggleCandidates(root)
+  const activeSliders =
+    sliders.filter((control) =>
+      getFundingChoicesToggleState(control, root) === 'enabled'
+    )
+  const clickableOwnerCount =
+    sliders.filter((control) =>
+      Boolean(getFundingChoicesToggleClickTarget(control, root))
+    ).length
   const controls =
-    getDirectClickableControls(root)
-      .filter((control) =>
-        root.contains(control) &&
-        isVisible(control)
-      )
+    uniqueElements([
+      ...sliders,
+      ...getDirectClickableControls(root)
+        .filter((control) =>
+          root.contains(control) &&
+          isVisible(control)
+        ),
+    ])
       .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
       .map((control) =>
         getFundingChoicesControlDiagnostic(control, root)
@@ -8482,6 +8605,9 @@ function collectFundingChoicesControlDiagnostics(root) {
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
     controlCount: controls.length,
+    sliderCount: sliders.length,
+    activeSliderCount: activeSliders.length,
+    clickableOwnerCount,
     controls,
   }
 
@@ -9160,6 +9286,16 @@ function findDirectSafeRejectControl(decisionTrace = null) {
       status: 'skipped',
       reason: 'site_not_enabled',
     })
+    return null
+  }
+
+  if (getFundingChoicesRoot(document)) {
+    addDiagnosticDecisionStep(decisionTrace, {
+      strategy: 'reject.direct_scan',
+      status: 'skipped',
+      reason: 'funding_choices_helper_active',
+    })
+    lastDirectRejectScanBudgetCapped = false
     return null
   }
 

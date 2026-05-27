@@ -2330,6 +2330,9 @@ function formatFundingChoicesControls(summary) {
   const lines = [
     [
       `controlCount: ${Math.max(0, Number(summary.controlCount) || 0)}`,
+      `sliderCount: ${Math.max(0, Number(summary.sliderCount) || 0)}`,
+      `activeSliderCount: ${Math.max(0, Number(summary.activeSliderCount) || 0)}`,
+      `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', '),
   ]
@@ -2348,10 +2351,13 @@ function formatFundingChoicesControls(summary) {
       `visible:${Boolean(control.visible)}`,
       `toggle:${Boolean(control.toggleLike)}`,
       `checked:${String(control.checked || 'none').slice(0, 16)}`,
+      `state:${String(control.sliderState || 'none').slice(0, 16)}`,
+      `owner:${Boolean(control.clickableOwnerFound)}`,
       `reject:${Boolean(control.rejectIntent)}`,
       `save:${Boolean(control.saveIntent)}`,
       `accept:${Boolean(control.acceptIntent)}`,
       `blocked:${String(control.blockedReason || 'none').slice(0, 60)}`,
+      `ownerText:${String(control.ownerText || 'none').slice(0, 60)}`,
     ].join(' | '))
   })
 
