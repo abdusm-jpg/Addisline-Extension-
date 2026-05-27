@@ -2339,33 +2339,64 @@ function formatFundingChoicesControls(summary) {
 
   if (controls.length === 0) {
     lines.push('controls: none')
-    return lines.join('\n')
+  } else {
+    lines.push('controls:')
+    controls.forEach((control, index) => {
+      lines.push([
+        `${index + 1}. ${String(control.tagName || 'unknown').slice(0, 16)}`,
+        `role:${String(control.role || 'none').slice(0, 20)}`,
+        String(control.text || 'no text').slice(0, 90),
+        `visible:${Boolean(control.visible)}`,
+        `toggle:${Boolean(control.toggleLike)}`,
+        `checked:${String(control.checked || 'none').slice(0, 16)}`,
+        `state:${String(control.sliderState || 'none').slice(0, 16)}`,
+        `active:${Boolean(control.active)}`,
+        `clicked:${Boolean(control.clicked)}`,
+        `wrapper:${Boolean(control.sliderWrapperFound)}`,
+        `input:${Boolean(control.sliderInputFound)}`,
+        `ariaPressed:${String(control.ariaPressed || 'none').slice(0, 16)}`,
+        `owner:${Boolean(control.clickableOwnerFound)}`,
+        `reject:${Boolean(control.rejectIntent)}`,
+        `save:${Boolean(control.saveIntent)}`,
+        `accept:${Boolean(control.acceptIntent)}`,
+        `blocked:${String(control.blockedReason || 'none').slice(0, 60)}`,
+        `ariaLabel:${String(control.ariaLabel || 'none').slice(0, 60)}`,
+        `ownerText:${String(control.ownerText || 'none').slice(0, 60)}`,
+      ].join(' | '))
+    })
   }
 
-  lines.push('controls:')
-  controls.forEach((control, index) => {
-    lines.push([
-      `${index + 1}. ${String(control.tagName || 'unknown').slice(0, 16)}`,
-      `role:${String(control.role || 'none').slice(0, 20)}`,
-      String(control.text || 'no text').slice(0, 90),
-      `visible:${Boolean(control.visible)}`,
-      `toggle:${Boolean(control.toggleLike)}`,
-      `checked:${String(control.checked || 'none').slice(0, 16)}`,
-      `state:${String(control.sliderState || 'none').slice(0, 16)}`,
-      `active:${Boolean(control.active)}`,
-      `clicked:${Boolean(control.clicked)}`,
-      `wrapper:${Boolean(control.sliderWrapperFound)}`,
-      `input:${Boolean(control.sliderInputFound)}`,
-      `ariaPressed:${String(control.ariaPressed || 'none').slice(0, 16)}`,
-      `owner:${Boolean(control.clickableOwnerFound)}`,
-      `reject:${Boolean(control.rejectIntent)}`,
-      `save:${Boolean(control.saveIntent)}`,
-      `accept:${Boolean(control.acceptIntent)}`,
-      `blocked:${String(control.blockedReason || 'none').slice(0, 60)}`,
-      `ariaLabel:${String(control.ariaLabel || 'none').slice(0, 60)}`,
-      `ownerText:${String(control.ownerText || 'none').slice(0, 60)}`,
-    ].join(' | '))
-  })
+  const preferenceActions =
+    Array.isArray(summary.preferenceToggleActions)
+      ? summary.preferenceToggleActions
+          .filter((action) =>
+            action && typeof action === 'object'
+          )
+          .slice(0, 8)
+      : []
+
+  if (preferenceActions.length > 0) {
+    lines.push('preference toggle actions:')
+    preferenceActions.forEach((action, index) => {
+      lines.push([
+        `${index + 1}. ${String(action.ariaLabel || 'no label').slice(0, 80)}`,
+        `id:${String(action.inputId || 'none').slice(0, 30)}`,
+        `name:${String(action.inputName || 'none').slice(0, 30)}`,
+        `class:${String(action.inputClass || 'none').slice(0, 50)}`,
+        `before:${String(action.ariaPressedBefore || 'none').slice(0, 12)}`,
+        `checkedBefore:${Boolean(action.checkedBefore)}`,
+        `visibleInput:${Boolean(action.visibleInput)}`,
+        `labelClass:${String(action.labelClass || 'none').slice(0, 50)}`,
+        `wrapperClass:${String(action.wrapperClass || 'none').slice(0, 50)}`,
+        `target:${String(action.clickTarget || 'none').slice(0, 30)}`,
+        `dispatched:${Boolean(action.clickDispatched)}`,
+        `after:${String(action.ariaPressedAfter || 'none').slice(0, 12)}`,
+        `checkedAfter:${Boolean(action.checkedAfter)}`,
+        `stillActive:${Boolean(action.stillActive)}`,
+        `skipped:${String(action.skippedReason || 'none').slice(0, 60)}`,
+      ].join(' | '))
+    })
+  }
 
   return lines.join('\n')
 }
