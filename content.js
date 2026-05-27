@@ -168,6 +168,7 @@ const SETTINGS_FALLBACK_BUDGET_MS = 350
 const SETTINGS_SAVE_LOOKUP_BUDGET_MS = 250
 const FUNDING_CHOICES_HELPER_BUDGET_MS = 800
 const FUNDING_CHOICES_PANEL_DELAY_MS = 500
+const FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS = 350
 const FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS = 300
 const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
@@ -444,8 +445,12 @@ const fundingChoicesProviderPreferenceTexts = [
   'preferencies de proveidors',
   'preferencias de proveedores',
   'preferencies dels proveidors',
+  'llista de proveidors',
+  'lista de proveedores',
   'vendor preferences',
   'partner preferences',
+  'vendors list',
+  'fc vendors list dialog',
   'llista de partners',
   'lista de partners',
 ]
@@ -9428,24 +9433,60 @@ function recordFundingChoicesSkipped(root, reason, blockedReason = '') {
   stopObserver()
 }
 
-function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
-  const control =
-    findFundingChoicesControl(
-      root,
-      fundingChoicesProviderPreferenceTexts,
-      startedAt,
-      budgetMs
-    )
+function getFundingChoicesProviderControlSignal(control) {
+  return normalizeMatchText([
+    getElementActionText(control),
+    control?.getAttribute?.('aria-label'),
+    control?.getAttribute?.('title'),
+    control?.id,
+    getClassNameText(control),
+  ].join(' '))
+}
 
+function isFundingChoicesProviderPreferenceControl(control, root) {
   if (
     !control ||
+    !root?.contains?.(control) ||
+    !isVisible(control) ||
     hasUnsafeAcceptText(control) ||
-    textHasAny(getActionText(control), fundingChoicesUnsafePositiveTexts)
+    isSensitiveActionControl(control, root)
   ) {
-    return null
+    return false
   }
 
-  return control
+  const signal =
+    getFundingChoicesProviderControlSignal(control)
+
+  return (
+    textHasAny(signal, fundingChoicesProviderPreferenceTexts) &&
+    !textHasAny(signal, fundingChoicesUnsafePositiveTexts)
+  )
+}
+
+function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
+  const controls =
+    uniqueElements([
+      ...safeQuerySelectorAll(
+        root,
+        'button, a, [role="button"], [tabindex], [class*="vendor" i], [class*="vendors" i], [class*="partner" i], [class*="partners" i], [class*="proveidor" i], [class*="proveedor" i]'
+      ),
+      ...getDirectClickableControls(root, {
+        startedAt,
+        budgetMs,
+      }),
+    ])
+
+  for (const control of controls) {
+    if (hasElapsedBudget(startedAt, budgetMs)) {
+      break
+    }
+
+    if (isFundingChoicesProviderPreferenceControl(control, root)) {
+      return control
+    }
+  }
+
+  return null
 }
 
 function openFundingChoicesProviderPreferences(root) {
@@ -9478,6 +9519,14 @@ function openFundingChoicesProviderPreferences(root) {
   }
 
   if (!clickCMPSpecificControl(providerControl)) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences',
+      status: 'skipped',
+      reason: 'provider_preferences_click_failed',
+      found: 1,
+      elapsedMs: Date.now() - startedAt,
+    })
+
     return {
       ok: false,
       opened: false,
@@ -9485,6 +9534,13 @@ function openFundingChoicesProviderPreferences(root) {
       blockedReason: 'provider_preferences_click_failed',
     }
   }
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_preferences',
+    status: 'clicked',
+    found: 1,
+    elapsedMs: Date.now() - startedAt,
+  })
 
   lastFundingChoicesProviderPreferenceOpened = true
 
@@ -9494,6 +9550,132 @@ function openFundingChoicesProviderPreferences(root) {
     reason: '',
     blockedReason: '',
   }
+}
+
+function finishFundingChoicesFlowAfterProvider(currentRoot) {
+  try {
+    const providerRoot =
+      getFundingChoicesRoot(currentRoot) || currentRoot
+
+    if (lastFundingChoicesProviderPreferenceOpened) {
+      const providerToggleResult =
+        handleFundingChoicesPreferenceCategoryToggles(providerRoot, {
+          scope: 'provider',
+          maxClicks: MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS,
+          preferenceTrace: 'fc.provider_toggles',
+          disableTrace: 'fc.disable_provider_toggles',
+        })
+
+      if (!providerToggleResult.ok) {
+        const providerReason =
+          providerToggleResult.blockedReason === 'no_matching_preference_sliders'
+            ? 'fc_provider_toggles_not_found'
+            : providerToggleResult.reason
+
+        recordFundingChoicesSkipped(
+          providerRoot,
+          providerReason,
+          providerToggleResult.blockedReason
+        )
+        return
+      }
+    }
+
+    const toggleResult =
+      handleFundingChoicesActiveToggles(providerRoot)
+
+    if (!toggleResult.ok) {
+      recordFundingChoicesSkipped(
+        providerRoot,
+        toggleResult.reason,
+        toggleResult.blockedReason
+      )
+      return
+    }
+
+    collectFundingChoicesControlDiagnostics(providerRoot)
+  } catch (error) {
+    log('Funding Choices toggle diagnostics failed:', error)
+    lastFundingChoicesPreferenceToggleActions = [
+      {
+        ariaLabel: '',
+        inputId: 'none',
+        inputName: 'none',
+        inputClass: '',
+        ariaPressedBefore: '',
+        checkedBefore: false,
+        visibleInput: false,
+        labelClass: '',
+        wrapperClass: '',
+        clickTarget: '',
+        clickDispatched: false,
+        ariaPressedAfter: '',
+        checkedAfter: false,
+        stillActive: false,
+        skippedReason: 'fc_toggle_input_not_found',
+      },
+    ]
+    recordFundingChoicesSkipped(
+      currentRoot,
+      'fc_active_toggles_not_safely_handled',
+      'fc_toggle_input_not_found'
+    )
+    return
+  }
+
+  const saveStartedAt =
+    Date.now()
+  const safeAction =
+    findFundingChoicesSafeAction(
+      getFundingChoicesRoot(currentRoot) || currentRoot,
+      saveStartedAt,
+      FUNDING_CHOICES_HELPER_BUDGET_MS
+    )
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.confirm_save',
+    status: safeAction ? 'found' : 'not_found',
+    reason: hasElapsedBudget(saveStartedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+      ? 'budget_capped'
+      : '',
+    found: safeAction ? 1 : 0,
+    elapsedMs: Date.now() - saveStartedAt,
+  })
+
+  if (!safeAction) {
+    recordFundingChoicesSkipped(
+      getFundingChoicesRoot(currentRoot) || currentRoot,
+      'fc_settings_safe_action_not_found',
+      hasElapsedBudget(saveStartedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+        ? 'budget_capped'
+        : ''
+    )
+    return
+  }
+
+  if (!clickCMPSpecificControl(safeAction)) {
+    recordCurrentSiteDiagnostic({
+      status: 'failed',
+      reason: 'fc_safe_action_click_failed',
+      candidates: [getFundingChoicesRoot(currentRoot) || currentRoot],
+      matchedRejectElement: safeAction,
+      matchedRejectText: getActionText(safeAction),
+      blockedReason: 'click_failed',
+      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+    })
+    rejectFlowCompleted = true
+    stopObserver()
+    return
+  }
+
+  incrementStat('autoRejects')
+  schedulePostActionVerification({
+    type: hasVisibleRejectIntent(safeAction) ? 'reject' : 'save',
+    container: getFundingChoicesRoot(currentRoot) || currentRoot,
+    element: safeAction,
+  })
+  setLastAction('auto_reject')
+  setLastError('')
 }
 
 function completeFundingChoicesManageOptionsFlow(root, openedControl) {
@@ -9554,39 +9736,12 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     }
 
     if (providerPreferenceResult.opened) {
-      const providerRoot =
-        getFundingChoicesRoot(currentRoot) || currentRoot
-      const providerToggleResult =
-        handleFundingChoicesPreferenceCategoryToggles(providerRoot, {
-          scope: 'provider',
-          maxClicks: MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS,
-          preferenceTrace: 'fc.provider_toggles',
-          disableTrace: 'fc.disable_provider_toggles',
-        })
-
-      if (!providerToggleResult.ok) {
-        recordFundingChoicesSkipped(
-          providerRoot,
-          providerToggleResult.reason,
-          providerToggleResult.blockedReason
-        )
-        return
-      }
-    }
-
-    const toggleResult =
-      handleFundingChoicesActiveToggles(currentRoot)
-
-    if (!toggleResult.ok) {
-      recordFundingChoicesSkipped(
-        currentRoot,
-        toggleResult.reason,
-        toggleResult.blockedReason
-      )
+      setTimeout(() => {
+        if (!shouldRunOnThisSite() || rejectFlowCompleted) return
+        finishFundingChoicesFlowAfterProvider(currentRoot)
+      }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
       return
     }
-
-    collectFundingChoicesControlDiagnostics(currentRoot)
   } catch (error) {
     log('Funding Choices toggle diagnostics failed:', error)
     lastFundingChoicesPreferenceToggleActions = [
@@ -9616,59 +9771,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     return
   }
 
-  const saveStartedAt =
-    Date.now()
-  const safeAction =
-    findFundingChoicesSafeAction(
-      currentRoot,
-      saveStartedAt,
-      FUNDING_CHOICES_HELPER_BUDGET_MS
-    )
-
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.confirm_save',
-    status: safeAction ? 'found' : 'not_found',
-    reason: hasElapsedBudget(saveStartedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
-      ? 'budget_capped'
-      : '',
-    found: safeAction ? 1 : 0,
-    elapsedMs: Date.now() - saveStartedAt,
-  })
-
-  if (!safeAction) {
-    recordFundingChoicesSkipped(
-      currentRoot,
-      'fc_settings_safe_action_not_found',
-      hasElapsedBudget(saveStartedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
-        ? 'budget_capped'
-        : ''
-    )
-    return
-  }
-
-  if (!clickCMPSpecificControl(safeAction)) {
-    recordCurrentSiteDiagnostic({
-      status: 'failed',
-      reason: 'fc_safe_action_click_failed',
-      candidates: [currentRoot],
-      matchedRejectElement: safeAction,
-      matchedRejectText: getActionText(safeAction),
-      blockedReason: 'click_failed',
-      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
-    })
-    rejectFlowCompleted = true
-    stopObserver()
-    return
-  }
-
-  incrementStat('autoRejects')
-  schedulePostActionVerification({
-    type: hasVisibleRejectIntent(safeAction) ? 'reject' : 'save',
-    container: currentRoot,
-    element: safeAction,
-  })
-  setLastAction('auto_reject')
-  setLastError('')
+  finishFundingChoicesFlowAfterProvider(currentRoot)
 }
 
 function attemptFundingChoicesManageOptionsFlow(root = document, decisionTrace = null) {
