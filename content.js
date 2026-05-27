@@ -75,6 +75,8 @@ let lastBottomBannerDiagnostics = null
 let lastExperimentalBottomBannerProbe = null
 let lastRejectVerificationDiagnostics = null
 let lightweightSettingsOpenAttempted = false
+let lastDirectRejectScanBudgetCapped = false
+let lastLightweightSettingsBudgetCapped = false
 let startupScanScheduled = false
 let diagnosticLifecycleStartedAt = Date.now()
 let diagnosticLifecycleWatchdogTimer = null
@@ -151,6 +153,10 @@ const MAX_COOKIE_CANDIDATES_PER_SCAN = 10
 const MAX_SELECTOR_CANDIDATE_EVALUATIONS = 90
 const SELECTOR_CANDIDATE_BUDGET_MS = 180
 const MAX_CLICKABLE_CONTROLS_PER_SCAN = 70
+const MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT = 160
+const DIRECT_REJECT_SCAN_BUDGET_MS = 450
+const SETTINGS_FALLBACK_BUDGET_MS = 350
+const SETTINGS_SAVE_LOOKUP_BUDGET_MS = 250
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -6851,21 +6857,52 @@ function hasVisibleSettingsIntent(control) {
   )
 }
 
-function prioritizeControlsBeforeCap(controls, limit) {
+function hasElapsedBudget(startedAt, budgetMs) {
+  return Boolean(
+    startedAt &&
+    budgetMs &&
+    Date.now() - startedAt >= budgetMs
+  )
+}
+
+function prioritizeControlsBeforeCap(controls, limit, options = {}) {
   const uniqueControls =
     uniqueElements(controls)
+      .slice(0, MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT)
+  const startedAt =
+    Number(options.startedAt) || 0
+  const budgetMs =
+    Number(options.budgetMs) || 0
+
+  if (hasElapsedBudget(startedAt, budgetMs)) {
+    return uniqueControls.slice(0, limit)
+  }
+
   const rejectControls =
-    uniqueControls.filter(hasVisibleRejectIntent)
+    []
   const settingsControls =
-    uniqueControls.filter((control) =>
-      !rejectControls.includes(control) &&
-      hasVisibleSettingsIntent(control)
-    )
+    []
   const remainingControls =
-    uniqueControls.filter((control) =>
-      !rejectControls.includes(control) &&
-      !settingsControls.includes(control)
-    )
+    []
+
+  for (const control of uniqueControls) {
+    if (hasElapsedBudget(startedAt, budgetMs)) {
+      remainingControls.push(control)
+      continue
+    }
+
+    if (hasVisibleRejectIntent(control)) {
+      rejectControls.push(control)
+      continue
+    }
+
+    if (hasVisibleSettingsIntent(control)) {
+      settingsControls.push(control)
+      continue
+    }
+
+    remainingControls.push(control)
+  }
 
   return [
     ...rejectControls,
@@ -6874,7 +6911,7 @@ function prioritizeControlsBeforeCap(controls, limit) {
   ].slice(0, limit)
 }
 
-function getDirectClickableControls(container = document) {
+function getDirectClickableControls(container = document, options = {}) {
   const primaryControls =
     querySelectorAllDeep(
       [
@@ -6907,7 +6944,8 @@ function getDirectClickableControls(container = document) {
       ...primaryControls,
       ...secondaryControls,
     ],
-    MAX_CLICKABLE_CONTROLS_PER_SCAN
+    MAX_CLICKABLE_CONTROLS_PER_SCAN,
+    options
   )
 }
 
@@ -7173,20 +7211,78 @@ function textMatchesLightweightSettingsOpen(text) {
 }
 
 function findLightweightSettingsControl(container = document) {
-  return getDirectClickableControls(container)
-    .find((control) => {
+  const startedAt = Date.now()
+  const controls =
+    getDirectClickableControls(container, {
+      startedAt,
+      budgetMs: SETTINGS_FALLBACK_BUDGET_MS,
+    })
+
+  for (const control of controls) {
+    if (Date.now() - startedAt >= SETTINGS_FALLBACK_BUDGET_MS) {
+      lastLightweightSettingsBudgetCapped = true
+      return null
+    }
+
       const text =
         getActionText(control)
 
-      return (
+      if (
         isVisible(control) &&
         !isInsideNonCookieModal(control) &&
         !hasUnsafeAcceptText(control) &&
         !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
         textMatchesLightweightSettingsOpen(text) &&
         !isSensitiveActionControl(control, container)
+      ) {
+        return control
+      }
+  }
+
+  return null
+}
+
+function hasStrongSettingsSaveSignal(container = document) {
+  const startedAt = Date.now()
+  const controls =
+    getDirectClickableControls(container, {
+      startedAt,
+      budgetMs: SETTINGS_FALLBACK_BUDGET_MS,
+    })
+      .slice(0, 30)
+  let hasSettings = false
+  let hasSave = false
+
+  for (const control of controls) {
+    if (Date.now() - startedAt >= SETTINGS_FALLBACK_BUDGET_MS) {
+      lastLightweightSettingsBudgetCapped = true
+      break
+    }
+
+    if (!isVisible(control) || hasUnsafeAcceptText(control)) {
+      continue
+    }
+
+    const text =
+      getActionText(control)
+
+    hasSettings =
+      hasSettings ||
+      (
+        !textMatchesDictionaryCookieIntent(text, 'avoidAcceptAll') &&
+        textMatchesLightweightSettingsOpen(text)
       )
-    }) || null
+    hasSave =
+      hasSave ||
+      textMatchesLightweightSettingsSave(text) ||
+      textMatchesDictionaryCookieIntent(text, 'savePreferences')
+
+    if (hasSettings && hasSave) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function getLightweightSettingsDiagnostics(container = document) {
@@ -7905,12 +8001,23 @@ function textMatchesLightweightSettingsSave(text) {
 }
 
 function findLightweightSettingsSaveControl(panel = document) {
-  return getDirectClickableControls(panel)
-    .find((control) => {
+  const startedAt = Date.now()
+  const controls =
+    getDirectClickableControls(panel, {
+      startedAt,
+      budgetMs: SETTINGS_SAVE_LOOKUP_BUDGET_MS,
+    })
+
+  for (const control of controls) {
+    if (Date.now() - startedAt >= SETTINGS_SAVE_LOOKUP_BUDGET_MS) {
+      lastLightweightSettingsBudgetCapped = true
+      return null
+    }
+
       const text =
         getActionText(control)
 
-      return (
+      if (
         isVisible(control) &&
         getCookieDebugDisabledState(control) !== 'disabled' &&
         !hasUnsafeAcceptText(control) &&
@@ -7919,8 +8026,12 @@ function findLightweightSettingsSaveControl(panel = document) {
           textMatchesLightweightSettingsSave(text) ||
           textMatchesDictionaryCookieIntent(text, 'savePreferences')
         )
-      )
-    }) || null
+      ) {
+        return control
+      }
+  }
+
+  return null
 }
 
 function getLightweightSettingsCompletionPanel(openedControl) {
@@ -7954,13 +8065,13 @@ function scheduleLightweightSettingsSaveCompletion(openedControl, candidates) {
       lastSettingsSaveClicked = false
       lastSettingsSaveVerification = 'save_not_found'
       recordCurrentSiteDiagnostic({
-        status: 'settingsOpened',
+        status: 'skipped',
         reason: 'settings_save_not_found',
         candidates: panel && panel !== document ? [panel] : candidates,
-        detectedControls: getDiagnosticControlTexts(
-          panel && panel !== document ? [panel] : candidates,
-          [openedControl]
-        ),
+        detectedControls: openedControl ? [getActionText(openedControl)] : [],
+        blockedReason: lastLightweightSettingsBudgetCapped
+          ? 'budget_capped'
+          : '',
         settingsSaveDetected: false,
         settingsSaveClicked: false,
         settingsSaveVerification: 'save_not_found',
@@ -8042,12 +8153,30 @@ function scheduleLightweightSettingsSaveCompletion(openedControl, candidates) {
 }
 
 function attemptLightweightSettingsOpen(candidates) {
+  const startedAt = Date.now()
+  lastLightweightSettingsBudgetCapped = false
+
   if (
     !ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ||
     lightweightSettingsOpenAttempted ||
     !shouldRunOnThisSite() ||
     !getProtectionModeConfig().allowSettingsOpen
   ) {
+    return false
+  }
+
+  if (
+    lastDirectRejectScanBudgetCapped &&
+    !hasStrongSettingsSaveSignal(
+      Array.isArray(candidates) && candidates[0]
+        ? candidates[0]
+        : document
+    )
+  ) {
+    lastLightweightSettingsBudgetCapped = true
+    rejectFlowLog('Lightweight settings blocked: direct_scan_budget_capped', {
+      reason: 'direct_scan_budget_capped',
+    })
     return false
   }
 
@@ -8062,7 +8191,12 @@ function attemptLightweightSettingsOpen(candidates) {
   }
 
   const settingsDiagnostics =
-    getLightweightSettingsDiagnostics(settingsClassification.candidate)
+    ENABLE_VERBOSE_DIAGNOSTICS || REJECT_FLOW_DEBUG
+      ? getLightweightSettingsDiagnostics(settingsClassification.candidate)
+      : {
+          scannedControlCount: 0,
+          settingControlCount: 0,
+        }
 
   rejectFlowLog('Lightweight settings controls scanned', {
     classification: settingsClassification.classification,
@@ -8072,9 +8206,14 @@ function attemptLightweightSettingsOpen(candidates) {
   const control =
     findLightweightSettingsControl(settingsClassification.candidate)
 
+  if (Date.now() - startedAt >= SETTINGS_FALLBACK_BUDGET_MS) {
+    lastLightweightSettingsBudgetCapped = true
+  }
+
   if (!control) {
     rejectFlowLog('Lightweight settings blocked: candidate_not_found', {
       classification: settingsClassification.classification,
+      budgetCapped: lastLightweightSettingsBudgetCapped,
       ...settingsDiagnostics,
     })
     return false
@@ -8183,8 +8322,12 @@ function findDirectSafeRejectControl(decisionTrace = null) {
   }
 
   const startedAt = Date.now()
+  lastDirectRejectScanBudgetCapped = false
   const controls =
-    getDirectClickableControls(document)
+    getDirectClickableControls(document, {
+      startedAt,
+      budgetMs: DIRECT_REJECT_SCAN_BUDGET_MS,
+    })
 
   traceDirectRejectExtraction(controls)
   recordDirectClickableDiagnostics(controls)
@@ -8194,40 +8337,54 @@ function findDirectSafeRejectControl(decisionTrace = null) {
     document
   )
 
-  const control = controls
-    .find((control) => {
-      if (!isVisible(control)) return false
-      if (isInsideNonCookieModal(control)) return false
-      if (hasUnsafeAcceptText(control)) return false
-      if (hasVisibleSettingsIntent(control)) return false
+  let scannedControls = 0
+  let control = null
 
-      const actionText = getActionText(control)
-      const hasExplicitRejectIntent =
-        textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
-        textHasAny(actionText, totalRejectTexts)
-      const hasRejectText =
-        textHasAny(actionText, rejectTexts)
+  for (const candidateControl of controls) {
+    if (Date.now() - startedAt >= DIRECT_REJECT_SCAN_BUDGET_MS) {
+      lastDirectRejectScanBudgetCapped = true
+      break
+    }
 
-      if (
-        hasExplicitRejectIntent ||
-        hasRejectText
-      ) {
-        return true
-      }
+    scannedControls += 1
 
-      const container =
-        getCookieContainer(control) || document
+    if (!isVisible(candidateControl)) continue
+    if (isInsideNonCookieModal(candidateControl)) continue
+    if (hasUnsafeAcceptText(candidateControl)) continue
+    if (hasVisibleSettingsIntent(candidateControl)) continue
 
-      if (isSensitiveActionControl(control, container)) return false
+    const actionText = getActionText(candidateControl)
+    const hasExplicitRejectIntent =
+      textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
+      textHasAny(actionText, totalRejectTexts)
+    const hasRejectText =
+      textHasAny(actionText, rejectTexts)
 
-      return hasDirectSafeRejectSignal(control)
-    })
+    if (
+      hasExplicitRejectIntent ||
+      hasRejectText
+    ) {
+      control = candidateControl
+      break
+    }
+
+    const container =
+      getCookieContainer(candidateControl) || document
+
+    if (isSensitiveActionControl(candidateControl, container)) continue
+
+    if (hasDirectSafeRejectSignal(candidateControl)) {
+      control = candidateControl
+      break
+    }
+  }
 
   addDiagnosticDecisionStep(decisionTrace, {
     strategy: 'reject.direct_scan',
     status: control ? 'found' : 'not_found',
+    reason: lastDirectRejectScanBudgetCapped ? 'budget_capped' : '',
     found: control ? 1 : 0,
-    scanned: controls.length,
+    scanned: scannedControls,
     elapsedMs: Date.now() - startedAt,
   })
 
@@ -13994,7 +14151,13 @@ function scanPage() {
     addDiagnosticDecisionStep(decisionTrace, {
       strategy: 'settings.lightweight_open',
       status: ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ? 'not_found' : 'skipped',
-      reason: ENABLE_LIGHTWEIGHT_SETTINGS_OPEN ? '' : 'helper_disabled',
+      reason: ENABLE_LIGHTWEIGHT_SETTINGS_OPEN
+        ? (
+            lastLightweightSettingsBudgetCapped
+              ? 'budget_capped'
+              : ''
+          )
+        : 'helper_disabled',
     })
     updateLastDiagnosticDecisionTrace(decisionTrace)
 
