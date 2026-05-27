@@ -215,6 +215,12 @@ const safeRejectTexts = [
   'rechazar las no necesarias',
   'rechazar no necesarias',
   'denegar',
+  'no consentir',
+  'no consiento',
+  'no doy mi consentimiento',
+  'no dar consentimiento',
+  'continuar sin consentir',
+  'continuar sin consentimiento',
   'no acepto',
   'no acepto cookies',
   'continuar sin aceptar',
@@ -260,6 +266,14 @@ const totalRejectTexts = [
   'rechazar cookies',
   'rechazar cookies opcionales',
   'rechazar cookies no esenciales',
+  'no consentir',
+  'no consiento',
+  'no doy mi consentimiento',
+  'no dar consentimiento',
+  'continuar sin consentir',
+  'continuar sin consentimiento',
+  'rechazar consentimiento',
+  'denegar consentimiento',
   'no acepto',
   'no acepto cookies',
   'continuar sin aceptar',
@@ -302,6 +316,10 @@ const rejectTexts = [
   'reject',
   'rechazar',
   'denegar',
+  'no consentir',
+  'no consiento',
+  'continuar sin consentir',
+  'continuar sin consentimiento',
   'decline',
   'disagree and close',
   'continuar sin aceptar',
@@ -374,6 +392,17 @@ const unsafeAcceptTexts = [
 
 const directSafeRejectTexts = [
   ...totalRejectTexts,
+]
+
+const negativeConsentRejectTexts = [
+  'no consentir',
+  'no consiento',
+  'no doy mi consentimiento',
+  'no dar consentimiento',
+  'continuar sin consentir',
+  'continuar sin consentimiento',
+  'rechazar consentimiento',
+  'denegar consentimiento',
 ]
 
 const directSafeRejectClassSignals = [
@@ -743,6 +772,9 @@ const explicitRejectControlTexts = [
   'rechazar todas',
   'rechazar las no necesarias',
   'rechazar no necesarias',
+  'no consentir',
+  'no consiento',
+  'continuar sin consentimiento',
   'no acepto',
 ]
 
@@ -750,6 +782,7 @@ const cmpRootDerivationControlTexts = [
   'rechazar todas',
   'rechazar todo',
   'rechazar las no necesarias',
+  'no consentir',
   'no acepto',
   'personalizar',
   'aceptar todas',
@@ -758,6 +791,7 @@ const cmpRootDerivationControlTexts = [
 const cmpReachabilityProbeTexts = [
   'rechazar todas',
   'rechazar todo',
+  'no consentir',
   'aceptar todas',
   'personalizar',
 ]
@@ -791,6 +825,10 @@ const COOKIE_INTENT_KEYWORDS = {
     'deny consent',
     'rechazar opcionales',
     'rechazar no esenciales',
+    'no consentir',
+    'no consiento',
+    'no doy mi consentimiento',
+    'continuar sin consentimiento',
     'denegar consentimiento',
   ],
   acceptAll: [
@@ -6500,8 +6538,20 @@ function getCookieIntentScore(element, container, intent) {
   score += scoreTextAgainstKeywords(context.nearby, keywords, 3)
   score += scoreTextAgainstKeywords(context.container, keywords, 1)
 
+  const hasDirectNegativeConsentReject =
+    textHasAny(
+      [
+        context.text,
+        context.aria,
+        context.title,
+        context.classText,
+      ].join(' '),
+      negativeConsentRejectTexts
+    )
+
   if (
     intent !== 'acceptAll' &&
+    !hasDirectNegativeConsentReject &&
     scoreTextAgainstKeywords(
       [
         context.text,
@@ -6618,6 +6668,19 @@ function isSensitiveActionControl(control, container) {
 }
 
 function hasUnsafeAcceptText(element) {
+  const directActionSignal =
+    normalizeMatchText([
+      getActionText(element),
+      element?.getAttribute?.('aria-label'),
+      element?.getAttribute?.('title'),
+      element?.value,
+      element?.getAttribute?.('value'),
+    ].join(' '))
+
+  if (textHasAny(directActionSignal, negativeConsentRejectTexts)) {
+    return false
+  }
+
   return getCookieIntentScore(element, null, 'acceptAll') >= 8
 }
 
