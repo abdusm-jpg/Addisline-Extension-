@@ -75,6 +75,7 @@ let lastBottomBannerDiagnostics = null
 let lastExperimentalBottomBannerProbe = null
 let lastRejectVerificationDiagnostics = null
 let lastFundingChoicesControlDiagnostics = null
+let lastFundingChoicesClickedSliderKeys = []
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -490,6 +491,12 @@ const fundingChoicesRequiredToggleTexts = [
 ]
 
 const fundingChoicesOptionalToggleTexts = [
+  'consentiment',
+  'consentimiento',
+  'proveidors',
+  'proveïdors',
+  'proveedores',
+  'providers',
   'optional',
   'opcional',
   'opcionals',
@@ -518,8 +525,6 @@ const fundingChoicesOptionalToggleTexts = [
   'tercers',
   'partners',
   'socios',
-  'proveedores',
-  'proveidors',
 ]
 
 const directSafeRejectClassSignals = [
@@ -8102,8 +8107,68 @@ function findFundingChoicesSafeAction(root, startedAt, budgetMs) {
   return null
 }
 
+function getFundingChoicesSliderWrapper(control, root) {
+  const wrapper =
+    safeClosest(control, '.fc-preference-slider')
+
+  return wrapper && root?.contains?.(wrapper)
+    ? wrapper
+    : null
+}
+
+function getFundingChoicesSliderInput(control, root) {
+  const wrapper =
+    getFundingChoicesSliderWrapper(control, root)
+
+  if (!wrapper) return null
+
+  return safeQuerySelectorAll(
+    wrapper,
+    'input[type="checkbox"], [role="button"][aria-pressed], [aria-checked]'
+  )
+    .find((input) =>
+      root.contains(input)
+    ) || null
+}
+
+function getFundingChoicesSliderDiagnostic(control, root) {
+  const wrapper =
+    getFundingChoicesSliderWrapper(control, root)
+  const input =
+    getFundingChoicesSliderInput(control, root)
+
+  return {
+    wrapperFound: Boolean(wrapper),
+    inputFound: Boolean(input),
+    input: input || null,
+    ariaPressed:
+      String(input?.getAttribute?.('aria-pressed') || '').slice(0, 20),
+    ariaLabel:
+      normalizeMatchText(input?.getAttribute?.('aria-label') || '').slice(0, 90),
+  }
+}
+
+function getFundingChoicesSliderKey(control, root) {
+  const input =
+    getFundingChoicesSliderInput(control, root) || control
+
+  return normalizeMatchText([
+    input?.getAttribute?.('data-id'),
+    input?.getAttribute?.('aria-label'),
+    input?.getAttribute?.('name'),
+    input?.id,
+  ].join(' ')).slice(0, 120)
+}
+
 function getFundingChoicesToggleClickTarget(control, root) {
   if (!control || !root || !root.contains(control)) return null
+
+  const sliderInput =
+    getFundingChoicesSliderInput(control, root)
+
+  if (sliderInput) {
+    return sliderInput
+  }
 
   const directOwner =
     safeClosest(
@@ -8151,9 +8216,14 @@ function getFundingChoicesToggleClickTarget(control, root) {
 }
 
 function getFundingChoicesToggleContextText(control, root) {
+  const sliderInput =
+    getFundingChoicesSliderInput(control, root)
   const parts = [
+    sliderInput?.getAttribute?.('aria-label'),
     getActionText(control),
+    getActionText(sliderInput),
     getAssociatedLabelText(control),
+    getAssociatedLabelText(sliderInput),
     getPreferenceDecisionText(control),
     getNearbyPreferenceText(control),
   ]
@@ -8177,6 +8247,8 @@ function getFundingChoicesToggleContextText(control, root) {
 }
 
 function getFundingChoicesToggleState(control, root) {
+  const sliderInput =
+    getFundingChoicesSliderInput(control, root)
   const target =
     getFundingChoicesToggleClickTarget(control, root)
   const classSignal =
@@ -8190,13 +8262,15 @@ function getFundingChoicesToggleState(control, root) {
     ].join(' '))
   const ariaChecked =
     normalizeMatchText(
-      control?.getAttribute?.('aria-checked') ||
+      sliderInput?.getAttribute?.('aria-checked') ||
+        control?.getAttribute?.('aria-checked') ||
         target?.getAttribute?.('aria-checked') ||
         ''
     )
   const ariaPressed =
     normalizeMatchText(
-      control?.getAttribute?.('aria-pressed') ||
+      sliderInput?.getAttribute?.('aria-pressed') ||
+        control?.getAttribute?.('aria-pressed') ||
         target?.getAttribute?.('aria-pressed') ||
         ''
     )
@@ -8225,6 +8299,7 @@ function getFundingChoicesToggleState(control, root) {
   }
 
   if (
+    sliderInput?.checked === true ||
     control?.checked === true ||
     target?.checked === true ||
     ariaChecked === 'true' ||
@@ -8332,6 +8407,8 @@ function getFundingChoicesToggleCandidates(root) {
       '[class*="slider" i]',
     ].join(',')
   const controls = []
+  const seenTargets = new Set()
+  const seenKeys = new Set()
 
   for (const control of safeQuerySelectorAll(root, selector)) {
     if (
@@ -8347,8 +8424,23 @@ function getFundingChoicesToggleCandidates(root) {
 
     const target =
       getFundingChoicesToggleClickTarget(control, root)
+    const sliderKey =
+      getFundingChoicesSliderKey(control, root)
+
+    if (
+      (target && seenTargets.has(target)) ||
+      (sliderKey && seenKeys.has(sliderKey))
+    ) {
+      continue
+    }
 
     if (isVisible(control) || (target && isVisible(target))) {
+      if (target) {
+        seenTargets.add(target)
+      }
+      if (sliderKey) {
+        seenKeys.add(sliderKey)
+      }
       controls.push(control)
     }
   }
@@ -8359,6 +8451,7 @@ function getFundingChoicesToggleCandidates(root) {
 function handleFundingChoicesActiveToggles(root) {
   const startedAt =
     Date.now()
+  lastFundingChoicesClickedSliderKeys = []
   const toggles =
     getFundingChoicesToggleCandidates(root)
   const activeToggles =
@@ -8411,12 +8504,17 @@ function handleFundingChoicesActiveToggles(root) {
 
   let disabledCount = 0
 
-  for (const { safety } of activeToggles.slice(0, MAX_FUNDING_CHOICES_TOGGLE_CLICKS)) {
+  for (const { control, safety } of activeToggles.slice(0, MAX_FUNDING_CHOICES_TOGGLE_CLICKS)) {
     if (!shouldRunOnThisSite()) break
     if (!safety.safe || !safety.target) continue
 
     if (clickElementSafely(safety.target)) {
       disabledCount += 1
+      const key =
+        getFundingChoicesSliderKey(control, root)
+      if (key) {
+        lastFundingChoicesClickedSliderKeys.push(key)
+      }
       incrementStat('trackersReduced')
     }
   }
@@ -8521,6 +8619,10 @@ function getFundingChoicesBlockedReason(control, root) {
 function getFundingChoicesControlDiagnostic(control, root) {
   const text =
     getActionText(control)
+  const sliderDiagnostic =
+    getFundingChoicesSliderDiagnostic(control, root)
+  const sliderKey =
+    getFundingChoicesSliderKey(control, root)
   const owner =
     getFundingChoicesToggleClickTarget(control, root)
   const safety =
@@ -8557,6 +8659,18 @@ function getFundingChoicesControlDiagnostic(control, root) {
       ).slice(0, 20),
     sliderState:
       String(safety?.state || '').slice(0, 20),
+    sliderWrapperFound:
+      Boolean(sliderDiagnostic.wrapperFound),
+    sliderInputFound:
+      Boolean(sliderDiagnostic.inputFound),
+    ariaPressed:
+      String(sliderDiagnostic.ariaPressed || '').slice(0, 20),
+    ariaLabel:
+      String(sliderDiagnostic.ariaLabel || '').slice(0, 90),
+    active:
+      safety?.state === 'enabled',
+    clicked:
+      Boolean(sliderKey && lastFundingChoicesClickedSliderKeys.includes(sliderKey)),
     clickableOwnerFound:
       Boolean(owner),
     ownerText:

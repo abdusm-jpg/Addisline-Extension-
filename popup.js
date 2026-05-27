@@ -2352,11 +2352,17 @@ function formatFundingChoicesControls(summary) {
       `toggle:${Boolean(control.toggleLike)}`,
       `checked:${String(control.checked || 'none').slice(0, 16)}`,
       `state:${String(control.sliderState || 'none').slice(0, 16)}`,
+      `active:${Boolean(control.active)}`,
+      `clicked:${Boolean(control.clicked)}`,
+      `wrapper:${Boolean(control.sliderWrapperFound)}`,
+      `input:${Boolean(control.sliderInputFound)}`,
+      `ariaPressed:${String(control.ariaPressed || 'none').slice(0, 16)}`,
       `owner:${Boolean(control.clickableOwnerFound)}`,
       `reject:${Boolean(control.rejectIntent)}`,
       `save:${Boolean(control.saveIntent)}`,
       `accept:${Boolean(control.acceptIntent)}`,
       `blocked:${String(control.blockedReason || 'none').slice(0, 60)}`,
+      `ariaLabel:${String(control.ariaLabel || 'none').slice(0, 60)}`,
       `ownerText:${String(control.ownerText || 'none').slice(0, 60)}`,
     ].join(' | '))
   })
