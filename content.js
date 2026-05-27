@@ -160,6 +160,7 @@ const SETTINGS_FALLBACK_BUDGET_MS = 350
 const SETTINGS_SAVE_LOOKUP_BUDGET_MS = 250
 const FUNDING_CHOICES_HELPER_BUDGET_MS = 800
 const FUNDING_CHOICES_PANEL_DELAY_MS = 500
+const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 14
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -461,6 +462,63 @@ const fundingChoicesUnsafePositiveTexts = [
   'dar consentimiento',
   'donar consentiment',
   'allow all',
+]
+
+const fundingChoicesRequiredToggleTexts = [
+  'necessary',
+  'strictly necessary',
+  'essential',
+  'required',
+  'always active',
+  'always enabled',
+  'obligatory',
+  'obligatorio',
+  'obligatoria',
+  'necesarias',
+  'necesarios',
+  'necessaries',
+  'necessaris',
+  'necessaria',
+  'necessari',
+  'esenciales',
+  'essencials',
+  'sempre actiu',
+  'siempre activo',
+  'tecnicas',
+  'tecniques',
+]
+
+const fundingChoicesOptionalToggleTexts = [
+  'optional',
+  'opcional',
+  'opcionals',
+  'marketing',
+  'advertising',
+  'ads',
+  'anuncios',
+  'publicidad',
+  'publicitat',
+  'analytics',
+  'analitica',
+  'analiticas',
+  'analitiques',
+  'estadisticas',
+  'estadistiques',
+  'statistics',
+  'measurement',
+  'medicion',
+  'mesura',
+  'personalizacion',
+  'personalitzacio',
+  'personalization',
+  'social',
+  'third party',
+  'terceros',
+  'tercers',
+  'partners',
+  'socios',
+  'proveedores',
+  'proveidors',
 ]
 
 const directSafeRejectClassSignals = [
@@ -8037,6 +8095,281 @@ function findFundingChoicesSafeAction(root, startedAt, budgetMs) {
   return null
 }
 
+function getFundingChoicesToggleClickTarget(control, root) {
+  if (!control || !root || !root.contains(control)) return null
+
+  return (
+    safeClosest(
+      control,
+      'button, label, [role="switch"], [role="checkbox"], [aria-checked], [aria-pressed], input[type="checkbox"], input[type="radio"], [class*="fc-slider" i]'
+    ) || control
+  )
+}
+
+function getFundingChoicesToggleContextText(control, root) {
+  const parts = [
+    getActionText(control),
+    getAssociatedLabelText(control),
+    getPreferenceDecisionText(control),
+    getNearbyPreferenceText(control),
+  ]
+  let current =
+    control?.parentElement || null
+  let depth = 0
+
+  while (
+    current &&
+    current !== root &&
+    root?.contains?.(current) &&
+    depth < 4
+  ) {
+    parts.push(getActionText(current).slice(0, 300))
+    parts.push(getText(current).slice(0, 500))
+    current = current.parentElement
+    depth += 1
+  }
+
+  return normalizeMatchText(parts.join(' '))
+}
+
+function getFundingChoicesToggleState(control, root) {
+  const target =
+    getFundingChoicesToggleClickTarget(control, root)
+  const classSignal =
+    normalizeMatchText([
+      getClassNameText(control),
+      getClassNameText(target),
+      getClassNameText(control?.parentElement),
+      getClassNameText(target?.parentElement),
+    ].join(' '))
+  const ariaChecked =
+    normalizeMatchText(
+      control?.getAttribute?.('aria-checked') ||
+        target?.getAttribute?.('aria-checked') ||
+        ''
+    )
+  const ariaPressed =
+    normalizeMatchText(
+      control?.getAttribute?.('aria-pressed') ||
+        target?.getAttribute?.('aria-pressed') ||
+        ''
+    )
+  const dataState =
+    normalizeMatchText(
+      control?.getAttribute?.('data-state') ||
+        target?.getAttribute?.('data-state') ||
+        ''
+    )
+  const dataChecked =
+    normalizeMatchText(
+      control?.getAttribute?.('data-checked') ||
+        target?.getAttribute?.('data-checked') ||
+        ''
+    )
+
+  if (
+    ariaChecked === 'false' ||
+    ariaPressed === 'false' ||
+    dataState === 'off' ||
+    dataState === 'unchecked' ||
+    dataState === 'inactive' ||
+    dataChecked === 'false'
+  ) {
+    return 'disabled'
+  }
+
+  if (
+    control?.checked === true ||
+    target?.checked === true ||
+    ariaChecked === 'true' ||
+    ariaPressed === 'true' ||
+    dataState === 'on' ||
+    dataState === 'checked' ||
+    dataState === 'active' ||
+    dataChecked === 'true' ||
+    textHasAny(classSignal, [
+      'active',
+      'checked',
+      'enabled',
+      'selected',
+      'on',
+      'switch on',
+      'toggle on',
+      'slider on',
+      'is active',
+      'is checked',
+    ]) ||
+    isConsentToggleEnabled(target) ||
+    isToggleEnabled(target)
+  ) {
+    return 'enabled'
+  }
+
+  return 'unknown'
+}
+
+function getFundingChoicesToggleSafety(control, root) {
+  const target =
+    getFundingChoicesToggleClickTarget(control, root)
+  const contextText =
+    getFundingChoicesToggleContextText(control, root)
+  const state =
+    getFundingChoicesToggleState(control, root)
+
+  if (!control || !root || !root.contains(control)) {
+    return { state, safe: false, reason: 'outside_fc_root', target }
+  }
+
+  if (!target || !root.contains(target)) {
+    return { state, safe: false, reason: 'missing_click_target', target }
+  }
+
+  if (!isVisible(control) || !isVisible(target)) {
+    return { state, safe: false, reason: 'not_visible', target }
+  }
+
+  if (
+    target.disabled ||
+    target.getAttribute?.('disabled') !== null ||
+    target.getAttribute?.('aria-disabled') === 'true'
+  ) {
+    return { state, safe: false, reason: 'disabled', target }
+  }
+
+  if (state !== 'enabled') {
+    return { state, safe: false, reason: 'not_active', target }
+  }
+
+  if (textHasAny(contextText, fundingChoicesRequiredToggleTexts)) {
+    return { state, safe: false, reason: 'required_or_essential', target }
+  }
+
+  if (!textHasAny(contextText, fundingChoicesOptionalToggleTexts)) {
+    return { state, safe: false, reason: 'optional_context_not_clear', target }
+  }
+
+  if (isSensitiveActionControl(target, root)) {
+    return { state, safe: false, reason: 'sensitive_context', target }
+  }
+
+  return { state, safe: true, reason: '', target }
+}
+
+function getFundingChoicesToggleCandidates(root) {
+  if (!root) return []
+
+  return uniqueElements(
+    safeQuerySelectorAll(
+      root,
+      [
+        '.fc-slider-el',
+        '[role="switch"]',
+        '[role="checkbox"]',
+        '[aria-checked]',
+        '[aria-pressed]',
+        'input[type="checkbox"]',
+        'input[type="radio"]',
+        '[class*="toggle" i]',
+        '[class*="switch" i]',
+        '[class*="slider" i]',
+      ].join(',')
+    )
+      .filter((control) =>
+        root.contains(control) &&
+        isVisible(control) &&
+        isFundingChoicesToggleLike(control)
+      )
+      .slice(0, MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT)
+  )
+}
+
+function handleFundingChoicesActiveToggles(root) {
+  const startedAt =
+    Date.now()
+  const toggles =
+    getFundingChoicesToggleCandidates(root)
+  const activeToggles =
+    toggles
+      .map((control) => ({
+        control,
+        safety: getFundingChoicesToggleSafety(control, root),
+      }))
+      .filter(({ safety }) =>
+        safety.state === 'enabled'
+      )
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.active_toggles',
+    status: activeToggles.length > 0 ? 'found' : 'not_found',
+    found: activeToggles.length,
+    scanned: toggles.length,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  const unsafeActiveToggle =
+    activeToggles.find(({ safety }) => !safety.safe)
+
+  if (unsafeActiveToggle) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.disable_toggles',
+      status: 'skipped',
+      reason: unsafeActiveToggle.safety.reason,
+      found: 0,
+      scanned: activeToggles.length,
+      elapsedMs: Date.now() - startedAt,
+    })
+
+    return {
+      ok: false,
+      reason: 'fc_active_toggles_not_safely_handled',
+      blockedReason: unsafeActiveToggle.safety.reason,
+      disabledCount: 0,
+      activeCount: activeToggles.length,
+    }
+  }
+
+  let disabledCount = 0
+
+  for (const { safety } of activeToggles.slice(0, MAX_FUNDING_CHOICES_TOGGLE_CLICKS)) {
+    if (!shouldRunOnThisSite()) break
+    if (!safety.safe || !safety.target) continue
+
+    if (clickElementSafely(safety.target)) {
+      disabledCount += 1
+      incrementStat('trackersReduced')
+    }
+  }
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.disable_toggles',
+    status:
+      activeToggles.length === 0 || disabledCount === activeToggles.length
+        ? 'done'
+        : 'partial',
+    found: disabledCount,
+    scanned: activeToggles.length,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  if (disabledCount < activeToggles.length) {
+    return {
+      ok: false,
+      reason: 'fc_active_toggles_not_safely_handled',
+      blockedReason: 'toggle_click_failed_or_capped',
+      disabledCount,
+      activeCount: activeToggles.length,
+    }
+  }
+
+  return {
+    ok: true,
+    reason: '',
+    blockedReason: '',
+    disabledCount,
+    activeCount: activeToggles.length,
+  }
+}
+
 function isFundingChoicesToggleLike(control) {
   if (!control) return false
 
@@ -8176,7 +8509,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
 
   if (!currentRoot) {
     appendLastDiagnosticDecisionStep({
-      strategy: 'fc.reject_or_save',
+      strategy: 'fc.active_toggles',
       status: 'not_found',
       reason: 'fc_root_not_found',
       elapsedMs: Date.now() - startedAt,
@@ -8187,28 +8520,42 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
 
   collectFundingChoicesControlDiagnostics(currentRoot)
 
+  const toggleResult =
+    handleFundingChoicesActiveToggles(currentRoot)
+
+  if (!toggleResult.ok) {
+    recordFundingChoicesSkipped(
+      currentRoot,
+      toggleResult.reason,
+      toggleResult.blockedReason
+    )
+    return
+  }
+
+  const saveStartedAt =
+    Date.now()
   const safeAction =
     findFundingChoicesSafeAction(
       currentRoot,
-      startedAt,
+      saveStartedAt,
       FUNDING_CHOICES_HELPER_BUDGET_MS
     )
 
   appendLastDiagnosticDecisionStep({
-    strategy: 'fc.reject_or_save',
+    strategy: 'fc.confirm_save',
     status: safeAction ? 'found' : 'not_found',
-    reason: hasElapsedBudget(startedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+    reason: hasElapsedBudget(saveStartedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
       ? 'budget_capped'
       : '',
     found: safeAction ? 1 : 0,
-    elapsedMs: Date.now() - startedAt,
+    elapsedMs: Date.now() - saveStartedAt,
   })
 
   if (!safeAction) {
     recordFundingChoicesSkipped(
       currentRoot,
       'fc_settings_safe_action_not_found',
-      hasElapsedBudget(startedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+      hasElapsedBudget(saveStartedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
         ? 'budget_capped'
         : ''
     )
