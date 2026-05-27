@@ -74,6 +74,7 @@ let lastIframeAccessibilityDiagnostics = null
 let lastBottomBannerDiagnostics = null
 let lastExperimentalBottomBannerProbe = null
 let lastRejectVerificationDiagnostics = null
+let lastFundingChoicesControlDiagnostics = null
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -173,6 +174,7 @@ const MAX_IFRAME_ACCESSIBILITY_DIAGNOSTICS = 5
 const MAX_BOTTOM_BANNER_DIAGNOSTICS = 5
 const MAX_BOTTOM_BANNER_CONTROL_TEXTS = 5
 const MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES = 5
+const MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS = 8
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -3397,6 +3399,7 @@ function recordCurrentSiteDiagnostic({
   bottomBannerDiagnostics = lastBottomBannerDiagnostics,
   experimentalBottomBannerProbe = lastExperimentalBottomBannerProbe,
   rejectVerificationDiagnostics = lastRejectVerificationDiagnostics,
+  fundingChoicesControlDiagnostics = lastFundingChoicesControlDiagnostics,
   elapsedMs = null,
 } = {}) {
   if (!hasExtensionContext()) return
@@ -3761,6 +3764,21 @@ function recordCurrentSiteDiagnostic({
                 : null,
           }
         : null,
+    fundingChoicesControlDiagnostics:
+      fundingChoicesControlDiagnostics &&
+      typeof fundingChoicesControlDiagnostics === 'object'
+        ? {
+            collectedAt:
+              String(fundingChoicesControlDiagnostics.collectedAt || '').slice(0, 40),
+            controlCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.controlCount) || 0),
+            controls:
+              (Array.isArray(fundingChoicesControlDiagnostics.controls)
+                ? fundingChoicesControlDiagnostics.controls
+                : [])
+                .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS),
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -3820,6 +3838,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       bottomBannerDiagnostics: null,
       experimentalBottomBannerProbe: null,
       rejectVerificationDiagnostics: null,
+      fundingChoicesControlDiagnostics: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -8018,12 +8037,132 @@ function findFundingChoicesSafeAction(root, startedAt, budgetMs) {
   return null
 }
 
+function isFundingChoicesToggleLike(control) {
+  if (!control) return false
+
+  const role =
+    normalizeMatchText(control.getAttribute?.('role') || '')
+  const type =
+    normalizeMatchText(control.getAttribute?.('type') || '')
+  const signal =
+    normalizeMatchText([
+      role,
+      type,
+      control.getAttribute?.('aria-checked'),
+      control.getAttribute?.('aria-pressed'),
+      control.getAttribute?.('data-checked'),
+      getClassNameText(control),
+    ].join(' '))
+
+  return (
+    role === 'switch' ||
+    role === 'checkbox' ||
+    type === 'checkbox' ||
+    textHasAny(signal, ['toggle', 'switch', 'checkbox', 'slider'])
+  )
+}
+
+function getFundingChoicesBlockedReason(control, root) {
+  if (!control) return 'missing_control'
+  if (!root || !root.contains(control)) return 'outside_fc_root'
+  if (!isVisible(control)) return 'not_visible'
+  if (isInsideNonCookieModal(control)) return 'non_cookie_modal'
+  if (isSensitiveActionControl(control, root)) return 'sensitive_context'
+
+  const text =
+    getActionText(control)
+  const hasNegativeConsent =
+    textHasAny(text, negativeConsentRejectTexts)
+
+  if (
+    !hasNegativeConsent &&
+    (
+      hasUnsafeAcceptText(control) ||
+      textHasAny(text, fundingChoicesUnsafePositiveTexts)
+    )
+  ) {
+    return 'accept_or_positive_consent'
+  }
+
+  return ''
+}
+
+function getFundingChoicesControlDiagnostic(control, root) {
+  const text =
+    getActionText(control)
+  const saveIntent =
+    textMatchesLightweightSettingsSave(text) ||
+    textMatchesDictionaryCookieIntent(text, 'savePreferences')
+  const rejectIntent =
+    textHasAny(text, fundingChoicesSafeActionTexts) ||
+    textMatchesDictionaryCookieIntent(text, 'rejectAll')
+  const acceptIntent =
+    textHasAny(text, fundingChoicesUnsafePositiveTexts) ||
+    textMatchesDictionaryCookieIntent(text, 'acceptAll')
+
+  return {
+    tagName:
+      control?.tagName?.toLowerCase?.() || '',
+    role:
+      String(control?.getAttribute?.('role') || '').slice(0, 40),
+    text:
+      normalizeMatchText(text).slice(0, 90),
+    visible:
+      Boolean(control && isVisible(control)),
+    toggleLike:
+      isFundingChoicesToggleLike(control),
+    checked:
+      String(
+        control?.checked ??
+          control?.getAttribute?.('aria-checked') ??
+          control?.getAttribute?.('aria-pressed') ??
+          ''
+      ).slice(0, 20),
+    rejectIntent:
+      Boolean(rejectIntent && !acceptIntent),
+    saveIntent:
+      Boolean(saveIntent && !acceptIntent),
+    acceptIntent:
+      Boolean(acceptIntent),
+    blockedReason:
+      String(getFundingChoicesBlockedReason(control, root)).slice(0, 80),
+  }
+}
+
+function collectFundingChoicesControlDiagnostics(root) {
+  if (!root) {
+    lastFundingChoicesControlDiagnostics = null
+    return null
+  }
+
+  const controls =
+    getDirectClickableControls(root)
+      .filter((control) =>
+        root.contains(control) &&
+        isVisible(control)
+      )
+      .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+      .map((control) =>
+        getFundingChoicesControlDiagnostic(control, root)
+      )
+
+  lastFundingChoicesControlDiagnostics = {
+    collectedAt: new Date().toISOString(),
+    controlCount: controls.length,
+    controls,
+  }
+
+  return lastFundingChoicesControlDiagnostics
+}
+
 function recordFundingChoicesSkipped(root, reason, blockedReason = '') {
   recordCurrentSiteDiagnostic({
     status: 'skipped',
     reason,
     candidates: root ? [root] : [],
     blockedReason,
+    fundingChoicesControlDiagnostics:
+      collectFundingChoicesControlDiagnostics(root),
   })
   rejectFlowCompleted = true
   stopObserver()
@@ -8045,6 +8184,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     recordFundingChoicesSkipped(root, 'fc_settings_safe_action_not_found', 'fc_root_not_found')
     return
   }
+
+  collectFundingChoicesControlDiagnostics(currentRoot)
 
   const safeAction =
     findFundingChoicesSafeAction(
@@ -8082,6 +8223,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
       matchedRejectElement: safeAction,
       matchedRejectText: getActionText(safeAction),
       blockedReason: 'click_failed',
+      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
     })
     rejectFlowCompleted = true
     stopObserver()
@@ -8159,12 +8301,14 @@ function attemptFundingChoicesManageOptionsFlow(root = document, decisionTrace =
   }
 
   lightweightSettingsOpenAttempted = true
+  collectFundingChoicesControlDiagnostics(fcRoot)
   recordCurrentSiteDiagnostic({
     status: 'settingsOpened',
     reason: 'fc_manage_options_clicked',
     candidates: [fcRoot],
     matchedRejectElement: manageControl,
     matchedRejectText: getActionText(manageControl),
+    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
   })
   stopObserver()
   setLastAction('settings_opened')

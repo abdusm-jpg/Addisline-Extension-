@@ -168,6 +168,11 @@ const currentSiteDiagnosticVerification =
     'currentSiteDiagnosticVerification'
   )
 
+const currentSiteDiagnosticFundingChoices =
+  document.getElementById(
+    'currentSiteDiagnosticFundingChoices'
+  )
+
 const currentSiteDiagnosticRejectCandidates =
   document.getElementById(
     'currentSiteDiagnosticRejectCandidates'
@@ -966,6 +971,12 @@ function buildDiagnosticCopyReport() {
       'Verification diagnostics',
       getBoundedElementText(
         currentSiteDiagnosticVerification
+      ),
+    ],
+    [
+      'Funding Choices controls',
+      getBoundedElementText(
+        currentSiteDiagnosticFundingChoices
       ),
     ],
     [
@@ -2303,6 +2314,50 @@ function formatCurrentSiteVerificationDiagnostics(summary) {
   return lines.join('\n')
 }
 
+function formatFundingChoicesControls(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const controls =
+    Array.isArray(summary.controls)
+      ? summary.controls
+          .filter((control) =>
+            control && typeof control === 'object'
+          )
+          .slice(0, 8)
+      : []
+  const lines = [
+    [
+      `controlCount: ${Math.max(0, Number(summary.controlCount) || 0)}`,
+      `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
+    ].join(', '),
+  ]
+
+  if (controls.length === 0) {
+    lines.push('controls: none')
+    return lines.join('\n')
+  }
+
+  lines.push('controls:')
+  controls.forEach((control, index) => {
+    lines.push([
+      `${index + 1}. ${String(control.tagName || 'unknown').slice(0, 16)}`,
+      `role:${String(control.role || 'none').slice(0, 20)}`,
+      String(control.text || 'no text').slice(0, 90),
+      `visible:${Boolean(control.visible)}`,
+      `toggle:${Boolean(control.toggleLike)}`,
+      `checked:${String(control.checked || 'none').slice(0, 16)}`,
+      `reject:${Boolean(control.rejectIntent)}`,
+      `save:${Boolean(control.saveIntent)}`,
+      `accept:${Boolean(control.acceptIntent)}`,
+      `blocked:${String(control.blockedReason || 'none').slice(0, 60)}`,
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
 function renderCurrentSiteDiagnostic(diagnostic) {
   const updatedAt =
     new Date(diagnostic?.lastUpdatedAt || 0)
@@ -2351,6 +2406,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     currentSiteDiagnosticBlocked.innerText =
       'Sin datos'
     currentSiteDiagnosticVerification.innerText =
+      'Sin datos'
+    currentSiteDiagnosticFundingChoices.innerText =
       'Sin datos'
     currentSiteDiagnosticRejectCandidates.innerText =
       'Sin datos'
@@ -2466,6 +2523,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
   currentSiteDiagnosticVerification.innerText =
     formatCurrentSiteVerificationDiagnostics(
       diagnostic.rejectVerificationDiagnostics
+    )
+  currentSiteDiagnosticFundingChoices.innerText =
+    formatFundingChoicesControls(
+      diagnostic.fundingChoicesControlDiagnostics
     )
   currentSiteDiagnosticRejectCandidates.innerText =
     formatCurrentSiteRejectCandidates(
