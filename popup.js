@@ -208,6 +208,16 @@ const currentSiteDiagnosticTrace =
     'currentSiteDiagnosticTrace'
   )
 
+const copyDiagnosticButton =
+  document.getElementById(
+    'copyDiagnosticButton'
+  )
+
+const copyDiagnosticStatus =
+  document.getElementById(
+    'copyDiagnosticStatus'
+  )
+
 const accountStatus =
   document.getElementById(
     'accountStatus'
@@ -381,8 +391,17 @@ const REPORTS_PAGE_SIZE =
 const CURRENT_SITE_DIAGNOSTIC_TTL_MS =
   10 * 60 * 1000
 
+const DIAGNOSTIC_COPY_SECTION_LIMIT =
+  1800
+
+const DIAGNOSTIC_COPY_TOTAL_LIMIT =
+  16000
+
 let accountPanelExpanded =
   false
+
+let copyDiagnosticStatusTimer =
+  null
 
 const ADDISLINE_WEB_URL =
   'https://addisline-sm.web.app'
@@ -895,12 +914,190 @@ function setAuthProtectedSectionsVisible(isConnected) {
   })
 }
 
+function getBoundedElementText(element, fallback = 'Sin datos') {
+  const text =
+    String(element?.innerText || '').trim() ||
+    fallback
+
+  if (text.length <= DIAGNOSTIC_COPY_SECTION_LIMIT) {
+    return text
+  }
+
+  return `${text.slice(0, DIAGNOSTIC_COPY_SECTION_LIMIT)}...`
+}
+
+function buildDiagnosticCopyReport() {
+  const sections = [
+    [
+      'Updated',
+      getBoundedElementText(
+        currentSiteDiagnosticStatus,
+        'No current diagnostic yet'
+      ),
+    ],
+    [
+      'Status',
+      getBoundedElementText(currentSiteDiagnosticState),
+    ],
+    [
+      'Classification',
+      getBoundedElementText(
+        currentSiteDiagnosticClassification
+      ),
+    ],
+    [
+      'Reason',
+      getBoundedElementText(currentSiteDiagnosticReason),
+    ],
+    [
+      'Matched reject',
+      getBoundedElementText(currentSiteDiagnosticReject),
+    ],
+    [
+      'Blocked reason',
+      getBoundedElementText(currentSiteDiagnosticBlocked),
+    ],
+    [
+      'Detected controls summary',
+      getBoundedElementText(currentSiteDiagnosticControls),
+    ],
+    [
+      'Reject candidates',
+      getBoundedElementText(
+        currentSiteDiagnosticRejectCandidates
+      ),
+    ],
+    [
+      'Direct controls summary',
+      getBoundedElementText(
+        currentSiteDiagnosticDirectControls
+      ),
+    ],
+    [
+      'Cookie text matches summary',
+      getBoundedElementText(
+        currentSiteDiagnosticCookieTextMatches
+      ),
+    ],
+    [
+      'DOM scope',
+      getBoundedElementText(currentSiteDiagnosticDomScope),
+    ],
+    [
+      'Bottom banner',
+      getBoundedElementText(
+        currentSiteDiagnosticBottomBanner
+      ),
+    ],
+    [
+      'Experimental bottom probe',
+      getBoundedElementText(
+        currentSiteDiagnosticExperimentalBottomProbe
+      ),
+    ],
+    [
+      'Iframe access',
+      getBoundedElementText(
+        currentSiteDiagnosticIframeAccess
+      ),
+    ],
+    [
+      'Late snapshot',
+      getBoundedElementText(
+        currentSiteDiagnosticLateSnapshot
+      ),
+    ],
+    [
+      'Decision trace',
+      getBoundedElementText(currentSiteDiagnosticTrace),
+    ],
+  ]
+
+  const report = sections
+    .map(([label, value]) => `${label}:\n${value}`)
+    .join('\n\n')
+
+  if (report.length <= DIAGNOSTIC_COPY_TOTAL_LIMIT) {
+    return report
+  }
+
+  return `${report.slice(0, DIAGNOSTIC_COPY_TOTAL_LIMIT)}...`
+}
+
+async function copyTextToClipboard(text) {
+  if (
+    navigator.clipboard &&
+    typeof navigator.clipboard.writeText === 'function'
+  ) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textArea =
+    document.createElement('textarea')
+  textArea.value = text
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.left = '-9999px'
+  textArea.style.top = '0'
+  document.body.appendChild(textArea)
+  textArea.select()
+
+  try {
+    const copied =
+      document.execCommand('copy')
+
+    if (!copied) {
+      throw new Error('copy command failed')
+    }
+  } finally {
+    document.body.removeChild(textArea)
+  }
+}
+
+function setCopyDiagnosticStatus(text, type = 'info') {
+  if (copyDiagnosticStatusTimer) {
+    clearTimeout(copyDiagnosticStatusTimer)
+  }
+
+  copyDiagnosticStatus.innerText = text
+  copyDiagnosticStatus.classList.toggle(
+    'diagnosticCopyStatus--error',
+    type === 'error'
+  )
+
+  copyDiagnosticStatusTimer =
+    setTimeout(() => {
+      copyDiagnosticStatus.innerText = ''
+      copyDiagnosticStatus.classList.remove(
+        'diagnosticCopyStatus--error'
+      )
+    }, 1800)
+}
+
 accountToggleButton.addEventListener(
   'click',
   () => {
     setAccountPanelExpanded(
       !accountPanelExpanded
     )
+  }
+)
+
+copyDiagnosticButton.addEventListener(
+  'click',
+  async () => {
+    try {
+      await copyTextToClipboard(
+        buildDiagnosticCopyReport()
+      )
+      setCopyDiagnosticStatus('Copied')
+    } catch (error) {
+      setCopyDiagnosticStatus(
+        'Copy failed',
+        'error'
+      )
+    }
   }
 )
 

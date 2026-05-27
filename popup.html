@@ -178,7 +178,16 @@
       </section>
 
       <section class="currentSiteDiagnosticPanel">
-        <span class="sectionLabel">Diagnóstico del sitio actual</span>
+        <div class="diagnosticPanelHeader">
+          <span class="sectionLabel">Diagnóstico del sitio actual</span>
+          <button
+            id="copyDiagnosticButton"
+            class="secondary compact diagnosticCopyButton"
+            type="button"
+          >
+            Copy diagnostic
+          </button>
+        </div>
 
         <p
           id="currentSiteDiagnosticStatus"
@@ -186,6 +195,7 @@
         >
           No diagnostic available yet
         </p>
+        <p id="copyDiagnosticStatus" class="siteNote diagnosticCopyStatus"></p>
 
         <dl class="diagnosticList">
           <div>
