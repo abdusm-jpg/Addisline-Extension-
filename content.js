@@ -72,6 +72,7 @@ let lastDomScopeDiagnostics = null
 let lastIframeAccessibilityDiagnostics = null
 let lastBottomBannerDiagnostics = null
 let lastExperimentalBottomBannerProbe = null
+let lastRejectVerificationDiagnostics = null
 let lightweightSettingsOpenAttempted = false
 let startupScanScheduled = false
 let lastPassiveIntelligenceAt = 0
@@ -2830,6 +2831,10 @@ function resetExperimentalBottomBannerProbe() {
   lastExperimentalBottomBannerProbe = null
 }
 
+function resetRejectVerificationDiagnostics() {
+  lastRejectVerificationDiagnostics = null
+}
+
 function getDiagnosticClickableControlsFromRoot(root) {
   return safeQuerySelectorAll(
     root,
@@ -3241,6 +3246,7 @@ function recordCurrentSiteDiagnostic({
   iframeAccessibilityDiagnostics = lastIframeAccessibilityDiagnostics,
   bottomBannerDiagnostics = lastBottomBannerDiagnostics,
   experimentalBottomBannerProbe = lastExperimentalBottomBannerProbe,
+  rejectVerificationDiagnostics = lastRejectVerificationDiagnostics,
 } = {}) {
   if (!hasExtensionContext()) return
 
@@ -3532,6 +3538,73 @@ function recordCurrentSiteDiagnostic({
                 .slice(0, MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES),
           }
         : null,
+    rejectVerificationDiagnostics:
+      rejectVerificationDiagnostics &&
+      typeof rejectVerificationDiagnostics === 'object'
+        ? {
+            outcome:
+              String(rejectVerificationDiagnostics.outcome || '').slice(0, 80),
+            clickedControlText:
+              String(rejectVerificationDiagnostics.clickedControlText || '').slice(0, 120),
+            verificationDelayMs:
+              Math.max(0, Number(rejectVerificationDiagnostics.verificationDelayMs) || 0),
+            clickedControlConnected:
+              Boolean(rejectVerificationDiagnostics.clickedControlConnected),
+            clickedControlVisible:
+              Boolean(rejectVerificationDiagnostics.clickedControlVisible),
+            clickedControlVisibility:
+              rejectVerificationDiagnostics.clickedControlVisibility || null,
+            rootConnected:
+              Boolean(rejectVerificationDiagnostics.rootConnected),
+            rootStillSame:
+              Boolean(rejectVerificationDiagnostics.rootStillSame),
+            rootVisible:
+              Boolean(rejectVerificationDiagnostics.rootVisible),
+            rootVisibility:
+              rejectVerificationDiagnostics.rootVisibility || null,
+            rootGeometry:
+              rejectVerificationDiagnostics.rootGeometry || null,
+            rootStyle:
+              rejectVerificationDiagnostics.rootStyle || null,
+            stateRootConnected:
+              Boolean(rejectVerificationDiagnostics.stateRootConnected),
+            stateRootVisible:
+              Boolean(rejectVerificationDiagnostics.stateRootVisible),
+            stateRootGeometry:
+              rejectVerificationDiagnostics.stateRootGeometry || null,
+            pageInteractionAvailable:
+              Boolean(rejectVerificationDiagnostics.pageInteractionAvailable),
+            scrollRestored:
+              Boolean(rejectVerificationDiagnostics.scrollRestored),
+            bannerVisible:
+              Boolean(rejectVerificationDiagnostics.bannerVisible),
+            modalPresent:
+              Boolean(rejectVerificationDiagnostics.modalPresent),
+            overlayPresent:
+              Boolean(rejectVerificationDiagnostics.overlayPresent),
+            ariaHidden:
+              Boolean(rejectVerificationDiagnostics.ariaHidden),
+            cssHidden:
+              Boolean(rejectVerificationDiagnostics.cssHidden),
+            active:
+              Boolean(rejectVerificationDiagnostics.active),
+            replacement:
+              rejectVerificationDiagnostics.replacement &&
+              typeof rejectVerificationDiagnostics.replacement === 'object'
+                ? {
+                    detected:
+                      Boolean(rejectVerificationDiagnostics.replacement.detected),
+                    count:
+                      Math.max(0, Number(rejectVerificationDiagnostics.replacement.count) || 0),
+                    samples:
+                      (Array.isArray(rejectVerificationDiagnostics.replacement.samples)
+                        ? rejectVerificationDiagnostics.replacement.samples
+                        : [])
+                        .slice(0, 1),
+                  }
+                : null,
+          }
+        : null,
     lastUpdatedAt: now,
   }
 
@@ -3589,6 +3662,7 @@ function clearCurrentSiteDiagnostic(reason = 'stale') {
       iframeAccessibilityDiagnostics: null,
       bottomBannerDiagnostics: null,
       experimentalBottomBannerProbe: null,
+      rejectVerificationDiagnostics: null,
       lastUpdatedAt: new Date().toISOString(),
     },
   })
@@ -9609,6 +9683,212 @@ function getBannerVerificationState(container) {
   }
 }
 
+function getVerificationElementStyleSummary(element) {
+  const style =
+    safeGetComputedStyle(element)
+
+  return {
+    display:
+      String(style?.display || '').slice(0, 40),
+    visibility:
+      String(style?.visibility || '').slice(0, 40),
+    opacity:
+      String(style?.opacity || '').slice(0, 20),
+    pointerEvents:
+      String(style?.pointerEvents || '').slice(0, 40),
+    position:
+      String(style?.position || '').slice(0, 40),
+    zIndex:
+      String(style?.zIndex || '').slice(0, 40),
+  }
+}
+
+function getVerificationRectSummary(element) {
+  const rect =
+    getSafeClientRect(element)
+
+  return {
+    x: rect ? Math.round(rect.x) : 0,
+    y: rect ? Math.round(rect.y) : 0,
+    width: rect ? Math.round(rect.width) : 0,
+    height: rect ? Math.round(rect.height) : 0,
+    top: rect ? Math.round(rect.top) : 0,
+    bottom: rect ? Math.round(rect.bottom) : 0,
+  }
+}
+
+function getConsentReplacementSummary(originalRoot, stateRoot) {
+  const replacement =
+    stateRoot &&
+    stateRoot !== originalRoot &&
+    isVisible(stateRoot)
+
+  return {
+    detected: Boolean(replacement),
+    count: replacement ? 1 : 0,
+    samples:
+      replacement
+        ? [
+            {
+              tagName:
+                stateRoot?.tagName?.toLowerCase?.() || '',
+              text:
+                normalizeMatchText(
+                  getElementActionText(stateRoot)
+                ).slice(0, 100),
+              rect:
+                getVerificationRectSummary(stateRoot),
+            },
+          ]
+        : [],
+  }
+}
+
+function getRejectVerificationOutcome({
+  state,
+  originalRootConnected,
+  originalRootVisible,
+  rootHidden,
+  clickedControlConnected,
+  replacementDetected,
+}) {
+  if (replacementDetected) {
+    return 'banner_replaced'
+  }
+
+  if (
+    state?.active &&
+    (
+      !originalRootConnected ||
+      !clickedControlConnected
+    )
+  ) {
+    return 'verification_dom_stale'
+  }
+
+  if (!state?.active && !originalRootConnected) {
+    return 'banner_removed'
+  }
+
+  if (!state?.active && rootHidden) {
+    return 'banner_hidden'
+  }
+
+  if (
+    !state?.active &&
+    originalRootConnected &&
+    !originalRootVisible
+  ) {
+    return 'root_persisted_but_inactive'
+  }
+
+  if (!state?.active) {
+    return 'root_persisted_but_inactive'
+  }
+
+  return 'banner_still_active'
+}
+
+function buildRejectVerificationDiagnostics(context, state) {
+  const clickedControl =
+    context?.element || null
+  const originalRoot =
+    context?.container || null
+  const stateRoot =
+    state?.container || null
+  const clickedControlConnected =
+    Boolean(
+      clickedControl &&
+      document.documentElement.contains(clickedControl)
+    )
+  const originalRootConnected =
+    Boolean(
+      originalRoot &&
+      document.documentElement.contains(originalRoot)
+    )
+  const stateRootConnected =
+    Boolean(
+      stateRoot &&
+      document.documentElement.contains(stateRoot)
+    )
+  const clickedControlVisible =
+    Boolean(clickedControl && isVisible(clickedControl))
+  const originalRootVisible =
+    Boolean(originalRoot && isVisible(originalRoot))
+  const stateRootVisible =
+    Boolean(stateRoot && isVisible(stateRoot))
+  const rootStyle =
+    getVerificationElementStyleSummary(originalRoot || stateRoot)
+  const rootHidden =
+    Boolean(
+      state?.ariaHidden ||
+      state?.cssHidden ||
+      rootStyle.display === 'none' ||
+      rootStyle.visibility === 'hidden' ||
+      Number(rootStyle.opacity) === 0
+    )
+  const replacement =
+    getConsentReplacementSummary(originalRoot, stateRoot)
+  const outcome =
+    getRejectVerificationOutcome({
+      state,
+      originalRootConnected,
+      originalRootVisible,
+      rootHidden,
+      clickedControlConnected,
+      replacementDetected: replacement.detected,
+    })
+
+  lastRejectVerificationDiagnostics = {
+    outcome,
+    clickedControlText:
+      String(
+        clickedControl ? getActionText(clickedControl) : ''
+      ).slice(0, 120),
+    verificationDelayMs: 900,
+    clickedControlConnected,
+    clickedControlVisible,
+    clickedControlVisibility:
+      clickedControl
+        ? getVisibilityDiagnostic(clickedControl)
+        : null,
+    rootConnected: originalRootConnected,
+    rootStillSame:
+      Boolean(originalRoot && stateRoot && originalRoot === stateRoot),
+    rootVisibility:
+      originalRoot
+        ? getVisibilityDiagnostic(originalRoot)
+        : null,
+    rootVisible: originalRootVisible,
+    rootGeometry:
+      getVerificationRectSummary(originalRoot || stateRoot),
+    rootStyle,
+    stateRootConnected,
+    stateRootVisible,
+    stateRootGeometry:
+      getVerificationRectSummary(stateRoot),
+    pageInteractionAvailable:
+      Boolean(state?.scrollRestored && !hasPageScrollLock()),
+    scrollRestored:
+      Boolean(state?.scrollRestored),
+    bannerVisible:
+      Boolean(state?.bannerVisible),
+    modalPresent:
+      Boolean(state?.modalPresent),
+    overlayPresent:
+      Boolean(state?.overlayPresent),
+    ariaHidden:
+      Boolean(state?.ariaHidden),
+    cssHidden:
+      Boolean(state?.cssHidden),
+    active:
+      Boolean(state?.active),
+    replacement,
+  }
+
+  return lastRejectVerificationDiagnostics
+}
+
 function runSingleVerificationFollowUp(context, state) {
   const modeConfig =
     getProtectionModeConfig()
@@ -9810,6 +10090,10 @@ function schedulePostActionVerification(context = {}) {
 
     const state =
       getBannerVerificationState(context.container)
+    const verificationDiagnostics =
+      context.type === 'reject'
+        ? buildRejectVerificationDiagnostics(context, state)
+        : lastRejectVerificationDiagnostics
 
     cookieDebugLog('cookie.panel.verification', {
       type: context.type || '',
@@ -9842,6 +10126,7 @@ function schedulePostActionVerification(context = {}) {
           matchedRejectText: context.element
             ? getActionText(context.element)
             : '',
+          rejectVerificationDiagnostics: verificationDiagnostics,
         })
         rejectFlowLog('Basic reject verification passed', {
           bannerVisible: state.bannerVisible,
@@ -9888,6 +10173,7 @@ function schedulePostActionVerification(context = {}) {
           ? getActionText(context.element)
           : '',
         blockedReason: 'banner_still_visible',
+        rejectVerificationDiagnostics: verificationDiagnostics,
       })
       rejectFlowLog('Basic reject verification failed', {
         bannerVisible: state.bannerVisible,
@@ -13043,6 +13329,7 @@ function scanPage() {
     resetIframeAccessibilityDiagnostics()
     resetBottomBannerDiagnostics()
     resetExperimentalBottomBannerProbe()
+    resetRejectVerificationDiagnostics()
 
     const modeConfig =
       getProtectionModeConfig()

@@ -163,6 +163,11 @@ const currentSiteDiagnosticBlocked =
     'currentSiteDiagnosticBlocked'
   )
 
+const currentSiteDiagnosticVerification =
+  document.getElementById(
+    'currentSiteDiagnosticVerification'
+  )
+
 const currentSiteDiagnosticRejectCandidates =
   document.getElementById(
     'currentSiteDiagnosticRejectCandidates'
@@ -956,6 +961,12 @@ function buildDiagnosticCopyReport() {
     [
       'Blocked reason',
       getBoundedElementText(currentSiteDiagnosticBlocked),
+    ],
+    [
+      'Verification diagnostics',
+      getBoundedElementText(
+        currentSiteDiagnosticVerification
+      ),
     ],
     [
       'Detected controls summary',
@@ -2179,6 +2190,119 @@ function formatCurrentSiteLateSnapshot(snapshot) {
   return lines.join('\n')
 }
 
+function formatDiagnosticRect(rect) {
+  if (!rect || typeof rect !== 'object') {
+    return 'none'
+  }
+
+  return [
+    Math.round(Number(rect.x) || 0),
+    Math.round(Number(rect.y) || 0),
+    `${Math.round(Number(rect.width) || 0)}x${Math.round(Number(rect.height) || 0)}`,
+  ].join(',')
+}
+
+function formatDiagnosticStyle(style) {
+  if (!style || typeof style !== 'object') {
+    return 'none'
+  }
+
+  return [
+    String(style.display || '').slice(0, 16) || 'none',
+    String(style.visibility || '').slice(0, 16) || 'none',
+    String(style.opacity || '').slice(0, 8) || 'none',
+    String(style.pointerEvents || '').slice(0, 16) || 'none',
+    String(style.position || '').slice(0, 16) || 'none',
+    `z:${String(style.zIndex || '').slice(0, 12) || 'none'}`,
+  ].join('/')
+}
+
+function formatDiagnosticVisibility(visibility) {
+  if (!visibility || typeof visibility !== 'object') {
+    return 'none'
+  }
+
+  return [
+    `visible:${Boolean(visibility.finalVisible)}`,
+    `reason:${String(visibility.finalReason || 'unknown').slice(0, 40)}`,
+    `rect:${formatDiagnosticRect(visibility)}`,
+    `style:${String(visibility.display || '').slice(0, 12)}/${String(visibility.visibility || '').slice(0, 12)}/${String(visibility.opacity || '').slice(0, 8)}`,
+    `intersect:${Boolean(visibility.viewportIntersecting)}`,
+    `offsetParent:${Boolean(visibility.offsetParentExists)}`,
+  ].join(', ')
+}
+
+function formatCurrentSiteVerificationDiagnostics(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const replacement =
+    summary.replacement &&
+    typeof summary.replacement === 'object'
+      ? summary.replacement
+      : null
+  const replacementSamples =
+    replacement &&
+    Array.isArray(replacement.samples)
+      ? replacement.samples
+          .filter((sample) =>
+            sample && typeof sample === 'object'
+          )
+          .slice(0, 1)
+      : []
+  const lines = [
+    [
+      `outcome: ${String(summary.outcome || 'unknown').slice(0, 80)}`,
+      `delayMs: ${Math.max(0, Number(summary.verificationDelayMs) || 0)}`,
+      `active: ${Boolean(summary.active)}`,
+      `bannerVisible: ${Boolean(summary.bannerVisible)}`,
+      `modalPresent: ${Boolean(summary.modalPresent)}`,
+      `overlayPresent: ${Boolean(summary.overlayPresent)}`,
+      `scrollRestored: ${Boolean(summary.scrollRestored)}`,
+      `pageInteractionAvailable: ${Boolean(summary.pageInteractionAvailable)}`,
+    ].join(', '),
+    [
+      `clicked: ${String(summary.clickedControlText || 'no text').slice(0, 100)}`,
+      `connected: ${Boolean(summary.clickedControlConnected)}`,
+      `visible: ${Boolean(summary.clickedControlVisible)}`,
+    ].join(', '),
+    `clickedVisibility: ${formatDiagnosticVisibility(summary.clickedControlVisibility)}`,
+    [
+      `rootConnected: ${Boolean(summary.rootConnected)}`,
+      `rootStillSame: ${Boolean(summary.rootStillSame)}`,
+      `rootVisible: ${Boolean(summary.rootVisible)}`,
+      `stateRootConnected: ${Boolean(summary.stateRootConnected)}`,
+      `stateRootVisible: ${Boolean(summary.stateRootVisible)}`,
+      `ariaHidden: ${Boolean(summary.ariaHidden)}`,
+      `cssHidden: ${Boolean(summary.cssHidden)}`,
+    ].join(', '),
+    `rootGeometry: ${formatDiagnosticRect(summary.rootGeometry)}`,
+    `stateRootGeometry: ${formatDiagnosticRect(summary.stateRootGeometry)}`,
+    `rootStyle: ${formatDiagnosticStyle(summary.rootStyle)}`,
+    `rootVisibility: ${formatDiagnosticVisibility(summary.rootVisibility)}`,
+    [
+      `replacementDetected: ${Boolean(replacement?.detected)}`,
+      `replacementCount: ${Math.max(0, Number(replacement?.count) || 0)}`,
+    ].join(', '),
+  ]
+
+  if (replacementSamples.length === 0) {
+    lines.push('replacementSamples: none')
+    return lines.join('\n')
+  }
+
+  replacementSamples.forEach((sample, index) => {
+    lines.push([
+      `replacement${index + 1}: ${String(sample.tagName || 'unknown').slice(0, 20)}`,
+      `rect:${formatDiagnosticRect(sample.rect)}`,
+      String(sample.text || 'no text').slice(0, 100),
+    ].join(' | '))
+  })
+
+  return lines.join('\n')
+}
+
 function renderCurrentSiteDiagnostic(diagnostic) {
   const updatedAt =
     new Date(diagnostic?.lastUpdatedAt || 0)
@@ -2225,6 +2349,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     currentSiteDiagnosticReject.innerText =
       'Sin datos'
     currentSiteDiagnosticBlocked.innerText =
+      'Sin datos'
+    currentSiteDiagnosticVerification.innerText =
       'Sin datos'
     currentSiteDiagnosticRejectCandidates.innerText =
       'Sin datos'
@@ -2337,6 +2463,10 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     String(diagnostic.matchedRejectText || 'Sin datos')
   currentSiteDiagnosticBlocked.innerText =
     String(diagnostic.blockedReason || 'Sin datos')
+  currentSiteDiagnosticVerification.innerText =
+    formatCurrentSiteVerificationDiagnostics(
+      diagnostic.rejectVerificationDiagnostics
+    )
   currentSiteDiagnosticRejectCandidates.innerText =
     formatCurrentSiteRejectCandidates(
       diagnostic.rejectCandidateDiagnostics
