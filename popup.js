@@ -2345,6 +2345,8 @@ function formatFundingChoicesControls(summary) {
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,
       `providerPreferenceClickSuccess: ${Boolean(summary.providerPreferenceClickSuccess)}`,
+      `providerPreferenceScrollAttempts: ${Math.max(0, Number(summary.providerPreferenceScrollAttempts) || 0)}`,
+      `providerPreferenceScrollTop: ${Math.max(0, Number(summary.providerPreferenceScrollTop) || 0)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', '),

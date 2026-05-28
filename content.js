@@ -88,6 +88,8 @@ let lastFundingChoicesProviderPreferenceTextMatch = ''
 let lastFundingChoicesProviderPreferenceClickableTargetTag = ''
 let lastFundingChoicesProviderPreferenceClickMethod = ''
 let lastFundingChoicesProviderPreferenceClickSuccess = false
+let lastFundingChoicesProviderPreferenceScrollAttempts = 0
+let lastFundingChoicesProviderPreferenceScrollTop = 0
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -3918,6 +3920,10 @@ function recordCurrentSiteDiagnostic({
               String(fundingChoicesControlDiagnostics.providerPreferenceClickMethod || '').slice(0, 40),
             providerPreferenceClickSuccess:
               Boolean(fundingChoicesControlDiagnostics.providerPreferenceClickSuccess),
+            providerPreferenceScrollAttempts:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerPreferenceScrollAttempts) || 0),
+            providerPreferenceScrollTop:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerPreferenceScrollTop) || 0),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             preferenceToggleActions:
@@ -9741,6 +9747,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
     providerPreferenceClickSuccess: lastFundingChoicesProviderPreferenceClickSuccess,
+    providerPreferenceScrollAttempts: lastFundingChoicesProviderPreferenceScrollAttempts,
+    providerPreferenceScrollTop: lastFundingChoicesProviderPreferenceScrollTop,
     clickableOwnerCount,
     preferenceToggleActions,
     controls,
@@ -9835,6 +9843,29 @@ function getFundingChoicesProviderTextClickableTarget(element, root) {
   return null
 }
 
+function findFundingChoicesScrollableContainer(root) {
+  const candidates =
+    [
+      ...safeQuerySelectorAll(root, '*')
+        .slice(0, MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT),
+      root,
+    ]
+
+  return candidates.find((element) => {
+    if (!element || !root.contains(element)) return false
+
+    const style =
+      safeGetComputedStyle(element)
+    const overflowSignal =
+      `${style?.overflowY || ''} ${style?.overflow || ''}`
+
+    return (
+      element.scrollHeight > element.clientHeight + 40 &&
+      textHasAny(overflowSignal, ['auto', 'scroll'])
+    )
+  }) || root
+}
+
 function findFundingChoicesProviderPreferenceTextControl(root, startedAt, budgetMs) {
   const elements =
     safeQuerySelectorAll(
@@ -9907,6 +9938,63 @@ function findFundingChoicesProviderPreferenceTextControl(root, startedAt, budget
   return null
 }
 
+function findFundingChoicesProviderPreferenceTextControlWithScroll(root, startedAt, budgetMs) {
+  const scrollContainer =
+    findFundingChoicesScrollableContainer(root)
+  const originalScrollTop =
+    Number(scrollContainer?.scrollTop) || 0
+  const maxAttempts = 5
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (hasElapsedBudget(startedAt, budgetMs)) {
+      break
+    }
+
+    lastFundingChoicesProviderPreferenceScrollAttempts = attempt
+    lastFundingChoicesProviderPreferenceScrollTop =
+      Math.max(0, Number(scrollContainer?.scrollTop) || 0)
+
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences_scroll_search',
+      status: 'ran',
+      found: 0,
+      scanned: attempt,
+      elapsedMs: Date.now() - startedAt,
+      reason: `scrollTop:${lastFundingChoicesProviderPreferenceScrollTop}`,
+    })
+
+    const control =
+      findFundingChoicesProviderPreferenceTextControl(root, startedAt, budgetMs)
+
+    if (control) {
+      lastFundingChoicesProviderPreferenceScrollAttempts = attempt + 1
+      lastFundingChoicesProviderPreferenceScrollTop =
+        Math.max(0, Number(scrollContainer?.scrollTop) || 0)
+      return control
+    }
+
+    if (
+      !scrollContainer ||
+      scrollContainer.scrollHeight <= scrollContainer.clientHeight ||
+      scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 4
+    ) {
+      break
+    }
+
+    scrollContainer.scrollTop =
+      Math.min(
+        scrollContainer.scrollHeight,
+        scrollContainer.scrollTop + Math.max(160, Math.floor(scrollContainer.clientHeight * 0.75))
+      )
+  }
+
+  if (scrollContainer && typeof scrollContainer.scrollTop === 'number') {
+    scrollContainer.scrollTop = originalScrollTop
+  }
+
+  return null
+}
+
 function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
   const controls =
     uniqueElements([
@@ -9970,7 +10058,7 @@ function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) 
     })
   }
 
-  return findFundingChoicesProviderPreferenceTextControl(root, startedAt, budgetMs)
+  return findFundingChoicesProviderPreferenceTextControlWithScroll(root, startedAt, budgetMs)
 }
 
 function openFundingChoicesProviderPreferences(root) {
@@ -10248,6 +10336,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderPreferenceClickableTargetTag = ''
     lastFundingChoicesProviderPreferenceClickMethod = ''
     lastFundingChoicesProviderPreferenceClickSuccess = false
+    lastFundingChoicesProviderPreferenceScrollAttempts = 0
+    lastFundingChoicesProviderPreferenceScrollTop = 0
     collectFundingChoicesControlDiagnostics(currentRoot)
 
     const preferenceToggleResult =
