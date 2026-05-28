@@ -90,6 +90,8 @@ let lastFundingChoicesProviderPreferenceClickMethod = ''
 let lastFundingChoicesProviderPreferenceClickSuccess = false
 let lastFundingChoicesProviderPreferenceScrollAttempts = 0
 let lastFundingChoicesProviderPreferenceScrollTop = 0
+let lastFundingChoicesProviderManageVendorsFound = false
+let lastFundingChoicesProviderManageVendorsClicked = false
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -3924,6 +3926,10 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerPreferenceScrollAttempts) || 0),
             providerPreferenceScrollTop:
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerPreferenceScrollTop) || 0),
+            providerManageVendorsFound:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound),
+            providerManageVendorsClicked:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsClicked),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             preferenceToggleActions:
@@ -9749,6 +9755,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPreferenceClickSuccess: lastFundingChoicesProviderPreferenceClickSuccess,
     providerPreferenceScrollAttempts: lastFundingChoicesProviderPreferenceScrollAttempts,
     providerPreferenceScrollTop: lastFundingChoicesProviderPreferenceScrollTop,
+    providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
+    providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
     preferenceToggleActions,
     controls,
@@ -9995,7 +10003,43 @@ function findFundingChoicesProviderPreferenceTextControlWithScroll(root, started
   return null
 }
 
+function findFundingChoicesManageVendorsButton(root, startedAt) {
+  const control =
+    safeQuerySelectorAll(
+      root,
+      'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
+    )
+      .find((element) =>
+        root.contains(element) &&
+        isVisible(element) &&
+        !hasUnsafeAcceptText(element) &&
+        !isSensitiveActionControl(element, root)
+      ) || null
+
+  lastFundingChoicesProviderManageVendorsFound = Boolean(control)
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.manage_vendors_button',
+    status: control ? 'found' : 'not_found',
+    found: control ? 1 : 0,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  return control
+}
+
 function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
+  const manageVendorsButton =
+    findFundingChoicesManageVendorsButton(root, startedAt)
+
+  if (manageVendorsButton) {
+    lastFundingChoicesProviderPreferenceClickMethod =
+      'manage_vendors_selector'
+    lastFundingChoicesProviderPreferenceClickableTargetTag =
+      manageVendorsButton.tagName?.toLowerCase?.() || ''
+    return manageVendorsButton
+  }
+
   const controls =
     uniqueElements([
       ...safeQuerySelectorAll(
@@ -10090,6 +10134,16 @@ function openFundingChoicesProviderPreferences(root) {
     }
   }
 
+  if (lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector') {
+    try {
+      providerControl.scrollIntoView?.({
+        block: 'center',
+      })
+    } catch {
+      // Best-effort alignment before the FC click.
+    }
+  }
+
   if (!clickCMPSpecificControl(providerControl)) {
     lastFundingChoicesProviderPreferenceClickSuccess = false
     appendLastDiagnosticDecisionStep({
@@ -10110,6 +10164,9 @@ function openFundingChoicesProviderPreferences(root) {
 
   lastFundingChoicesProviderPreferenceClickableTargetTag =
     providerControl?.tagName?.toLowerCase?.() || ''
+  if (lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector') {
+    lastFundingChoicesProviderManageVendorsClicked = true
+  }
   lastFundingChoicesProviderPreferenceClickMethod =
     lastFundingChoicesProviderPreferenceClickMethod || 'control'
   lastFundingChoicesProviderPreferenceClickSuccess = true
@@ -10338,6 +10395,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderPreferenceClickSuccess = false
     lastFundingChoicesProviderPreferenceScrollAttempts = 0
     lastFundingChoicesProviderPreferenceScrollTop = 0
+    lastFundingChoicesProviderManageVendorsFound = false
+    lastFundingChoicesProviderManageVendorsClicked = false
     collectFundingChoicesControlDiagnostics(currentRoot)
 
     const preferenceToggleResult =
