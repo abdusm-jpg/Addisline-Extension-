@@ -444,16 +444,25 @@ const fundingChoicesManageOptionTexts = [
 
 const fundingChoicesProviderPreferenceTexts = [
   'preferencies de proveidors',
+  'preferencia de proveidors',
   'preferencias de proveedores',
+  'preferencia de proveedores',
   'preferencies dels proveidors',
-  'llista de proveidors',
-  'lista de proveedores',
+  'preferencias de partners',
   'vendor preferences',
+  'provider preferences',
   'partner preferences',
-  'vendors list',
-  'fc vendors list dialog',
+]
+
+const fundingChoicesProviderInformationalListTexts = [
   'llista de partners',
   'lista de partners',
+  'llista de proveidors',
+  'lista de proveedores',
+  'vendors list',
+  'fc vendors list dialog',
+  'partner list',
+  'partners list',
 ]
 
 const fundingChoicesSafeActionTexts = [
@@ -9761,6 +9770,10 @@ function isFundingChoicesProviderPreferenceControl(control, root) {
   const signal =
     getFundingChoicesProviderControlSignal(control)
 
+  if (textHasAny(signal, fundingChoicesProviderInformationalListTexts)) {
+    return false
+  }
+
   return (
     textHasAny(signal, fundingChoicesProviderPreferenceTexts) &&
     !textHasAny(signal, fundingChoicesUnsafePositiveTexts)
@@ -9779,15 +9792,55 @@ function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) 
         budgetMs,
       }),
     ])
+  let informationalFound = false
 
   for (const control of controls) {
     if (hasElapsedBudget(startedAt, budgetMs)) {
       break
     }
 
+    const signal =
+      getFundingChoicesProviderControlSignal(control)
+
+    if (
+      root.contains(control) &&
+      isVisible(control) &&
+      textHasAny(signal, fundingChoicesProviderInformationalListTexts)
+    ) {
+      informationalFound = true
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_preferences_skipped_informational_list',
+        status: 'skipped',
+        reason: signal.slice(0, 80),
+        found: 1,
+        elapsedMs: Date.now() - startedAt,
+      })
+      continue
+    }
+
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences_candidate',
+      status: textHasAny(signal, fundingChoicesProviderPreferenceTexts)
+        ? 'matched'
+        : 'skipped',
+      reason: signal.slice(0, 80),
+      found: textHasAny(signal, fundingChoicesProviderPreferenceTexts) ? 1 : 0,
+      elapsedMs: Date.now() - startedAt,
+    })
+
     if (isFundingChoicesProviderPreferenceControl(control, root)) {
       return control
     }
+  }
+
+  if (informationalFound) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences_candidate',
+      status: 'not_found',
+      reason: 'only_informational_provider_list_found',
+      found: 0,
+      elapsedMs: Date.now() - startedAt,
+    })
   }
 
   return null
@@ -9815,10 +9868,10 @@ function openFundingChoicesProviderPreferences(root) {
 
   if (!providerControl) {
     return {
-      ok: true,
+      ok: false,
       opened: false,
-      reason: '',
-      blockedReason: '',
+      reason: 'fc_provider_preferences_control_not_found',
+      blockedReason: 'provider_preferences_control_not_found',
     }
   }
 
@@ -9862,6 +9915,30 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
       getFundingChoicesRoot(currentRoot) || currentRoot
 
     if (lastFundingChoicesProviderPreferenceOpened) {
+      const mainRecheckResult =
+        handleFundingChoicesPreferenceCategoryToggles(currentRoot, {
+          scope: 'main',
+          maxClicks: MAX_FUNDING_CHOICES_TOGGLE_CLICKS,
+          preferenceTrace: 'fc.preference_toggles_recheck',
+          disableTrace: 'fc.disable_required_categories_recheck',
+        })
+
+      if (!mainRecheckResult.ok) {
+        appendLastDiagnosticDecisionStep({
+          strategy: 'fc.provider_toggles',
+          status: 'skipped',
+          reason: 'main_required_toggles_still_active_after_transition',
+          found: 0,
+          scanned: mainRecheckResult.activeCount,
+        })
+        recordFundingChoicesSkipped(
+          currentRoot,
+          mainRecheckResult.reason,
+          mainRecheckResult.blockedReason
+        )
+        return
+      }
+
       const providerToggleResult =
         handleFundingChoicesPreferenceCategoryToggles(providerRoot, {
           scope: 'provider',
