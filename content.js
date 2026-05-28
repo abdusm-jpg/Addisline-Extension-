@@ -1747,10 +1747,19 @@ function createDiagnosticDecisionTrace(source = 'scanPage') {
 function addDiagnosticDecisionStep(trace, step = {}) {
   if (
     !trace ||
-    !Array.isArray(trace.steps) ||
-    trace.steps.length >= MAX_DIAGNOSTIC_DECISION_TRACE_STEPS
+    !Array.isArray(trace.steps)
   ) {
     return
+  }
+
+  if (trace.steps.length >= MAX_DIAGNOSTIC_DECISION_TRACE_STEPS) {
+    if (!step.force) {
+      return
+    }
+    trace.steps.splice(
+      0,
+      trace.steps.length - MAX_DIAGNOSTIC_DECISION_TRACE_STEPS + 1
+    )
   }
 
   trace.steps.push({
@@ -8832,6 +8841,37 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   })
 
   appendLastDiagnosticDecisionStep({
+    strategy: 'fc.after_preference_toggles',
+    status: 'ran',
+    found: inputs.length,
+    scanned: inputs.length,
+    elapsedMs: Date.now() - startedAt,
+    force: true,
+  })
+
+  if (typeof options.afterPreferenceScan === 'function') {
+    try {
+      options.afterPreferenceScan({
+        root,
+        scope,
+        inputs,
+        activeInputs,
+        elapsedMs: Date.now() - startedAt,
+      })
+    } catch (error) {
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.after_preference_toggles',
+        status: 'skipped',
+        reason: error?.message || 'after_preference_scan_error',
+        found: inputs.length,
+        scanned: inputs.length,
+        elapsedMs: Date.now() - startedAt,
+        force: true,
+      })
+    }
+  }
+
+  appendLastDiagnosticDecisionStep({
     strategy: 'fc.after_preference_scan',
     status: 'ran',
     found: inputs.length,
@@ -10023,6 +10063,7 @@ function findFundingChoicesManageVendorsButton(root, startedAt) {
     status: control ? 'found' : 'not_found',
     found: control ? 1 : 0,
     elapsedMs: Date.now() - startedAt,
+    force: true,
   })
 
   return control
@@ -10105,15 +10146,30 @@ function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) 
   return findFundingChoicesProviderPreferenceTextControlWithScroll(root, startedAt, budgetMs)
 }
 
-function openFundingChoicesProviderPreferences(root) {
+function openFundingChoicesProviderPreferences(root, preferredProviderControl = null) {
   const startedAt =
     Date.now()
-  const providerControl =
-    findFundingChoicesProviderPreferenceControl(
-      root,
-      startedAt,
-      FUNDING_CHOICES_HELPER_BUDGET_MS
-    )
+  let providerControl =
+    preferredProviderControl &&
+    root.contains(preferredProviderControl) &&
+    isVisible(preferredProviderControl)
+      ? preferredProviderControl
+      : null
+
+  if (providerControl) {
+    lastFundingChoicesProviderPreferenceClickMethod =
+      'manage_vendors_selector'
+    lastFundingChoicesProviderPreferenceClickableTargetTag =
+      providerControl.tagName?.toLowerCase?.() || ''
+    lastFundingChoicesProviderManageVendorsFound = true
+  } else {
+    providerControl =
+      findFundingChoicesProviderPreferenceControl(
+        root,
+        startedAt,
+        FUNDING_CHOICES_HELPER_BUDGET_MS
+      )
+  }
 
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.provider_preferences',
@@ -10399,12 +10455,34 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderManageVendorsClicked = false
     collectFundingChoicesControlDiagnostics(currentRoot)
 
+    let manageVendorsControl =
+      null
     const preferenceToggleResult =
       handleFundingChoicesPreferenceCategoryToggles(currentRoot, {
         scope: 'main',
         maxClicks: MAX_FUNDING_CHOICES_TOGGLE_CLICKS,
         preferenceTrace: 'fc.preference_toggles',
         disableTrace: 'fc.disable_required_categories',
+        afterPreferenceScan: ({ inputs, activeInputs, elapsedMs }) => {
+          appendLastDiagnosticDecisionStep({
+            strategy: 'fc.before_manage_vendors',
+            status: 'ran',
+            found: activeInputs.length,
+            scanned: inputs.length,
+            elapsedMs,
+            force: true,
+          })
+          manageVendorsControl =
+            findFundingChoicesManageVendorsButton(currentRoot, Date.now())
+          appendLastDiagnosticDecisionStep({
+            strategy: 'fc.after_manage_vendors_lookup',
+            status: manageVendorsControl ? 'found' : 'not_found',
+            found: manageVendorsControl ? 1 : 0,
+            scanned: 1,
+            elapsedMs,
+            force: true,
+          })
+        },
       })
 
     if (!preferenceToggleResult.ok) {
@@ -10426,7 +10504,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     })
 
     const providerPreferenceResult =
-      openFundingChoicesProviderPreferences(currentRoot)
+      openFundingChoicesProviderPreferences(currentRoot, manageVendorsControl)
 
     if (!providerPreferenceResult.ok) {
       appendLastDiagnosticDecisionStep({
