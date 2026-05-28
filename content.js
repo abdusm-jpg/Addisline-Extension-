@@ -84,6 +84,10 @@ let lastFundingChoicesProviderToggleCount = 0
 let lastFundingChoicesActiveProviderToggleCount = 0
 let lastFundingChoicesProviderClickedCount = 0
 let lastFundingChoicesProviderToggleMethod = ''
+let lastFundingChoicesProviderPreferenceTextMatch = ''
+let lastFundingChoicesProviderPreferenceClickableTargetTag = ''
+let lastFundingChoicesProviderPreferenceClickMethod = ''
+let lastFundingChoicesProviderPreferenceClickSuccess = false
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -3906,6 +3910,14 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerClickedCount) || 0),
             providerToggleMethod:
               String(fundingChoicesControlDiagnostics.providerToggleMethod || '').slice(0, 40),
+            providerPreferenceTextMatch:
+              String(fundingChoicesControlDiagnostics.providerPreferenceTextMatch || '').slice(0, 90),
+            providerPreferenceClickableTargetTag:
+              String(fundingChoicesControlDiagnostics.providerPreferenceClickableTargetTag || '').slice(0, 40),
+            providerPreferenceClickMethod:
+              String(fundingChoicesControlDiagnostics.providerPreferenceClickMethod || '').slice(0, 40),
+            providerPreferenceClickSuccess:
+              Boolean(fundingChoicesControlDiagnostics.providerPreferenceClickSuccess),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             preferenceToggleActions:
@@ -9725,6 +9737,10 @@ function collectFundingChoicesControlDiagnostics(root) {
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
     providerClickedCount: lastFundingChoicesProviderClickedCount,
     providerToggleMethod: lastFundingChoicesProviderToggleMethod,
+    providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
+    providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
+    providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
+    providerPreferenceClickSuccess: lastFundingChoicesProviderPreferenceClickSuccess,
     clickableOwnerCount,
     preferenceToggleActions,
     controls,
@@ -9778,6 +9794,117 @@ function isFundingChoicesProviderPreferenceControl(control, root) {
     textHasAny(signal, fundingChoicesProviderPreferenceTexts) &&
     !textHasAny(signal, fundingChoicesUnsafePositiveTexts)
   )
+}
+
+function getFundingChoicesProviderTextSearchSignal(element) {
+  return normalizeMatchText([
+    getText(element),
+    getElementActionText(element),
+    element?.getAttribute?.('aria-label'),
+    element?.getAttribute?.('title'),
+    element?.id,
+    getClassNameText(element),
+  ].join(' '))
+}
+
+function getFundingChoicesProviderTextClickableTarget(element, root) {
+  let current =
+    element
+  let depth = 0
+
+  while (
+    current &&
+    root?.contains?.(current) &&
+    depth < 5
+  ) {
+    const style =
+      safeGetComputedStyle(current)
+
+    if (
+      safeMatches(current, 'button, a, [role="button"], [tabindex]') ||
+      current.getAttribute?.('onclick') ||
+      style?.cursor === 'pointer'
+    ) {
+      return current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return null
+}
+
+function findFundingChoicesProviderPreferenceTextControl(root, startedAt, budgetMs) {
+  const elements =
+    safeQuerySelectorAll(
+      root,
+      'span, div, p, li, label, strong, em, small, button, a, [role="button"], [tabindex]'
+    )
+      .slice(0, MAX_DIRECT_CONTROL_PRIORITIZATION_INPUT)
+
+  for (const element of elements) {
+    if (hasElapsedBudget(startedAt, budgetMs)) {
+      break
+    }
+
+    if (!element || !root.contains(element) || !isVisible(element)) {
+      continue
+    }
+
+    const signal =
+      getFundingChoicesProviderTextSearchSignal(element)
+
+    if (!signal || textHasAny(signal, fundingChoicesProviderInformationalListTexts)) {
+      continue
+    }
+
+    if (!textHasAny(signal, fundingChoicesProviderPreferenceTexts)) {
+      continue
+    }
+
+    const target =
+      getFundingChoicesProviderTextClickableTarget(element, root)
+
+    lastFundingChoicesProviderPreferenceTextMatch =
+      signal.slice(0, 90)
+    lastFundingChoicesProviderPreferenceClickableTargetTag =
+      target?.tagName?.toLowerCase?.() || ''
+    lastFundingChoicesProviderPreferenceClickMethod =
+      target === element ? 'text_element' : 'clickable_ancestor'
+
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences_text_search',
+      status: target ? 'found' : 'not_found',
+      reason: signal.slice(0, 80),
+      found: target ? 1 : 0,
+      elapsedMs: Date.now() - startedAt,
+    })
+
+    if (target && isFundingChoicesProviderPreferenceControl(target, root)) {
+      return target
+    }
+
+    if (
+      target &&
+      root.contains(target) &&
+      isVisible(target) &&
+      !hasUnsafeAcceptText(target) &&
+      !isSensitiveActionControl(target, root)
+    ) {
+      return target
+    }
+  }
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_preferences_text_search',
+    status: 'not_found',
+    reason: 'provider_preferences_text_not_found',
+    found: 0,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  return null
 }
 
 function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
@@ -9843,7 +9970,7 @@ function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) 
     })
   }
 
-  return null
+  return findFundingChoicesProviderPreferenceTextControl(root, startedAt, budgetMs)
 }
 
 function openFundingChoicesProviderPreferences(root) {
@@ -9876,6 +10003,7 @@ function openFundingChoicesProviderPreferences(root) {
   }
 
   if (!clickCMPSpecificControl(providerControl)) {
+    lastFundingChoicesProviderPreferenceClickSuccess = false
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.provider_preferences',
       status: 'skipped',
@@ -9892,9 +10020,23 @@ function openFundingChoicesProviderPreferences(root) {
     }
   }
 
+  lastFundingChoicesProviderPreferenceClickableTargetTag =
+    providerControl?.tagName?.toLowerCase?.() || ''
+  lastFundingChoicesProviderPreferenceClickMethod =
+    lastFundingChoicesProviderPreferenceClickMethod || 'control'
+  lastFundingChoicesProviderPreferenceClickSuccess = true
+
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.provider_preferences',
     status: 'clicked',
+    found: 1,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_preferences_text_click',
+    status: 'clicked',
+    reason: lastFundingChoicesProviderPreferenceClickMethod,
     found: 1,
     elapsedMs: Date.now() - startedAt,
   })
@@ -10102,6 +10244,10 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesActiveProviderToggleCount = 0
     lastFundingChoicesProviderClickedCount = 0
     lastFundingChoicesProviderToggleMethod = ''
+    lastFundingChoicesProviderPreferenceTextMatch = ''
+    lastFundingChoicesProviderPreferenceClickableTargetTag = ''
+    lastFundingChoicesProviderPreferenceClickMethod = ''
+    lastFundingChoicesProviderPreferenceClickSuccess = false
     collectFundingChoicesControlDiagnostics(currentRoot)
 
     const preferenceToggleResult =
