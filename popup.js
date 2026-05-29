@@ -2347,6 +2347,7 @@ function formatFundingChoicesControls(summary) {
       `providerPreferenceClickSuccess: ${Boolean(summary.providerPreferenceClickSuccess)}`,
       `providerPreferenceScrollAttempts: ${Math.max(0, Number(summary.providerPreferenceScrollAttempts) || 0)}`,
       `providerPreferenceScrollTop: ${Math.max(0, Number(summary.providerPreferenceScrollTop) || 0)}`,
+      `providerManageVendorsSelectorExecuted: ${Boolean(summary.providerManageVendorsSelectorExecuted)}`,
       `providerManageVendorsFound: ${Boolean(summary.providerManageVendorsFound)}`,
       `providerManageVendorsClicked: ${Boolean(summary.providerManageVendorsClicked)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,

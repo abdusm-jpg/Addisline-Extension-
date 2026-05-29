@@ -90,6 +90,7 @@ let lastFundingChoicesProviderPreferenceClickMethod = ''
 let lastFundingChoicesProviderPreferenceClickSuccess = false
 let lastFundingChoicesProviderPreferenceScrollAttempts = 0
 let lastFundingChoicesProviderPreferenceScrollTop = 0
+let lastFundingChoicesProviderManageVendorsSelectorExecuted = false
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
 let lightweightSettingsOpenAttempted = false
@@ -3935,6 +3936,8 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerPreferenceScrollAttempts) || 0),
             providerPreferenceScrollTop:
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerPreferenceScrollTop) || 0),
+            providerManageVendorsSelectorExecuted:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsSelectorExecuted),
             providerManageVendorsFound:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound),
             providerManageVendorsClicked:
@@ -9802,6 +9805,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPreferenceClickSuccess: lastFundingChoicesProviderPreferenceClickSuccess,
     providerPreferenceScrollAttempts: lastFundingChoicesProviderPreferenceScrollAttempts,
     providerPreferenceScrollTop: lastFundingChoicesProviderPreferenceScrollTop,
+    providerManageVendorsSelectorExecuted: lastFundingChoicesProviderManageVendorsSelectorExecuted,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
@@ -10051,19 +10055,41 @@ function findFundingChoicesProviderPreferenceTextControlWithScroll(root, started
 }
 
 function findFundingChoicesManageVendorsButton(root, startedAt) {
+  const fcRoot =
+    getFundingChoicesRoot(root) || root
+  const directControl =
+    fcRoot?.querySelector?.('button.fc-manage-vendors') ||
+    fcRoot?.querySelector?.('.fc-navigation-button.fc-manage-vendors') ||
+    document.querySelector('button.fc-manage-vendors') ||
+    null
   const control =
-    safeQuerySelectorAll(
-      root,
-      'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
-    )
-      .find((element) =>
-        root.contains(element) &&
-        isVisible(element) &&
-        !hasUnsafeAcceptText(element) &&
-        !isSensitiveActionControl(element, root)
-      ) || null
+    directControl &&
+    fcRoot?.contains?.(directControl) &&
+    isVisible(directControl) &&
+    !hasUnsafeAcceptText(directControl) &&
+    !isSensitiveActionControl(directControl, fcRoot)
+      ? directControl
+      : safeQuerySelectorAll(
+          fcRoot,
+          'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
+        )
+          .find((element) =>
+            fcRoot.contains(element) &&
+            isVisible(element) &&
+            !hasUnsafeAcceptText(element) &&
+            !isSensitiveActionControl(element, fcRoot)
+          ) || null
 
+  lastFundingChoicesProviderManageVendorsSelectorExecuted = true
   lastFundingChoicesProviderManageVendorsFound = Boolean(control)
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.manage_vendors_selector_executed',
+    status: 'ran',
+    found: control ? 1 : 0,
+    elapsedMs: Date.now() - startedAt,
+    force: true,
+  })
 
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.manage_vendors_button',
@@ -10458,6 +10484,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderPreferenceClickSuccess = false
     lastFundingChoicesProviderPreferenceScrollAttempts = 0
     lastFundingChoicesProviderPreferenceScrollTop = 0
+    lastFundingChoicesProviderManageVendorsSelectorExecuted = false
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
     collectFundingChoicesControlDiagnostics(currentRoot)
