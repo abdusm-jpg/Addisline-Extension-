@@ -10723,6 +10723,18 @@ function recordFundingChoicesManageVendorsTimedLookup(
   lastFundingChoicesProviderManageVendorsMode = mode
   lastFundingChoicesProviderManageVendorsAllowClick =
     Boolean(options.allowClick)
+
+  if (mode === 'normal' && options.allowClick) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.manage_vendors_normal_flow_invoked',
+      status: 'ran',
+      found: found ? 1 : 0,
+      scanned: count,
+      elapsedMs: Date.now() - startedAt,
+      force: true,
+    })
+  }
+
   lastFundingChoicesProviderManageVendorsFound =
     lastFundingChoicesProviderManageVendorsFound || found
 
@@ -11422,6 +11434,99 @@ function scheduleFundingChoicesManageVendorsTimingLookups(
       }
     }, delay)
   })
+}
+
+function attemptVisibleFundingChoicesManageVendorsNormalFlow(decisionTrace = null) {
+  const panel =
+    getVisibleFundingChoicesPanel()
+
+  if (!panel) {
+    return false
+  }
+
+  const startedAt =
+    Date.now()
+
+  addDiagnosticDecisionStep(decisionTrace, {
+    strategy: 'fc.visible_preferences_panel_normal_flow',
+    status: 'found',
+    found: 1,
+    scanned: 1,
+    elapsedMs: 0,
+  })
+  updateLastDiagnosticDecisionTrace(decisionTrace)
+
+  const manageVendorsControl =
+    findFundingChoicesManageVendorsButton(panel, startedAt, {
+      mode: 'normal',
+      allowClick: true,
+    })
+
+  if (!manageVendorsControl) {
+    collectFundingChoicesLightweightControlDiagnostics(panel)
+    recordCurrentSiteDiagnostic({
+      status: 'skipped',
+      reason: 'fc_provider_preferences_control_not_found',
+      candidates: [panel],
+      blockedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
+      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+      elapsedMs: Date.now() - startedAt,
+    })
+    return true
+  }
+
+  const providerPreferenceResult =
+    openFundingChoicesProviderPreferences(panel, manageVendorsControl)
+
+  if (!providerPreferenceResult.ok) {
+    collectFundingChoicesLightweightControlDiagnostics(panel)
+    recordCurrentSiteDiagnostic({
+      status: 'skipped',
+      reason: providerPreferenceResult.reason,
+      candidates: [panel],
+      matchedRejectElement: manageVendorsControl,
+      matchedRejectText: getActionText(manageVendorsControl),
+      blockedReason: providerPreferenceResult.blockedReason,
+      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+      elapsedMs: Date.now() - startedAt,
+    })
+    return true
+  }
+
+  if (!ENABLE_FC_PROVIDER_AUTOMATION) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_toggles',
+      status: 'skipped',
+      reason: 'fc_provider_automation_disabled',
+      found: 0,
+      scanned: 0,
+      force: true,
+    })
+    collectFundingChoicesLightweightControlDiagnostics(panel)
+    recordCurrentSiteDiagnostic({
+      status: 'skipped',
+      reason: 'fc_provider_automation_disabled',
+      candidates: [panel],
+      matchedRejectElement: manageVendorsControl,
+      matchedRejectText: getActionText(manageVendorsControl),
+      blockedReason: 'provider_automation_disabled',
+      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+      elapsedMs: Date.now() - startedAt,
+    })
+    rejectFlowCompleted = true
+    stopObserver()
+    return true
+  }
+
+  if (providerPreferenceResult.opened) {
+    setTimeout(() => {
+      if (!shouldRunOnThisSite() || rejectFlowCompleted) return
+      finishFundingChoicesFlowAfterProvider(panel)
+    }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
+    return true
+  }
+
+  return false
 }
 
 function completeFundingChoicesManageOptionsFlow(root, openedControl) {
@@ -17630,6 +17735,11 @@ function scanPage() {
     }
 
     cleanupBannerSuppressions()
+
+    if (attemptVisibleFundingChoicesManageVendorsNormalFlow(decisionTrace)) {
+      updateLastDiagnosticDecisionTrace(decisionTrace)
+      return
+    }
 
     if (shouldDeferScanForLoading()) {
       logInitialFlowSkipped('page_loading_deferred', {
