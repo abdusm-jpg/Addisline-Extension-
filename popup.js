@@ -2361,6 +2361,8 @@ function formatFundingChoicesControls(summary) {
       `activePreferenceToggleCount: ${Math.max(0, Number(summary.activePreferenceToggleCount) || 0)}`,
       `mainRequiredActiveBefore: ${Math.max(0, Number(summary.mainRequiredActiveBefore) || 0)}`,
       `mainRequiredActiveAfter: ${Math.max(0, Number(summary.mainRequiredActiveAfter) || 0)}`,
+      `mainClickedCount: ${Math.max(0, Number(summary.mainClickedCount) || 0)}`,
+      `mainToggleMethod: ${String(summary.mainToggleMethod || 'none').slice(0, 40)}`,
       `providerPreferenceOpened: ${Boolean(summary.providerPreferenceOpened)}`,
       `providerToggleCount: ${Math.max(0, Number(summary.providerToggleCount) || 0)}`,
       `activeProviderToggleCount: ${Math.max(0, Number(summary.activeProviderToggleCount) || 0)}`,

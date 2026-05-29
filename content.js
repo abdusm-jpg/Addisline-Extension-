@@ -80,6 +80,8 @@ let lastFundingChoicesClickedSliderKeys = []
 let lastFundingChoicesPreferenceToggleActions = []
 let lastFundingChoicesMainRequiredActiveBefore = 0
 let lastFundingChoicesMainRequiredActiveAfter = 0
+let lastFundingChoicesMainClickedCount = 0
+let lastFundingChoicesMainToggleMethod = ''
 let lastFundingChoicesProviderPreferenceOpened = false
 let lastFundingChoicesProviderToggleCount = 0
 let lastFundingChoicesActiveProviderToggleCount = 0
@@ -3935,6 +3937,10 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.mainRequiredActiveBefore) || 0),
             mainRequiredActiveAfter:
               Math.max(0, Number(fundingChoicesControlDiagnostics.mainRequiredActiveAfter) || 0),
+            mainClickedCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.mainClickedCount) || 0),
+            mainToggleMethod:
+              String(fundingChoicesControlDiagnostics.mainToggleMethod || '').slice(0, 40),
             providerPreferenceOpened:
               Boolean(fundingChoicesControlDiagnostics.providerPreferenceOpened),
             providerToggleCount:
@@ -8791,12 +8797,8 @@ function getFundingChoicesProviderActivationMethods(input, root, preferredMethod
       : null
   const methods = [
     {
-      name: 'keyboard_space',
-      run: () => dispatchFundingChoicesKeyboardToggle(input, root, ' '),
-    },
-    {
-      name: 'keyboard_enter',
-      run: () => dispatchFundingChoicesKeyboardToggle(input, root, 'Enter'),
+      name: 'input_pointer_click',
+      run: () => dispatchFundingChoicesPreferenceToggleClick(input, root),
     },
     {
       name: 'label_pointer_click',
@@ -8809,6 +8811,14 @@ function getFundingChoicesProviderActivationMethods(input, root, preferredMethod
     {
       name: 'slider_pointer_click',
       run: () => dispatchFundingChoicesPreferenceToggleClick(slider, root),
+    },
+    {
+      name: 'keyboard_space',
+      run: () => dispatchFundingChoicesKeyboardToggle(input, root, ' '),
+    },
+    {
+      name: 'keyboard_enter',
+      run: () => dispatchFundingChoicesKeyboardToggle(input, root, 'Enter'),
     },
   ].filter((method) =>
     typeof method.run === 'function'
@@ -8900,17 +8910,26 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     lastFundingChoicesMainRequiredActiveBefore = activeInputs.length
   }
 
+  const diagnosticInputs =
+    scope === 'provider'
+      ? inputs.slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+      : (
+          activeInputs.length > 0
+            ? activeInputs.slice(0, 5)
+            : inputs.slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+        )
   const actionDiagnostics =
     new Map()
   const diagnostics =
-    inputs
-      .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+    diagnosticInputs
       .map((input) => {
         const diagnostic =
           getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
 
         if (scope === 'provider') {
           diagnostic.scope = 'provider'
+        } else {
+          diagnostic.scope = 'main'
         }
 
         if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
@@ -9087,16 +9106,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       continue
     }
 
-    const clickTargets =
-      getFundingChoicesPreferenceClickTargets(input, root)
     const sliderKey =
       getFundingChoicesSliderKey(input, root)
     let dispatchedForInput = false
-
-    if (clickTargets.length === 0) {
-      actionDiagnostic.skippedReason = 'click_target_not_found'
-      continue
-    }
 
     if (scope === 'provider') {
       const providerMethods =
@@ -9144,44 +9156,50 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         }
       }
     } else {
-      for (const { element, type } of clickTargets) {
-      if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
-        break
-      }
+      const mainMethods =
+        getFundingChoicesProviderActivationMethods(
+          input,
+          root,
+          lastFundingChoicesMainToggleMethod
+        )
 
-      if (!dispatchFundingChoicesPreferenceToggleClick(element, root)) {
-        continue
-      }
+      for (const method of mainMethods) {
+        const currentBefore =
+          getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
 
-      dispatchedForInput = true
-      actionDiagnostic.clickTarget =
-        actionDiagnostic.clickTarget
-          ? `${actionDiagnostic.clickTarget},${type}`
-          : type
-      actionDiagnostic.clickDispatched = true
-      actionDiagnostic.clicked = true
-      actionDiagnostic.ariaPressedAfter =
-        String(
-          (findFundingChoicesPreferenceInputByKey(root, sliderKey) || input)
-            ?.getAttribute?.('aria-pressed') || ''
-        ).slice(0, 20)
-      actionDiagnostic.checkedAfter =
-        Boolean((findFundingChoicesPreferenceInputByKey(root, sliderKey) || input)?.checked)
-
-      const currentInput =
-        findFundingChoicesPreferenceInputByKey(root, sliderKey) || input
-
-      if (getFundingChoicesPreferenceToggleState(currentInput) !== 'enabled') {
-        disabledCount += 1
-        if (scope === 'provider') {
-          lastFundingChoicesProviderClickedCount += 1
+        if (getFundingChoicesPreferenceToggleState(currentBefore) !== 'enabled') {
+          break
         }
-        if (sliderKey) {
-          lastFundingChoicesClickedSliderKeys.push(sliderKey)
+
+        if (!method.run()) {
+          continue
         }
-        break
+
+        dispatchedForInput = true
+        actionDiagnostic.clickTarget =
+          actionDiagnostic.clickTarget
+            ? `${actionDiagnostic.clickTarget},${method.name}`
+            : method.name
+        actionDiagnostic.clickDispatched = true
+        actionDiagnostic.clicked = true
+
+        const currentAfter =
+          getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
+        actionDiagnostic.ariaPressedAfter =
+          String(currentAfter?.getAttribute?.('aria-pressed') || '').slice(0, 20)
+        actionDiagnostic.checkedAfter =
+          Boolean(currentAfter?.checked)
+
+        if (getFundingChoicesPreferenceToggleState(currentAfter) !== 'enabled') {
+          disabledCount += 1
+          lastFundingChoicesMainClickedCount += 1
+          lastFundingChoicesMainToggleMethod = method.name
+          if (sliderKey) {
+            lastFundingChoicesClickedSliderKeys.push(sliderKey)
+          }
+          break
+        }
       }
-    }
     }
 
     const currentInput =
@@ -9226,6 +9244,18 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       scanned: activeInputs.length,
       elapsedMs: Date.now() - startedAt,
     })
+  } else {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.main_toggle_method',
+      status: disabledCount > 0 ? 'found' : 'not_found',
+      reason:
+        disabledCount > 0
+          ? lastFundingChoicesMainToggleMethod
+          : 'fc_main_toggle_activation_method_not_found',
+      found: disabledCount,
+      scanned: activeInputs.length,
+      elapsedMs: Date.now() - startedAt,
+    })
   }
 
   const remainingActive =
@@ -9260,10 +9290,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     found: disabledCount,
     scanned: activeInputs.length,
     elapsedMs: Date.now() - startedAt,
-    reason:
-      remainingActive.length > 0 || incompleteDisable
+      reason:
+        remainingActive.length > 0 || incompleteDisable
         ? scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
+          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          ? 'fc_main_toggle_activation_method_not_found'
           : 'fc_required_toggles_still_active'
         : '',
   })
@@ -9275,6 +9307,8 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       reason:
         scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
+          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          ? 'fc_main_toggle_activation_method_not_found'
           : scope === 'provider'
           ? 'fc_provider_toggles_still_active'
           : 'fc_required_toggles_still_active',
@@ -9288,12 +9322,16 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       reason:
         scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
+          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          ? 'fc_main_toggle_activation_method_not_found'
           : scope === 'provider'
           ? 'fc_provider_toggles_still_active'
           : 'fc_required_toggles_still_active',
       blockedReason:
         scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
+          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          ? 'fc_main_toggle_activation_method_not_found'
           : 'matching_toggles_still_active',
       disabledCount,
       activeCount: activeInputs.length,
@@ -10135,6 +10173,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     activePreferenceToggleCount,
     mainRequiredActiveBefore: lastFundingChoicesMainRequiredActiveBefore,
     mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
+    mainClickedCount: lastFundingChoicesMainClickedCount,
+    mainToggleMethod: lastFundingChoicesMainToggleMethod,
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -10252,6 +10292,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     activePreferenceToggleCount: 0,
     mainRequiredActiveBefore: lastFundingChoicesMainRequiredActiveBefore,
     mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
+    mainClickedCount: lastFundingChoicesMainClickedCount,
+    mainToggleMethod: lastFundingChoicesMainToggleMethod,
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -11551,6 +11593,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesPreferenceToggleActions = []
     lastFundingChoicesMainRequiredActiveBefore = 0
     lastFundingChoicesMainRequiredActiveAfter = 0
+    lastFundingChoicesMainClickedCount = 0
+    lastFundingChoicesMainToggleMethod = ''
     lastFundingChoicesProviderPreferenceOpened = false
     lastFundingChoicesProviderToggleCount = 0
     lastFundingChoicesActiveProviderToggleCount = 0
