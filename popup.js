@@ -2386,6 +2386,7 @@ function formatFundingChoicesControls(summary) {
       `providerManageVendorsCount1500ms: ${Math.max(0, Number(summary.providerManageVendorsCount1500ms) || 0)}`,
       `providerManageVendorsFoundDelayed: ${Boolean(summary.providerManageVendorsFoundDelayed)}`,
       `manageVendorsRejectedReason: ${String(summary.manageVendorsRejectedReason || 'none').slice(0, 80)}`,
+      `manageVendorsSensitiveBypass: ${Boolean(summary.manageVendorsSensitiveBypass)}`,
       `providerManageVendorsFound: ${Boolean(summary.providerManageVendorsFound)}`,
       `providerManageVendorsClicked: ${Boolean(summary.providerManageVendorsClicked)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,

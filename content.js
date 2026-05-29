@@ -106,6 +106,7 @@ let lastFundingChoicesProviderManageVendorsCount1500ms = 0
 let lastFundingChoicesProviderManageVendorsFoundDelayed = false
 let lastFundingChoicesProviderManageVendorsElementDiagnostics = null
 let lastFundingChoicesProviderManageVendorsRejectedReason = ''
+let lastFundingChoicesProviderManageVendorsSensitiveBypass = false
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
 let lightweightSettingsOpenAttempted = false
@@ -4014,6 +4015,8 @@ function recordCurrentSiteDiagnostic({
                 : null,
             manageVendorsRejectedReason:
               String(fundingChoicesControlDiagnostics.manageVendorsRejectedReason || '').slice(0, 80),
+            manageVendorsSensitiveBypass:
+              Boolean(fundingChoicesControlDiagnostics.manageVendorsSensitiveBypass),
             providerManageVendorsFound:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound),
             providerManageVendorsClicked:
@@ -10141,6 +10144,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerManageVendorsFoundDelayed: lastFundingChoicesProviderManageVendorsFoundDelayed,
     providerManageVendorsElement: lastFundingChoicesProviderManageVendorsElementDiagnostics,
     manageVendorsRejectedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
+    manageVendorsSensitiveBypass: lastFundingChoicesProviderManageVendorsSensitiveBypass,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
@@ -10255,6 +10259,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerManageVendorsFoundDelayed: lastFundingChoicesProviderManageVendorsFoundDelayed,
     providerManageVendorsElement: lastFundingChoicesProviderManageVendorsElementDiagnostics,
     manageVendorsRejectedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
+    manageVendorsSensitiveBypass: lastFundingChoicesProviderManageVendorsSensitiveBypass,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount: 0,
@@ -10534,6 +10539,45 @@ function getFundingChoicesManageVendorsElementDiagnostics(element) {
   }
 }
 
+function isFundingChoicesManageVendorsNavigationButton(element) {
+  if (
+    !element ||
+    !element.matches?.(
+      'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
+    )
+  ) {
+    return false
+  }
+
+  const signal =
+    normalizeMatchText([
+      getActionText(element),
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      getClassNameText(element),
+    ].join(' '))
+
+  if (
+    textHasAny(signal, fundingChoicesUnsafePositiveTexts) ||
+    textMatchesDictionaryCookieIntent(signal, 'acceptAll')
+  ) {
+    return false
+  }
+
+  return textHasAny(signal, [
+    ...fundingChoicesProviderPreferenceTexts,
+    'proveidors',
+    'proveedores',
+    'providers',
+    'provider',
+    'vendors',
+    'vendor',
+    'preferencies',
+    'preferencias',
+    'preferences',
+  ])
+}
+
 function getFundingChoicesManageVendorsRejectedReason(element, root) {
   if (!element) return 'selector_not_found'
   if (!root?.contains?.(element)) return 'outside_fc_root'
@@ -10549,7 +10593,21 @@ function getFundingChoicesManageVendorsRejectedReason(element, root) {
   if (Number.isFinite(opacity) && opacity <= 0) return 'opacity_zero'
   if (style?.pointerEvents === 'none') return 'pointer_events_none'
   if (hasUnsafeAcceptText(element)) return 'unsafe_accept_text'
-  if (isSensitiveActionControl(element, root)) return 'sensitive_action_control'
+  if (isSensitiveActionControl(element, root)) {
+    if (isFundingChoicesManageVendorsNavigationButton(element)) {
+      lastFundingChoicesProviderManageVendorsSensitiveBypass = true
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.manage_vendors_sensitive_bypass',
+        status: 'ran',
+        found: 1,
+        scanned: 1,
+        force: true,
+      })
+      return ''
+    }
+
+    return 'sensitive_action_control'
+  }
 
   return ''
 }
@@ -11351,6 +11409,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderManageVendorsFoundDelayed = false
     lastFundingChoicesProviderManageVendorsElementDiagnostics = null
     lastFundingChoicesProviderManageVendorsRejectedReason = ''
+    lastFundingChoicesProviderManageVendorsSensitiveBypass = false
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
     collectFundingChoicesControlDiagnostics(currentRoot)
