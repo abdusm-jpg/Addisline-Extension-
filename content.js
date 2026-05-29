@@ -91,6 +91,15 @@ let lastFundingChoicesProviderPreferenceClickSuccess = false
 let lastFundingChoicesProviderPreferenceScrollAttempts = 0
 let lastFundingChoicesProviderPreferenceScrollTop = 0
 let lastFundingChoicesProviderManageVendorsSelectorExecuted = false
+let lastFundingChoicesProviderManageVendorsFoundImmediate = false
+let lastFundingChoicesProviderManageVendorsFound300ms = false
+let lastFundingChoicesProviderManageVendorsFound800ms = false
+let lastFundingChoicesProviderManageVendorsFound1500ms = false
+let lastFundingChoicesProviderManageVendorsCountImmediate = 0
+let lastFundingChoicesProviderManageVendorsCount300ms = 0
+let lastFundingChoicesProviderManageVendorsCount800ms = 0
+let lastFundingChoicesProviderManageVendorsCount1500ms = 0
+let lastFundingChoicesProviderManageVendorsFoundDelayed = false
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
 let lightweightSettingsOpenAttempted = false
@@ -3938,6 +3947,24 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerPreferenceScrollTop) || 0),
             providerManageVendorsSelectorExecuted:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsSelectorExecuted),
+            providerManageVendorsFoundImmediate:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFoundImmediate),
+            providerManageVendorsFound300ms:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound300ms),
+            providerManageVendorsFound800ms:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound800ms),
+            providerManageVendorsFound1500ms:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound1500ms),
+            providerManageVendorsCountImmediate:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerManageVendorsCountImmediate) || 0),
+            providerManageVendorsCount300ms:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerManageVendorsCount300ms) || 0),
+            providerManageVendorsCount800ms:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerManageVendorsCount800ms) || 0),
+            providerManageVendorsCount1500ms:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerManageVendorsCount1500ms) || 0),
+            providerManageVendorsFoundDelayed:
+              Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFoundDelayed),
             providerManageVendorsFound:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound),
             providerManageVendorsClicked:
@@ -9806,6 +9833,15 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPreferenceScrollAttempts: lastFundingChoicesProviderPreferenceScrollAttempts,
     providerPreferenceScrollTop: lastFundingChoicesProviderPreferenceScrollTop,
     providerManageVendorsSelectorExecuted: lastFundingChoicesProviderManageVendorsSelectorExecuted,
+    providerManageVendorsFoundImmediate: lastFundingChoicesProviderManageVendorsFoundImmediate,
+    providerManageVendorsFound300ms: lastFundingChoicesProviderManageVendorsFound300ms,
+    providerManageVendorsFound800ms: lastFundingChoicesProviderManageVendorsFound800ms,
+    providerManageVendorsFound1500ms: lastFundingChoicesProviderManageVendorsFound1500ms,
+    providerManageVendorsCountImmediate: lastFundingChoicesProviderManageVendorsCountImmediate,
+    providerManageVendorsCount300ms: lastFundingChoicesProviderManageVendorsCount300ms,
+    providerManageVendorsCount800ms: lastFundingChoicesProviderManageVendorsCount800ms,
+    providerManageVendorsCount1500ms: lastFundingChoicesProviderManageVendorsCount1500ms,
+    providerManageVendorsFoundDelayed: lastFundingChoicesProviderManageVendorsFoundDelayed,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
@@ -10054,9 +10090,14 @@ function findFundingChoicesProviderPreferenceTextControlWithScroll(root, started
   return null
 }
 
-function findFundingChoicesManageVendorsButton(root, startedAt) {
+function getFundingChoicesManageVendorsLookup(root) {
   const fcRoot =
     getFundingChoicesRoot(root) || root
+  const buttons =
+    uniqueElements([
+      ...safeQuerySelectorAll(fcRoot, 'button.fc-manage-vendors'),
+      ...safeQuerySelectorAll(document, 'button.fc-manage-vendors'),
+    ])
   const directControl =
     fcRoot?.querySelector?.('button.fc-manage-vendors') ||
     fcRoot?.querySelector?.('.fc-navigation-button.fc-manage-vendors') ||
@@ -10080,26 +10121,73 @@ function findFundingChoicesManageVendorsButton(root, startedAt) {
             !isSensitiveActionControl(element, fcRoot)
           ) || null
 
+  return {
+    control,
+    count: buttons.length,
+  }
+}
+
+function recordFundingChoicesManageVendorsTimedLookup(root, timing, startedAt) {
+  const lookup =
+    getFundingChoicesManageVendorsLookup(root)
+  const found =
+    Boolean(lookup.control)
+  const count =
+    Math.max(0, Number(lookup.count) || 0)
+
   lastFundingChoicesProviderManageVendorsSelectorExecuted = true
-  lastFundingChoicesProviderManageVendorsFound = Boolean(control)
+  lastFundingChoicesProviderManageVendorsFound =
+    lastFundingChoicesProviderManageVendorsFound || found
+
+  if (timing === 'immediate') {
+    lastFundingChoicesProviderManageVendorsFoundImmediate = found
+    lastFundingChoicesProviderManageVendorsCountImmediate = count
+  } else if (timing === '300ms') {
+    lastFundingChoicesProviderManageVendorsFound300ms = found
+    lastFundingChoicesProviderManageVendorsCount300ms = count
+  } else if (timing === '800ms') {
+    lastFundingChoicesProviderManageVendorsFound800ms = found
+    lastFundingChoicesProviderManageVendorsCount800ms = count
+  } else if (timing === '1500ms') {
+    lastFundingChoicesProviderManageVendorsFound1500ms = found
+    lastFundingChoicesProviderManageVendorsCount1500ms = count
+  }
 
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.manage_vendors_selector_executed',
     status: 'ran',
-    found: control ? 1 : 0,
+    found: found ? 1 : 0,
+    scanned: count,
+    elapsedMs: Date.now() - startedAt,
+    force: true,
+  })
+
+  appendLastDiagnosticDecisionStep({
+    strategy:
+      timing === 'immediate'
+        ? 'fc.manage_vendors_lookup_immediate'
+        : `fc.manage_vendors_lookup_${timing}`,
+    status: 'ran',
+    found: found ? 1 : 0,
+    scanned: count,
     elapsedMs: Date.now() - startedAt,
     force: true,
   })
 
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.manage_vendors_button',
-    status: control ? 'found' : 'not_found',
-    found: control ? 1 : 0,
+    status: found ? 'found' : 'not_found',
+    found: found ? 1 : 0,
+    scanned: count,
     elapsedMs: Date.now() - startedAt,
     force: true,
   })
 
-  return control
+  return lookup.control
+}
+
+function findFundingChoicesManageVendorsButton(root, startedAt) {
+  return recordFundingChoicesManageVendorsTimedLookup(root, 'immediate', startedAt)
 }
 
 function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
@@ -10451,6 +10539,117 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
   setLastError('')
 }
 
+function continueFundingChoicesProviderPreferenceFlow(
+  currentRoot,
+  preferenceToggleResult,
+  manageVendorsControl = null
+) {
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.before_provider_preferences',
+    status: 'ran',
+    reason: preferenceToggleResult.ok ? '' : preferenceToggleResult.reason,
+    found: preferenceToggleResult.disabledCount,
+    scanned: preferenceToggleResult.activeCount,
+  })
+
+  const providerPreferenceResult =
+    openFundingChoicesProviderPreferences(currentRoot, manageVendorsControl)
+
+  if (!providerPreferenceResult.ok) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences.return',
+      status: 'skipped',
+      reason: providerPreferenceResult.blockedReason || providerPreferenceResult.reason,
+      found: 0,
+      scanned: 1,
+    })
+    recordFundingChoicesSkipped(
+      currentRoot,
+      providerPreferenceResult.reason,
+      providerPreferenceResult.blockedReason
+    )
+    return true
+  }
+
+  if (providerPreferenceResult.opened) {
+    setTimeout(() => {
+      if (!shouldRunOnThisSite() || rejectFlowCompleted) return
+      finishFundingChoicesFlowAfterProvider(currentRoot, preferenceToggleResult)
+    }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
+    return true
+  }
+
+  if (!preferenceToggleResult.ok) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences.branch',
+      status: 'skipped',
+      reason: 'main_required_toggles_still_active',
+      found: 0,
+      scanned: preferenceToggleResult.activeCount,
+    })
+    recordFundingChoicesSkipped(
+      currentRoot,
+      preferenceToggleResult.reason,
+      preferenceToggleResult.blockedReason
+    )
+    return true
+  }
+
+  return false
+}
+
+function scheduleFundingChoicesManageVendorsTimingLookups(
+  currentRoot,
+  preferenceToggleResult
+) {
+  const startedAt =
+    Date.now()
+  const timings = [
+    [300, '300ms'],
+    [800, '800ms'],
+    [1500, '1500ms'],
+  ]
+
+  timings.forEach(([delay, label], index) => {
+    setTimeout(() => {
+      if (!shouldRunOnThisSite() || lastFundingChoicesProviderPreferenceOpened) {
+        return
+      }
+
+      const manageVendorsControl =
+        recordFundingChoicesManageVendorsTimedLookup(currentRoot, label, startedAt)
+
+      collectFundingChoicesControlDiagnostics(currentRoot)
+      recordCurrentSiteDiagnostic({
+        status: 'settingsOpened',
+        reason: 'fc_manage_vendors_timing_probe',
+        candidates: [currentRoot],
+        matchedRejectElement: manageVendorsControl,
+        matchedRejectText: getActionText(manageVendorsControl),
+        fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+      })
+
+      if (manageVendorsControl) {
+        lastFundingChoicesProviderManageVendorsFoundDelayed = true
+        continueFundingChoicesProviderPreferenceFlow(
+          currentRoot,
+          preferenceToggleResult,
+          manageVendorsControl
+        )
+        return
+      }
+
+      if (index === timings.length - 1) {
+        continueFundingChoicesProviderPreferenceFlow(
+          currentRoot,
+          preferenceToggleResult,
+          null
+        )
+      }
+    }, delay)
+  })
+}
+
 function completeFundingChoicesManageOptionsFlow(root, openedControl) {
   const startedAt =
     Date.now()
@@ -10485,6 +10684,15 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderPreferenceScrollAttempts = 0
     lastFundingChoicesProviderPreferenceScrollTop = 0
     lastFundingChoicesProviderManageVendorsSelectorExecuted = false
+    lastFundingChoicesProviderManageVendorsFoundImmediate = false
+    lastFundingChoicesProviderManageVendorsFound300ms = false
+    lastFundingChoicesProviderManageVendorsFound800ms = false
+    lastFundingChoicesProviderManageVendorsFound1500ms = false
+    lastFundingChoicesProviderManageVendorsCountImmediate = 0
+    lastFundingChoicesProviderManageVendorsCount300ms = 0
+    lastFundingChoicesProviderManageVendorsCount800ms = 0
+    lastFundingChoicesProviderManageVendorsCount1500ms = 0
+    lastFundingChoicesProviderManageVendorsFoundDelayed = false
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
     collectFundingChoicesControlDiagnostics(currentRoot)
@@ -10514,54 +10722,21 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
       })
     }
 
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.before_provider_preferences',
-      status: 'ran',
-      reason: preferenceToggleResult.ok ? '' : preferenceToggleResult.reason,
-      found: preferenceToggleResult.disabledCount,
-      scanned: preferenceToggleResult.activeCount,
-    })
-
-    const providerPreferenceResult =
-      openFundingChoicesProviderPreferences(currentRoot, manageVendorsControl)
-
-    if (!providerPreferenceResult.ok) {
-      appendLastDiagnosticDecisionStep({
-        strategy: 'fc.provider_preferences.return',
-        status: 'skipped',
-        reason: providerPreferenceResult.blockedReason || providerPreferenceResult.reason,
-        found: 0,
-        scanned: 1,
-      })
-      recordFundingChoicesSkipped(
+    if (!manageVendorsControl) {
+      scheduleFundingChoicesManageVendorsTimingLookups(
         currentRoot,
-        providerPreferenceResult.reason,
-        providerPreferenceResult.blockedReason
+        preferenceToggleResult
       )
       return
     }
 
-    if (providerPreferenceResult.opened) {
-      setTimeout(() => {
-        if (!shouldRunOnThisSite() || rejectFlowCompleted) return
-        finishFundingChoicesFlowAfterProvider(currentRoot, preferenceToggleResult)
-      }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
-      return
-    }
-
-    if (!preferenceToggleResult.ok) {
-      appendLastDiagnosticDecisionStep({
-        strategy: 'fc.provider_preferences.branch',
-        status: 'skipped',
-        reason: 'main_required_toggles_still_active',
-        found: 0,
-        scanned: preferenceToggleResult.activeCount,
-      })
-      recordFundingChoicesSkipped(
+    if (
+      continueFundingChoicesProviderPreferenceFlow(
         currentRoot,
-        preferenceToggleResult.reason,
-        preferenceToggleResult.blockedReason
+        preferenceToggleResult,
+        manageVendorsControl
       )
+    ) {
       return
     }
   } catch (error) {
