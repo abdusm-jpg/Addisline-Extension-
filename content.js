@@ -100,6 +100,8 @@ let lastFundingChoicesProviderManageVendorsCount300ms = 0
 let lastFundingChoicesProviderManageVendorsCount800ms = 0
 let lastFundingChoicesProviderManageVendorsCount1500ms = 0
 let lastFundingChoicesProviderManageVendorsFoundDelayed = false
+let lastFundingChoicesProviderManageVendorsElementDiagnostics = null
+let lastFundingChoicesProviderManageVendorsRejectedReason = ''
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
 let lightweightSettingsOpenAttempted = false
@@ -3965,6 +3967,40 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerManageVendorsCount1500ms) || 0),
             providerManageVendorsFoundDelayed:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFoundDelayed),
+            providerManageVendorsElement:
+              fundingChoicesControlDiagnostics.providerManageVendorsElement &&
+              typeof fundingChoicesControlDiagnostics.providerManageVendorsElement === 'object'
+                ? {
+                    tagName:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.tagName || '').slice(0, 24),
+                    className:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.className || '').slice(0, 120),
+                    connected:
+                      Boolean(fundingChoicesControlDiagnostics.providerManageVendorsElement.connected),
+                    offsetParent:
+                      Boolean(fundingChoicesControlDiagnostics.providerManageVendorsElement.offsetParent),
+                    display:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.display || '').slice(0, 30),
+                    visibility:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.visibility || '').slice(0, 30),
+                    opacity:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.opacity || '').slice(0, 20),
+                    pointerEvents:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.pointerEvents || '').slice(0, 30),
+                    disabled:
+                      Boolean(fundingChoicesControlDiagnostics.providerManageVendorsElement.disabled),
+                    ariaHidden:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.ariaHidden || '').slice(0, 20),
+                    rectWidth:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerManageVendorsElement.rectWidth) || 0),
+                    rectHeight:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerManageVendorsElement.rectHeight) || 0),
+                    text:
+                      String(fundingChoicesControlDiagnostics.providerManageVendorsElement.text || '').slice(0, 120),
+                  }
+                : null,
+            manageVendorsRejectedReason:
+              String(fundingChoicesControlDiagnostics.manageVendorsRejectedReason || '').slice(0, 80),
             providerManageVendorsFound:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound),
             providerManageVendorsClicked:
@@ -9842,6 +9878,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerManageVendorsCount800ms: lastFundingChoicesProviderManageVendorsCount800ms,
     providerManageVendorsCount1500ms: lastFundingChoicesProviderManageVendorsCount1500ms,
     providerManageVendorsFoundDelayed: lastFundingChoicesProviderManageVendorsFoundDelayed,
+    providerManageVendorsElement: lastFundingChoicesProviderManageVendorsElementDiagnostics,
+    manageVendorsRejectedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
@@ -10090,6 +10128,44 @@ function findFundingChoicesProviderPreferenceTextControlWithScroll(root, started
   return null
 }
 
+function getFundingChoicesManageVendorsElementDiagnostics(element) {
+  if (!element) return null
+
+  const style =
+    getComputedStyle(element)
+  const rect =
+    element.getBoundingClientRect?.() || null
+
+  return {
+    tagName: String(element.tagName || '').toLowerCase().slice(0, 24),
+    className: getClassNameText(element).slice(0, 120),
+    connected: Boolean(element.isConnected),
+    offsetParent: Boolean(element.offsetParent),
+    display: String(style?.display || '').slice(0, 30),
+    visibility: String(style?.visibility || '').slice(0, 30),
+    opacity: String(style?.opacity || '').slice(0, 20),
+    pointerEvents: String(style?.pointerEvents || '').slice(0, 30),
+    disabled: Boolean(element.disabled),
+    ariaHidden: String(element.getAttribute?.('aria-hidden') || '').slice(0, 20),
+    rectWidth: Math.round(Math.max(0, Number(rect?.width) || 0)),
+    rectHeight: Math.round(Math.max(0, Number(rect?.height) || 0)),
+    text: normalizeMatchText(getActionText(element)).slice(0, 120),
+  }
+}
+
+function getFundingChoicesManageVendorsRejectedReason(element, root) {
+  if (!element) return 'selector_not_found'
+  if (!root?.contains?.(element)) return 'outside_fc_root'
+  if (!element.isConnected) return 'not_connected'
+  if (element.disabled) return 'disabled'
+  if (element.getAttribute?.('aria-hidden') === 'true') return 'aria_hidden'
+  if (!isVisible(element)) return 'not_visible'
+  if (hasUnsafeAcceptText(element)) return 'unsafe_accept_text'
+  if (isSensitiveActionControl(element, root)) return 'sensitive_action_control'
+
+  return ''
+}
+
 function getFundingChoicesManageVendorsLookup(root) {
   const fcRoot =
     getFundingChoicesRoot(root) || root
@@ -10103,27 +10179,41 @@ function getFundingChoicesManageVendorsLookup(root) {
     fcRoot?.querySelector?.('.fc-navigation-button.fc-manage-vendors') ||
     document.querySelector('button.fc-manage-vendors') ||
     null
+  const rejectedReason =
+    directControl
+      ? getFundingChoicesManageVendorsRejectedReason(directControl, fcRoot)
+      : 'selector_not_found'
   const control =
     directControl &&
-    fcRoot?.contains?.(directControl) &&
-    isVisible(directControl) &&
-    !hasUnsafeAcceptText(directControl) &&
-    !isSensitiveActionControl(directControl, fcRoot)
+    !rejectedReason
       ? directControl
       : safeQuerySelectorAll(
           fcRoot,
           'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
         )
           .find((element) =>
-            fcRoot.contains(element) &&
-            isVisible(element) &&
-            !hasUnsafeAcceptText(element) &&
-            !isSensitiveActionControl(element, fcRoot)
+            !getFundingChoicesManageVendorsRejectedReason(element, fcRoot)
           ) || null
+
+  if (buttons.length === 1 || directControl) {
+    const diagnosticTarget =
+      directControl || buttons[0]
+    lastFundingChoicesProviderManageVendorsElementDiagnostics =
+      getFundingChoicesManageVendorsElementDiagnostics(diagnosticTarget)
+    lastFundingChoicesProviderManageVendorsRejectedReason =
+      control
+        ? ''
+        : rejectedReason ||
+          getFundingChoicesManageVendorsRejectedReason(diagnosticTarget, fcRoot)
+  } else if (!control) {
+    lastFundingChoicesProviderManageVendorsRejectedReason =
+      buttons.length === 0 ? 'selector_not_found' : 'multiple_candidates_not_selected'
+  }
 
   return {
     control,
     count: buttons.length,
+    rejectedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
   }
 }
 
@@ -10177,6 +10267,16 @@ function recordFundingChoicesManageVendorsTimedLookup(root, timing, startedAt) {
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.manage_vendors_button',
     status: found ? 'found' : 'not_found',
+    found: found ? 1 : 0,
+    scanned: count,
+    elapsedMs: Date.now() - startedAt,
+    force: true,
+  })
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.manage_vendors_visibility_check',
+    status: found ? 'passed' : 'rejected',
+    reason: lookup.rejectedReason || '',
     found: found ? 1 : 0,
     scanned: count,
     elapsedMs: Date.now() - startedAt,
@@ -10693,6 +10793,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderManageVendorsCount800ms = 0
     lastFundingChoicesProviderManageVendorsCount1500ms = 0
     lastFundingChoicesProviderManageVendorsFoundDelayed = false
+    lastFundingChoicesProviderManageVendorsElementDiagnostics = null
+    lastFundingChoicesProviderManageVendorsRejectedReason = ''
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
     collectFundingChoicesControlDiagnostics(currentRoot)

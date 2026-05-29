@@ -2357,12 +2357,36 @@ function formatFundingChoicesControls(summary) {
       `providerManageVendorsCount800ms: ${Math.max(0, Number(summary.providerManageVendorsCount800ms) || 0)}`,
       `providerManageVendorsCount1500ms: ${Math.max(0, Number(summary.providerManageVendorsCount1500ms) || 0)}`,
       `providerManageVendorsFoundDelayed: ${Boolean(summary.providerManageVendorsFoundDelayed)}`,
+      `manageVendorsRejectedReason: ${String(summary.manageVendorsRejectedReason || 'none').slice(0, 80)}`,
       `providerManageVendorsFound: ${Boolean(summary.providerManageVendorsFound)}`,
       `providerManageVendorsClicked: ${Boolean(summary.providerManageVendorsClicked)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', '),
   ]
+
+  if (
+    summary.providerManageVendorsElement &&
+    typeof summary.providerManageVendorsElement === 'object'
+  ) {
+    const element =
+      summary.providerManageVendorsElement
+    lines.push([
+      'manageVendorsElement:',
+      `tag:${String(element.tagName || 'unknown').slice(0, 24)}`,
+      `class:${String(element.className || 'none').slice(0, 80)}`,
+      `connected:${Boolean(element.connected)}`,
+      `offsetParent:${Boolean(element.offsetParent)}`,
+      `display:${String(element.display || 'none').slice(0, 24)}`,
+      `visibility:${String(element.visibility || 'none').slice(0, 24)}`,
+      `opacity:${String(element.opacity || 'none').slice(0, 16)}`,
+      `pointerEvents:${String(element.pointerEvents || 'none').slice(0, 24)}`,
+      `disabled:${Boolean(element.disabled)}`,
+      `ariaHidden:${String(element.ariaHidden || 'none').slice(0, 16)}`,
+      `rect:${Math.max(0, Number(element.rectWidth) || 0)}x${Math.max(0, Number(element.rectHeight) || 0)}`,
+      `text:${String(element.text || 'none').slice(0, 80)}`,
+    ].join(', '))
+  }
 
   if (controls.length === 0) {
     lines.push('controls: none')
