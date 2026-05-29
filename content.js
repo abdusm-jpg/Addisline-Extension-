@@ -11042,6 +11042,14 @@ function openFundingChoicesProviderPreferences(root, preferredProviderControl = 
     providerControl?.tagName?.toLowerCase?.() || ''
   if (lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector') {
     lastFundingChoicesProviderManageVendorsClicked = true
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.manage_vendors_clicked_normal_flow',
+      status: 'clicked',
+      found: 1,
+      scanned: 1,
+      elapsedMs: Date.now() - startedAt,
+      force: true,
+    })
   }
   lastFundingChoicesProviderPreferenceClickMethod =
     lastFundingChoicesProviderPreferenceClickMethod || 'control'
