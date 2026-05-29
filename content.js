@@ -10169,7 +10169,14 @@ function getFundingChoicesManageVendorsRejectedReason(element, root) {
   if (!element.isConnected) return 'not_connected'
   if (element.disabled) return 'disabled'
   if (element.getAttribute?.('aria-hidden') === 'true') return 'aria_hidden'
-  if (!isVisible(element)) return 'not_visible'
+  const style =
+    getComputedStyle(element)
+  const opacity =
+    Number(style?.opacity)
+  if (style?.display === 'none') return 'display_none'
+  if (style?.visibility === 'hidden') return 'visibility_hidden'
+  if (Number.isFinite(opacity) && opacity <= 0) return 'opacity_zero'
+  if (style?.pointerEvents === 'none') return 'pointer_events_none'
   if (hasUnsafeAcceptText(element)) return 'unsafe_accept_text'
   if (isSensitiveActionControl(element, root)) return 'sensitive_action_control'
 
@@ -10318,6 +10325,84 @@ function recordFundingChoicesManageVendorsTimedLookup(root, timing, startedAt) {
 
 function findFundingChoicesManageVendorsButton(root, startedAt) {
   return recordFundingChoicesManageVendorsTimedLookup(root, 'immediate', startedAt)
+}
+
+function clickFundingChoicesManageVendorsButton(control) {
+  if (
+    !shouldRunOnThisSite() ||
+    !control ||
+    !control.isConnected ||
+    hasUnsafeAcceptText(control)
+  ) {
+    lastFundingChoicesProviderManageVendorsRejectedReason =
+      'fc_manage_vendors_not_interactable'
+    return false
+  }
+
+  if (!canUsePageActionBudget('fundingChoicesManageVendors')) {
+    lastFundingChoicesProviderManageVendorsRejectedReason =
+      'page_action_budget'
+    return false
+  }
+
+  try {
+    control.scrollIntoView?.({
+      block: 'center',
+    })
+  } catch {
+    // Best-effort alignment for FC's zero-geometry navigation button.
+  }
+
+  processedActionElements.add(control)
+
+  try {
+    const eventView =
+      control.ownerDocument?.defaultView || window
+
+    if (typeof eventView.PointerEvent === 'function') {
+      control.dispatchEvent(
+        new eventView.PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          view: eventView,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+      control.dispatchEvent(
+        new eventView.PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          view: eventView,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+    }
+
+    control.dispatchEvent(
+      new eventView.MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        view: eventView,
+      })
+    )
+    control.dispatchEvent(
+      new eventView.MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        view: eventView,
+      })
+    )
+    control.click()
+    lastFundingChoicesProviderManageVendorsRejectedReason = ''
+    return true
+  } catch (error) {
+    lastFundingChoicesProviderManageVendorsRejectedReason =
+      'fc_manage_vendors_click_failed'
+    log('Funding Choices manage vendors click failed:', error)
+    return false
+  }
 }
 
 function refreshFundingChoicesDiagnosticsForVisiblePanel(source = 'popup') {
@@ -10493,12 +10578,21 @@ function openFundingChoicesProviderPreferences(root, preferredProviderControl = 
     }
   }
 
-  if (!clickCMPSpecificControl(providerControl)) {
+  const providerControlClicked =
+    lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector'
+      ? clickFundingChoicesManageVendorsButton(providerControl)
+      : clickCMPSpecificControl(providerControl)
+
+  if (!providerControlClicked) {
     lastFundingChoicesProviderPreferenceClickSuccess = false
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.provider_preferences',
       status: 'skipped',
-      reason: 'provider_preferences_click_failed',
+      reason:
+        lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector'
+          ? lastFundingChoicesProviderManageVendorsRejectedReason ||
+            'fc_manage_vendors_click_failed'
+          : 'provider_preferences_click_failed',
       found: 1,
       elapsedMs: Date.now() - startedAt,
     })
@@ -10507,7 +10601,11 @@ function openFundingChoicesProviderPreferences(root, preferredProviderControl = 
       ok: false,
       opened: false,
       reason: 'fc_provider_toggles_not_safely_handled',
-      blockedReason: 'provider_preferences_click_failed',
+      blockedReason:
+        lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector'
+          ? lastFundingChoicesProviderManageVendorsRejectedReason ||
+            'fc_manage_vendors_click_failed'
+          : 'provider_preferences_click_failed',
     }
   }
 
