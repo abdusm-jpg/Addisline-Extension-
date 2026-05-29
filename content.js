@@ -17,6 +17,7 @@ const ENABLE_LIGHTWEIGHT_SETTINGS_OPEN = true
 const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
 const ENABLE_VERBOSE_DIAGNOSTICS = false
+const ENABLE_FC_PROVIDER_AUTOMATION = false
 const REJECT_FLOW_DEBUG = false
 
 let protectionEnabled = false
@@ -8548,6 +8549,8 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
     }
   }
 
+  const inputMeta =
+    getSafeElementMeta(input)
   const label =
     safeClosest(input, 'label.fc-preference-slider-container')
   const wrapper =
@@ -8565,11 +8568,11 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
     ariaLabel:
       normalizeMatchText(input?.getAttribute?.('aria-label') || '').slice(0, 90),
     inputId:
-      String(input?.id || 'none').slice(0, 60),
+      inputMeta.id || 'none',
     inputName:
-      String(input?.name || input?.getAttribute?.('name') || 'none').slice(0, 60),
+      inputMeta.name || 'none',
     inputClass:
-      getClassNameText(input).slice(0, 90),
+      inputMeta.className.slice(0, 90),
     inputOuterHTML:
       String(input?.outerHTML || '').slice(0, 220),
     wrapperOuterHTML:
@@ -10148,14 +10151,132 @@ function collectFundingChoicesControlDiagnostics(root) {
   return lastFundingChoicesControlDiagnostics
 }
 
+function getFundingChoicesLightweightControlDiagnostic(control) {
+  const meta =
+    getSafeElementMeta(control)
+
+  return {
+    tagName: meta.tagName,
+    role:
+      String(control?.getAttribute?.('role') || '').slice(0, 40),
+    text:
+      normalizeMatchText(getActionText(control)).slice(0, 90),
+    visible:
+      Boolean(control && isVisible(control)),
+    toggleLike:
+      Boolean(
+        control?.matches?.(
+          '.fc-slider-el, [role="switch"], [role="checkbox"], [aria-checked], [aria-pressed], input[type="checkbox"], input[type="radio"]'
+        )
+      ),
+    checked:
+      String(
+        control?.checked ??
+          control?.getAttribute?.('aria-checked') ??
+          control?.getAttribute?.('aria-pressed') ??
+          ''
+      ).slice(0, 20),
+    sliderState: '',
+    sliderWrapperFound: false,
+    sliderInputFound: false,
+    ariaPressed:
+      String(control?.getAttribute?.('aria-pressed') || '').slice(0, 20),
+    ariaLabel:
+      normalizeMatchText(control?.getAttribute?.('aria-label') || '').slice(0, 90),
+    active:
+      false,
+    clicked:
+      false,
+    clickableOwnerFound:
+      false,
+    ownerText:
+      '',
+    rejectIntent:
+      false,
+    saveIntent:
+      false,
+    acceptIntent:
+      textHasAny(getActionText(control), fundingChoicesUnsafePositiveTexts),
+    blockedReason:
+      '',
+  }
+}
+
+function collectFundingChoicesLightweightControlDiagnostics(root) {
+  if (!root) {
+    lastFundingChoicesControlDiagnostics = null
+    return null
+  }
+
+  const controls =
+    safeQuerySelectorAll(
+      root,
+      'button, a, [role="button"], [tabindex], input[type="checkbox"], [aria-pressed], [aria-checked], .fc-slider-el'
+    )
+      .filter((control) =>
+        root.contains(control) &&
+        isVisible(control)
+      )
+      .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+      .map(getFundingChoicesLightweightControlDiagnostic)
+
+  lastFundingChoicesControlDiagnostics = {
+    collectedAt: new Date().toISOString(),
+    controlCount: controls.length,
+    sliderCount: 0,
+    activeSliderCount: 0,
+    preferenceToggleCount: 0,
+    activePreferenceToggleCount: 0,
+    mainRequiredActiveBefore: lastFundingChoicesMainRequiredActiveBefore,
+    mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
+    providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
+    providerToggleCount: lastFundingChoicesProviderToggleCount,
+    activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
+    providerInspectedCount: lastFundingChoicesProviderInspectedCount,
+    providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
+    providerClickedCount: lastFundingChoicesProviderClickedCount,
+    providerTimeBudgetExceeded: lastFundingChoicesProviderTimeBudgetExceeded,
+    providerToggleMethod: lastFundingChoicesProviderToggleMethod,
+    providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
+    providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
+    providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
+    providerPreferenceClickSuccess: lastFundingChoicesProviderPreferenceClickSuccess,
+    providerPreferenceScrollAttempts: lastFundingChoicesProviderPreferenceScrollAttempts,
+    providerPreferenceScrollTop: lastFundingChoicesProviderPreferenceScrollTop,
+    providerManageVendorsSelectorExecuted: lastFundingChoicesProviderManageVendorsSelectorExecuted,
+    providerManageVendorsFoundImmediate: lastFundingChoicesProviderManageVendorsFoundImmediate,
+    providerManageVendorsFound300ms: lastFundingChoicesProviderManageVendorsFound300ms,
+    providerManageVendorsFound800ms: lastFundingChoicesProviderManageVendorsFound800ms,
+    providerManageVendorsFound1500ms: lastFundingChoicesProviderManageVendorsFound1500ms,
+    providerManageVendorsCountImmediate: lastFundingChoicesProviderManageVendorsCountImmediate,
+    providerManageVendorsCount300ms: lastFundingChoicesProviderManageVendorsCount300ms,
+    providerManageVendorsCount800ms: lastFundingChoicesProviderManageVendorsCount800ms,
+    providerManageVendorsCount1500ms: lastFundingChoicesProviderManageVendorsCount1500ms,
+    providerManageVendorsFoundDelayed: lastFundingChoicesProviderManageVendorsFoundDelayed,
+    providerManageVendorsElement: lastFundingChoicesProviderManageVendorsElementDiagnostics,
+    manageVendorsRejectedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
+    providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
+    providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
+    clickableOwnerCount: 0,
+    preferenceToggleActions: [],
+    controls,
+  }
+
+  return lastFundingChoicesControlDiagnostics
+}
+
 function recordFundingChoicesSkipped(root, reason, blockedReason = '') {
+  const fundingChoicesControlDiagnostics =
+    reason === 'fc_provider_automation_disabled'
+      ? collectFundingChoicesLightweightControlDiagnostics(root)
+      : collectFundingChoicesControlDiagnostics(root)
+
   recordCurrentSiteDiagnostic({
     status: 'skipped',
     reason,
     candidates: root ? [root] : [],
     blockedReason,
-    fundingChoicesControlDiagnostics:
-      collectFundingChoicesControlDiagnostics(root),
+    fundingChoicesControlDiagnostics,
   })
   rejectFlowCompleted = true
   stopObserver()
@@ -10389,14 +10510,16 @@ function findFundingChoicesProviderPreferenceTextControlWithScroll(root, started
 function getFundingChoicesManageVendorsElementDiagnostics(element) {
   if (!element) return null
 
+  const meta =
+    getSafeElementMeta(element)
   const style =
     getComputedStyle(element)
   const rect =
     element.getBoundingClientRect?.() || null
 
   return {
-    tagName: String(element.tagName || '').toLowerCase().slice(0, 24),
-    className: getClassNameText(element).slice(0, 120),
+    tagName: meta.tagName.slice(0, 24),
+    className: meta.className.slice(0, 120),
     connected: Boolean(element.isConnected),
     offsetParent: Boolean(element.offsetParent),
     display: String(style?.display || '').slice(0, 30),
@@ -10677,7 +10800,7 @@ function refreshFundingChoicesDiagnosticsForVisiblePanel(source = 'popup') {
   const manageVendorsControl =
     recordFundingChoicesManageVendorsTimedLookup(panel, 'immediate', startedAt)
 
-  collectFundingChoicesControlDiagnostics(panel)
+  collectFundingChoicesLightweightControlDiagnostics(panel)
   recordCurrentSiteDiagnostic({
     status: 'settingsOpened',
     reason: 'fc_popup_state_refresh',
@@ -10917,6 +11040,23 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
           currentRoot,
           mainRecheckResult.reason,
           mainRecheckResult.blockedReason
+        )
+        return
+      }
+
+      if (!ENABLE_FC_PROVIDER_AUTOMATION) {
+        appendLastDiagnosticDecisionStep({
+          strategy: 'fc.provider_toggles',
+          status: 'skipped',
+          reason: 'fc_provider_automation_disabled',
+          found: 0,
+          scanned: 0,
+          force: true,
+        })
+        recordFundingChoicesSkipped(
+          providerRoot,
+          'fc_provider_automation_disabled',
+          'provider_automation_disabled'
         )
         return
       }
@@ -18710,6 +18850,19 @@ function getClassNameText(element) {
   }
 
   return ''
+}
+
+function getSafeElementMeta(element) {
+  return {
+    id: String(element?.id || '').slice(0, 80),
+    name: String(
+      element?.name ||
+        element?.getAttribute?.('name') ||
+        ''
+    ).slice(0, 80),
+    className: getClassNameText(element).slice(0, 160),
+    tagName: String(element?.tagName || '').toLowerCase().slice(0, 32),
+  }
 }
 
 // Cookie Intelligence Layer - First Phase
