@@ -870,12 +870,18 @@ function renderState({
   renderIssueReports(issueReports)
 }
 
-async function loadState() {
+async function loadState({
+  refreshFundingChoices = false,
+} = {}) {
   currentDomain =
     await getCurrentDomain()
 
   currentDomainScope =
     getDomainScope(currentDomain)
+
+  if (refreshFundingChoices) {
+    await requestFundingChoicesDiagnosticRefresh()
+  }
 
   const stored =
     await chrome.storage.local.get(
@@ -1046,6 +1052,23 @@ function buildDiagnosticCopyReport() {
   return `${report.slice(0, DIAGNOSTIC_COPY_TOTAL_LIMIT)}...`
 }
 
+async function requestFundingChoicesDiagnosticRefresh() {
+  if (!currentTabId) {
+    return false
+  }
+
+  try {
+    const response =
+      await chrome.tabs.sendMessage(currentTabId, {
+        type: 'ADDISLINE_REFRESH_FC_DIAGNOSTICS',
+      })
+
+    return Boolean(response?.success)
+  } catch {
+    return false
+  }
+}
+
 async function copyTextToClipboard(text) {
   if (
     navigator.clipboard &&
@@ -1110,6 +1133,8 @@ copyDiagnosticButton.addEventListener(
   'click',
   async () => {
     try {
+      await requestFundingChoicesDiagnosticRefresh()
+      await loadState()
       await copyTextToClipboard(
         buildDiagnosticCopyReport()
       )
@@ -2833,4 +2858,6 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;')
 }
 
-loadState()
+loadState({
+  refreshFundingChoices: true,
+})

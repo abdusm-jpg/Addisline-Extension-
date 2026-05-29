@@ -8242,6 +8242,16 @@ function getFundingChoicesRoot(root = document) {
     ) || null
 }
 
+function getVisibleFundingChoicesPanel() {
+  return safeQuerySelectorAll(
+    document,
+    '.fc-consent-root, .fc-data-preferences-dialog, .fc-dialog'
+  )
+    .find((element) =>
+      isVisible(element)
+    ) || null
+}
+
 function isFundingChoicesRoot(root) {
   return Boolean(getFundingChoicesRoot(root))
 }
@@ -10308,6 +10318,48 @@ function recordFundingChoicesManageVendorsTimedLookup(root, timing, startedAt) {
 
 function findFundingChoicesManageVendorsButton(root, startedAt) {
   return recordFundingChoicesManageVendorsTimedLookup(root, 'immediate', startedAt)
+}
+
+function refreshFundingChoicesDiagnosticsForVisiblePanel(source = 'popup') {
+  const panel =
+    getVisibleFundingChoicesPanel()
+
+  if (!panel) {
+    return false
+  }
+
+  const startedAt =
+    Date.now()
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.popup_state_refresh',
+    status: 'ran',
+    reason: source,
+    found: 1,
+    scanned: 1,
+    elapsedMs: 0,
+    force: true,
+  })
+
+  const manageVendorsControl =
+    recordFundingChoicesManageVendorsTimedLookup(panel, 'immediate', startedAt)
+
+  collectFundingChoicesControlDiagnostics(panel)
+  recordCurrentSiteDiagnostic({
+    status: 'settingsOpened',
+    reason: 'fc_popup_state_refresh',
+    candidates: [panel],
+    matchedRejectElement: manageVendorsControl,
+    matchedRejectText: getActionText(manageVendorsControl),
+    blockedReason:
+      manageVendorsControl
+        ? ''
+        : lastFundingChoicesProviderManageVendorsRejectedReason,
+    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  return true
 }
 
 function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
@@ -22513,6 +22565,27 @@ function sendProtectionEvent(payload) {
   } catch (error) {
     log('Error sending protection event:', error)
   }
+}
+
+if (hasExtensionContext()) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== 'ADDISLINE_REFRESH_FC_DIAGNOSTICS') {
+      return false
+    }
+
+    try {
+      sendResponse({
+        success: refreshFundingChoicesDiagnosticsForVisiblePanel('popup_message'),
+      })
+    } catch (error) {
+      sendResponse({
+        success: false,
+        reason: error?.message || 'refresh_failed',
+      })
+    }
+
+    return false
+  })
 }
 
 // Link extension from web
