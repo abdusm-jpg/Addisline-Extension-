@@ -8228,14 +8228,14 @@ function getFundingChoicesRoot(root = document) {
   const scopedRoot =
     safeClosest(
       root,
-      '[class*="fc-consent-root" i], [id*="fc-consent" i], [class*="fundingchoices" i], [id*="fundingchoices" i]'
+      '.fc-data-preferences-dialog, .fc-consent-root, [class*="fc-consent-root" i], [id*="fc-consent" i], [class*="fundingchoices" i], [id*="fundingchoices" i]'
     )
 
   if (scopedRoot) return scopedRoot
 
   return safeQuerySelectorAll(
     document,
-    '[class*="fc-consent-root" i], [id*="fc-consent" i], [class*="fundingchoices" i], [id*="fundingchoices" i]'
+    '.fc-data-preferences-dialog, .fc-consent-root, [class*="fc-consent-root" i], [id*="fc-consent" i], [class*="fundingchoices" i], [id*="fundingchoices" i]'
   )
     .find((element) =>
       isVisible(element)
@@ -10167,8 +10167,19 @@ function getFundingChoicesManageVendorsRejectedReason(element, root) {
 }
 
 function getFundingChoicesManageVendorsLookup(root) {
+  const visiblePreferencesPanel =
+    document.querySelector('.fc-data-preferences-dialog, .fc-consent-root')
   const fcRoot =
-    getFundingChoicesRoot(root) || root
+    getFundingChoicesRoot(root) ||
+    (
+      visiblePreferencesPanel && isVisible(visiblePreferencesPanel)
+        ? visiblePreferencesPanel
+        : null
+    ) ||
+    root ||
+    document
+  const selector =
+    'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
   const buttons =
     uniqueElements([
       ...safeQuerySelectorAll(fcRoot, 'button.fc-manage-vendors'),
@@ -10177,22 +10188,31 @@ function getFundingChoicesManageVendorsLookup(root) {
   const directControl =
     fcRoot?.querySelector?.('button.fc-manage-vendors') ||
     fcRoot?.querySelector?.('.fc-navigation-button.fc-manage-vendors') ||
-    document.querySelector('button.fc-manage-vendors') ||
+    document.querySelector(selector) ||
     null
+  const effectiveRoot =
+    directControl && fcRoot?.contains?.(directControl)
+      ? fcRoot
+      : safeClosest(
+          directControl,
+          '.fc-data-preferences-dialog, .fc-consent-root, [class*="fc-consent-root" i], [id*="fc-consent" i], [class*="fundingchoices" i], [id*="fundingchoices" i]'
+        ) ||
+        fcRoot ||
+        document
   const rejectedReason =
     directControl
-      ? getFundingChoicesManageVendorsRejectedReason(directControl, fcRoot)
+      ? getFundingChoicesManageVendorsRejectedReason(directControl, effectiveRoot)
       : 'selector_not_found'
   const control =
     directControl &&
     !rejectedReason
       ? directControl
       : safeQuerySelectorAll(
-          fcRoot,
-          'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
+          effectiveRoot,
+          selector
         )
           .find((element) =>
-            !getFundingChoicesManageVendorsRejectedReason(element, fcRoot)
+            !getFundingChoicesManageVendorsRejectedReason(element, effectiveRoot)
           ) || null
 
   if (buttons.length === 1 || directControl) {
@@ -10204,7 +10224,7 @@ function getFundingChoicesManageVendorsLookup(root) {
       control
         ? ''
         : rejectedReason ||
-          getFundingChoicesManageVendorsRejectedReason(diagnosticTarget, fcRoot)
+          getFundingChoicesManageVendorsRejectedReason(diagnosticTarget, effectiveRoot)
   } else if (!control) {
     lastFundingChoicesProviderManageVendorsRejectedReason =
       buttons.length === 0 ? 'selector_not_found' : 'multiple_candidates_not_selected'
@@ -10884,7 +10904,10 @@ function attemptFundingChoicesManageOptionsFlow(root = document, decisionTrace =
   const startedAt =
     Date.now()
   const fcRoot =
-    getFundingChoicesRoot(root)
+    getFundingChoicesRoot(root) ||
+    (
+      document.querySelector('.fc-data-preferences-dialog, .fc-consent-root')
+    )
 
   if (!fcRoot) {
     addDiagnosticDecisionStep(decisionTrace, {
