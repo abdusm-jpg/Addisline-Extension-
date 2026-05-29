@@ -107,6 +107,8 @@ let lastFundingChoicesProviderManageVendorsFoundDelayed = false
 let lastFundingChoicesProviderManageVendorsElementDiagnostics = null
 let lastFundingChoicesProviderManageVendorsRejectedReason = ''
 let lastFundingChoicesProviderManageVendorsSensitiveBypass = false
+let lastFundingChoicesProviderManageVendorsMode = ''
+let lastFundingChoicesProviderManageVendorsAllowClick = false
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
 let lightweightSettingsOpenAttempted = false
@@ -4017,6 +4019,10 @@ function recordCurrentSiteDiagnostic({
               String(fundingChoicesControlDiagnostics.manageVendorsRejectedReason || '').slice(0, 80),
             manageVendorsSensitiveBypass:
               Boolean(fundingChoicesControlDiagnostics.manageVendorsSensitiveBypass),
+            manageVendorsMode:
+              String(fundingChoicesControlDiagnostics.manageVendorsMode || '').slice(0, 20),
+            manageVendorsAllowClick:
+              Boolean(fundingChoicesControlDiagnostics.manageVendorsAllowClick),
             providerManageVendorsFound:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound),
             providerManageVendorsClicked:
@@ -8960,8 +8966,19 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       elapsedMs: Date.now() - startedAt,
       force: true,
     })
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.manage_vendors_normal_flow_invoked',
+      status: 'ran',
+      found: activeInputs.length,
+      scanned: inputs.length,
+      elapsedMs: Date.now() - startedAt,
+      force: true,
+    })
     options.manageVendorsControl =
-      findFundingChoicesManageVendorsButton(root, Date.now())
+      findFundingChoicesManageVendorsButton(root, Date.now(), {
+        mode: 'normal',
+        allowClick: true,
+      })
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.after_manage_vendors_lookup',
       status: options.manageVendorsControl ? 'found' : 'not_found',
@@ -10145,6 +10162,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerManageVendorsElement: lastFundingChoicesProviderManageVendorsElementDiagnostics,
     manageVendorsRejectedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
     manageVendorsSensitiveBypass: lastFundingChoicesProviderManageVendorsSensitiveBypass,
+    manageVendorsMode: lastFundingChoicesProviderManageVendorsMode,
+    manageVendorsAllowClick: lastFundingChoicesProviderManageVendorsAllowClick,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
@@ -10260,6 +10279,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerManageVendorsElement: lastFundingChoicesProviderManageVendorsElementDiagnostics,
     manageVendorsRejectedReason: lastFundingChoicesProviderManageVendorsRejectedReason,
     manageVendorsSensitiveBypass: lastFundingChoicesProviderManageVendorsSensitiveBypass,
+    manageVendorsMode: lastFundingChoicesProviderManageVendorsMode,
+    manageVendorsAllowClick: lastFundingChoicesProviderManageVendorsAllowClick,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount: 0,
@@ -10683,15 +10704,25 @@ function getFundingChoicesManageVendorsLookup(root) {
   }
 }
 
-function recordFundingChoicesManageVendorsTimedLookup(root, timing, startedAt) {
+function recordFundingChoicesManageVendorsTimedLookup(
+  root,
+  timing,
+  startedAt,
+  options = {}
+) {
   const lookup =
     getFundingChoicesManageVendorsLookup(root)
   const found =
     Boolean(lookup.control)
   const count =
     Math.max(0, Number(lookup.count) || 0)
+  const mode =
+    String(options.mode || 'normal').slice(0, 20)
 
   lastFundingChoicesProviderManageVendorsSelectorExecuted = true
+  lastFundingChoicesProviderManageVendorsMode = mode
+  lastFundingChoicesProviderManageVendorsAllowClick =
+    Boolean(options.allowClick)
   lastFundingChoicesProviderManageVendorsFound =
     lastFundingChoicesProviderManageVendorsFound || found
 
@@ -10752,8 +10783,13 @@ function recordFundingChoicesManageVendorsTimedLookup(root, timing, startedAt) {
   return lookup.control
 }
 
-function findFundingChoicesManageVendorsButton(root, startedAt) {
-  return recordFundingChoicesManageVendorsTimedLookup(root, 'immediate', startedAt)
+function findFundingChoicesManageVendorsButton(root, startedAt, options = {}) {
+  return recordFundingChoicesManageVendorsTimedLookup(
+    root,
+    'immediate',
+    startedAt,
+    options
+  )
 }
 
 function clickFundingChoicesManageVendorsButton(control) {
@@ -10856,7 +10892,15 @@ function refreshFundingChoicesDiagnosticsForVisiblePanel(source = 'popup') {
   })
 
   const manageVendorsControl =
-    recordFundingChoicesManageVendorsTimedLookup(panel, 'immediate', startedAt)
+    recordFundingChoicesManageVendorsTimedLookup(
+      panel,
+      'immediate',
+      startedAt,
+      {
+        mode: 'refresh',
+        allowClick: false,
+      }
+    )
 
   collectFundingChoicesLightweightControlDiagnostics(panel)
   recordCurrentSiteDiagnostic({
@@ -10878,7 +10922,10 @@ function refreshFundingChoicesDiagnosticsForVisiblePanel(source = 'popup') {
 
 function findFundingChoicesProviderPreferenceControl(root, startedAt, budgetMs) {
   const manageVendorsButton =
-    findFundingChoicesManageVendorsButton(root, startedAt)
+    findFundingChoicesManageVendorsButton(root, startedAt, {
+      mode: 'normal',
+      allowClick: true,
+    })
 
   if (manageVendorsButton) {
     lastFundingChoicesProviderPreferenceClickMethod =
@@ -11336,7 +11383,15 @@ function scheduleFundingChoicesManageVendorsTimingLookups(
       }
 
       const manageVendorsControl =
-        recordFundingChoicesManageVendorsTimedLookup(currentRoot, label, startedAt)
+        recordFundingChoicesManageVendorsTimedLookup(
+          currentRoot,
+          label,
+          startedAt,
+          {
+            mode: 'normal',
+            allowClick: true,
+          }
+        )
 
       collectFundingChoicesControlDiagnostics(currentRoot)
       recordCurrentSiteDiagnostic({
@@ -11418,6 +11473,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderManageVendorsElementDiagnostics = null
     lastFundingChoicesProviderManageVendorsRejectedReason = ''
     lastFundingChoicesProviderManageVendorsSensitiveBypass = false
+    lastFundingChoicesProviderManageVendorsMode = ''
+    lastFundingChoicesProviderManageVendorsAllowClick = false
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
     collectFundingChoicesControlDiagnostics(currentRoot)
