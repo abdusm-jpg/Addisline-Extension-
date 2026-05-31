@@ -9449,7 +9449,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   appendLastDiagnosticDecisionStep({
     strategy: disableTrace,
     status:
-      effectiveRemainingActiveCount === 0 && !incompleteDisable
+      mainPanelTransitionedToProvider
+        ? 'done'
+        : effectiveRemainingActiveCount === 0 && !incompleteDisable
         ? 'done'
         : 'blocked',
     found: disabledCount,
