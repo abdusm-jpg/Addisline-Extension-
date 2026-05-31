@@ -10526,6 +10526,45 @@ function recordFundingChoicesSkipped(root, reason, blockedReason = '') {
   stopObserver()
 }
 
+function hasFundingChoicesMainToggleStableSuccess(mainToggleResult = null) {
+  return Boolean(
+    mainToggleResult &&
+      lastFundingChoicesMainClickedCount > 0 &&
+      Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0
+  )
+}
+
+function finalizeFundingChoicesMainToggleStableSuccess(
+  root,
+  matchedElement = null,
+  reason = 'fc_main_toggles_stable_without_confirm'
+) {
+  const currentRoot =
+    getFundingChoicesRoot(root) || root
+
+  recordCurrentSiteDiagnostic({
+    status: 'partial',
+    reason,
+    candidates: currentRoot ? [currentRoot] : [],
+    matchedRejectElement: matchedElement,
+    matchedRejectText: matchedElement ? getActionText(matchedElement) : '',
+    blockedReason: '',
+    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+  })
+  recordCookieAuditAfterSuccessfulAction({
+    type: 'save',
+    container: currentRoot,
+    element: matchedElement || currentRoot,
+  })
+  finalizeCookieActionSuccess({
+    type: 'save',
+    container: currentRoot,
+    element: matchedElement || currentRoot,
+  })
+  setLastAction('preferences_saved')
+  setLastError('')
+}
+
 function getFundingChoicesProviderControlSignal(control) {
   return normalizeMatchText([
     getElementActionText(control),
@@ -11471,7 +11510,11 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
     return
   }
 
-  if (mainToggleResult && !mainToggleResult.ok) {
+  if (
+    mainToggleResult &&
+    !mainToggleResult.ok &&
+    !hasFundingChoicesMainToggleStableSuccess(mainToggleResult)
+  ) {
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.confirm_save',
       status: 'skipped',
@@ -11507,6 +11550,13 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
   })
 
   if (!safeAction) {
+    if (hasFundingChoicesMainToggleStableSuccess(mainToggleResult)) {
+      finalizeFundingChoicesMainToggleStableSuccess(
+        getFundingChoicesRoot(currentRoot) || currentRoot
+      )
+      return
+    }
+
     recordFundingChoicesSkipped(
       getFundingChoicesRoot(currentRoot) || currentRoot,
       'fc_settings_safe_action_not_found',
@@ -11518,6 +11568,15 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
   }
 
   if (!clickCMPSpecificControl(safeAction)) {
+    if (hasFundingChoicesMainToggleStableSuccess(mainToggleResult)) {
+      finalizeFundingChoicesMainToggleStableSuccess(
+        getFundingChoicesRoot(currentRoot) || currentRoot,
+        safeAction,
+        'fc_main_toggles_stable_confirm_click_failed'
+      )
+      return
+    }
+
     recordCurrentSiteDiagnostic({
       status: 'failed',
       reason: 'fc_safe_action_click_failed',
