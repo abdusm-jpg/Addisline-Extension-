@@ -9326,6 +9326,14 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     }
   }
 
+  const mainToggleMethodFound =
+    scope !== 'provider' &&
+    (
+      disabledCount > 0 ||
+      lastFundingChoicesMainClickedCount > 0 ||
+      Boolean(lastFundingChoicesMainToggleMethod)
+    )
+
   if (scope === 'provider') {
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.provider_toggle_method',
@@ -9339,10 +9347,6 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       elapsedMs: Date.now() - startedAt,
     })
   } else {
-    const mainToggleMethodFound =
-      disabledCount > 0 ||
-      lastFundingChoicesMainClickedCount > 0
-
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.main_toggle_method',
       status: mainToggleMethodFound ? 'found' : 'not_found',
@@ -9433,7 +9437,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         (effectiveRemainingActiveCount > 0 || incompleteDisable
         ? scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
-          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          : scope !== 'provider' && !mainToggleMethodFound && activeInputs.length > 0
           ? 'fc_main_toggle_activation_method_not_found'
           : 'fc_required_toggles_still_active'
         : ''),
@@ -9456,7 +9460,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       reason:
         scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
-          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          : scope !== 'provider' && !mainToggleMethodFound && activeInputs.length > 0
           ? 'fc_main_toggle_activation_method_not_found'
           : scope === 'provider'
           ? 'fc_provider_toggles_still_active'
@@ -9471,7 +9475,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       reason:
         scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
-          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          : scope !== 'provider' && !mainToggleMethodFound && activeInputs.length > 0
           ? 'fc_main_toggle_activation_method_not_found'
           : scope === 'provider'
           ? 'fc_provider_toggles_still_active'
@@ -9479,7 +9483,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       blockedReason:
         scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
-          : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
+          : scope !== 'provider' && !mainToggleMethodFound && activeInputs.length > 0
           ? 'fc_main_toggle_activation_method_not_found'
           : 'matching_toggles_still_active',
       disabledCount,
