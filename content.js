@@ -8437,6 +8437,31 @@ function isFundingChoicesPreferencesPanel(root) {
   ])
 }
 
+function isFundingChoicesProviderPreferencesPanel(root) {
+  if (!root) return false
+
+  const classText =
+    getClassNameText(root)
+  const text =
+    getText(root).slice(0, 1500)
+  const signal =
+    normalizeMatchText(`${classText} ${text}`)
+
+  return textHasAny(signal, [
+    'preferencies de proveidors',
+    'preferencia de proveidors',
+    'preferencias de proveedores',
+    'preferencia de proveedores',
+    'preferencies dels proveidors',
+    'provider preferences',
+    'vendor preferences',
+    'fc-vendors',
+    'fc vendors',
+    'vendors panel',
+    'providers panel',
+  ])
+}
+
 function findFundingChoicesPreferenceInputByKey(root, key) {
   if (!root || !key) return null
 
@@ -9314,11 +9339,15 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       elapsedMs: Date.now() - startedAt,
     })
   } else {
+    const mainToggleMethodFound =
+      disabledCount > 0 ||
+      lastFundingChoicesMainClickedCount > 0
+
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.main_toggle_method',
-      status: disabledCount > 0 ? 'found' : 'not_found',
+      status: mainToggleMethodFound ? 'found' : 'not_found',
       reason:
-        disabledCount > 0
+        mainToggleMethodFound
           ? lastFundingChoicesMainToggleMethod
           : 'fc_main_toggle_activation_method_not_found',
       found: disabledCount,
@@ -9339,9 +9368,17 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       .filter((input) =>
         getFundingChoicesPreferenceToggleState(input) === 'enabled'
       )
+  const mainPanelTransitionedToProvider =
+    scope !== 'provider' &&
+    lastFundingChoicesMainClickedCount > 0 &&
+    isFundingChoicesProviderPreferencesPanel(getFundingChoicesRoot(root) || root)
   const remainingActiveKeys =
     new Set(
-      remainingActive
+      (
+        mainPanelTransitionedToProvider
+          ? []
+          : remainingActive
+      )
         .map((input) =>
           getFundingChoicesSliderKey(input, root)
         )
@@ -9361,31 +9398,56 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   if (scope === 'provider') {
     lastFundingChoicesActiveProviderToggleCount = remainingActive.length
   } else {
-    lastFundingChoicesMainRequiredActiveAfter = remainingActive.length
+    lastFundingChoicesMainRequiredActiveAfter =
+      mainPanelTransitionedToProvider
+        ? 0
+        : remainingActive.length
   }
 
   const incompleteDisable =
-    activeInputs.length > disabledCount ||
+    (
+      !mainPanelTransitionedToProvider &&
+      activeInputs.length > disabledCount
+    ) ||
     hasElapsedBudget(startedAt, FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS)
+  const effectiveRemainingActiveCount =
+    mainPanelTransitionedToProvider
+      ? 0
+      : remainingActive.length
+  const mainPanelTransitionReason =
+    mainPanelTransitionedToProvider
+      ? 'fc_main_toggles_clicked_panel_transitioned'
+      : ''
 
   appendLastDiagnosticDecisionStep({
     strategy: disableTrace,
     status:
-      remainingActive.length === 0 && !incompleteDisable
+      effectiveRemainingActiveCount === 0 && !incompleteDisable
         ? 'done'
         : 'blocked',
     found: disabledCount,
     scanned: activeInputs.length,
     elapsedMs: Date.now() - startedAt,
       reason:
-        remainingActive.length > 0 || incompleteDisable
+        mainPanelTransitionReason ||
+        (effectiveRemainingActiveCount > 0 || incompleteDisable
         ? scope === 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'provider_toggle_activation_method_not_found'
           : scope !== 'provider' && disabledCount === 0 && activeInputs.length > 0
           ? 'fc_main_toggle_activation_method_not_found'
           : 'fc_required_toggles_still_active'
-        : '',
+        : ''),
   })
+
+  if (mainPanelTransitionedToProvider) {
+    return {
+      ok: false,
+      reason: 'fc_main_toggles_clicked_panel_transitioned',
+      blockedReason: 'provider_preferences_panel',
+      disabledCount,
+      activeCount: activeInputs.length,
+    }
+  }
 
   if (remainingActive.length > 0 || incompleteDisable) {
     appendLastDiagnosticDecisionStep({
