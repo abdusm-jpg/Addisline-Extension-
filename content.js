@@ -8836,6 +8836,36 @@ function getFundingChoicesProviderActivationMethods(input, root, preferredMethod
     : methods
 }
 
+function getFundingChoicesMainActivationMethods(input, root, preferredMethod = '') {
+  const methods = [
+    {
+      name: 'input_pointer_click',
+      run: () => dispatchFundingChoicesPreferenceToggleClick(input, root),
+    },
+    {
+      name: 'keyboard_space',
+      run: () => dispatchFundingChoicesKeyboardToggle(input, root, ' '),
+    },
+    {
+      name: 'keyboard_enter',
+      run: () => dispatchFundingChoicesKeyboardToggle(input, root, 'Enter'),
+    },
+  ].filter((method) =>
+    typeof method.run === 'function'
+  )
+
+  if (!preferredMethod) return methods
+
+  const preferred =
+    methods.find((method) =>
+      method.name === preferredMethod
+    )
+
+  return preferred
+    ? [preferred, ...methods.filter((method) => method !== preferred)]
+    : methods
+}
+
 function getFundingChoicesCurrentPreferenceInput(root, key, fallback) {
   return findFundingChoicesPreferenceInputByKey(root, key) || fallback
 }
@@ -9157,7 +9187,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       }
     } else {
       const mainMethods =
-        getFundingChoicesProviderActivationMethods(
+        getFundingChoicesMainActivationMethods(
           input,
           root,
           lastFundingChoicesMainToggleMethod
@@ -11186,7 +11216,10 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
     const providerRoot =
       getFundingChoicesRoot(currentRoot) || currentRoot
 
-    if (lastFundingChoicesProviderPreferenceOpened) {
+    if (
+      lastFundingChoicesProviderPreferenceOpened &&
+      !(mainToggleResult && mainToggleResult.ok)
+    ) {
       const mainRecheckResult =
         handleFundingChoicesPreferenceCategoryToggles(currentRoot, {
           scope: 'main',
@@ -11498,7 +11531,20 @@ function attemptVisibleFundingChoicesManageVendorsNormalFlow(decisionTrace = nul
   })
   updateLastDiagnosticDecisionTrace(decisionTrace)
 
+  const preferenceToggleOptions = {
+    scope: 'main',
+    maxClicks: MAX_FUNDING_CHOICES_TOGGLE_CLICKS,
+    preferenceTrace: 'fc.preference_toggles',
+    disableTrace: 'fc.disable_required_categories',
+    manageVendorsControl: null,
+  }
+  const preferenceToggleResult =
+    handleFundingChoicesPreferenceCategoryToggles(
+      panel,
+      preferenceToggleOptions
+    )
   const manageVendorsControl =
+    preferenceToggleOptions.manageVendorsControl ||
     findFundingChoicesManageVendorsButton(panel, startedAt, {
       mode: 'normal',
       allowClick: true,
@@ -11563,7 +11609,7 @@ function attemptVisibleFundingChoicesManageVendorsNormalFlow(decisionTrace = nul
   if (providerPreferenceResult.opened) {
     setTimeout(() => {
       if (!shouldRunOnThisSite() || rejectFlowCompleted) return
-      finishFundingChoicesFlowAfterProvider(panel)
+      finishFundingChoicesFlowAfterProvider(panel, preferenceToggleResult)
     }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
     return true
   }
