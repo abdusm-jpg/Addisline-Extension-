@@ -9872,6 +9872,64 @@ function getFundingChoicesProviderPhase1ClickTargets(input, root) {
     })
 }
 
+function dispatchFundingChoicesProviderPhase1PointerSequence(element, root) {
+  if (
+    !shouldRunOnThisSite() ||
+    !element ||
+    !root?.contains?.(element) ||
+    processedActionElements.has(element) ||
+    !canUsePageActionBudget('fundingChoicesProviderPhase1Toggle')
+  ) {
+    return false
+  }
+
+  processedActionElements.add(element)
+
+  try {
+    const eventView =
+      element.ownerDocument?.defaultView || window
+    const baseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: eventView,
+    }
+    const pointerEventInit = {
+      ...baseEventInit,
+      pointerType: 'mouse',
+      isPrimary: true,
+    }
+
+    if (typeof eventView.PointerEvent === 'function') {
+      element.dispatchEvent(
+        new eventView.PointerEvent('pointerdown', pointerEventInit)
+      )
+    }
+
+    element.dispatchEvent(
+      new eventView.MouseEvent('mousedown', baseEventInit)
+    )
+
+    if (typeof eventView.PointerEvent === 'function') {
+      element.dispatchEvent(
+        new eventView.PointerEvent('pointerup', pointerEventInit)
+      )
+    }
+
+    element.dispatchEvent(
+      new eventView.MouseEvent('mouseup', baseEventInit)
+    )
+    element.dispatchEvent(
+      new eventView.MouseEvent('click', baseEventInit)
+    )
+
+    return true
+  } catch (error) {
+    log('Funding Choices provider phase 1 toggle click failed:', error)
+    return false
+  }
+}
+
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -9924,7 +9982,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         break
       }
 
-      if (!dispatchFundingChoicesPreferenceToggleClick(element, clickRoot)) {
+      if (!dispatchFundingChoicesProviderPhase1PointerSequence(element, clickRoot)) {
         continue
       }
 
