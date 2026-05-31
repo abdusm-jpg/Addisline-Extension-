@@ -9617,6 +9617,12 @@ const FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS = [
   '.fc-preference-slider [aria-checked]',
 ].join(',')
 
+const FUNDING_CHOICES_DOCUMENT_PROVIDER_INPUT_SELECTORS = [
+  'input.gvl-vendor',
+  'input.fc-preference-legitimate-interest.gvl-vendor',
+  'input.fc-preference-consent.gvl-vendor',
+].join(',')
+
 function getFundingChoicesProviderToggleInput(candidate) {
   if (!candidate) return null
 
@@ -9691,6 +9697,59 @@ function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
   return inputs
 }
 
+function isFundingChoicesProviderDocumentInputCountable(input) {
+  if (!input || !input.isConnected) return false
+
+  const inputStyle =
+    safeGetComputedStyle(input)
+
+  if (
+    inputStyle?.display === 'none' ||
+    inputStyle?.visibility === 'hidden'
+  ) {
+    return false
+  }
+
+  const owner =
+    safeClosest(input, 'label.fc-preference-slider-container, .fc-preference-slider')
+  const ownerStyle =
+    owner ? safeGetComputedStyle(owner) : null
+
+  return !(
+    ownerStyle?.display === 'none' ||
+    ownerStyle?.visibility === 'hidden'
+  )
+}
+
+function getDocumentFundingChoicesProviderToggleInputs(startedAt) {
+  const inputs = []
+  const seen = new Set()
+
+  for (const input of safeQuerySelectorAll(
+    document,
+    FUNDING_CHOICES_DOCUMENT_PROVIDER_INPUT_SELECTORS
+  )) {
+    if (
+      inputs.length >= MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT ||
+      hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS)
+    ) {
+      break
+    }
+
+    if (
+      !isFundingChoicesProviderDocumentInputCountable(input) ||
+      seen.has(input)
+    ) {
+      continue
+    }
+
+    seen.add(input)
+    inputs.push(input)
+  }
+
+  return inputs
+}
+
 function isFundingChoicesProviderToggleVisible(input, root) {
   if (!input || !root?.contains?.(input)) return false
 
@@ -9715,15 +9774,19 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
       .filter((input) =>
         isFundingChoicesProviderToggleVisible(input, providerPanel)
       )
+  const providerInputs =
+    visibleInputs.length > 0
+      ? visibleInputs
+      : getDocumentFundingChoicesProviderToggleInputs(startedAt)
   const activeInputs =
-    visibleInputs.filter((input) =>
+    providerInputs.filter((input) =>
       getFundingChoicesPreferenceToggleState(input) === 'enabled'
     )
 
   lastFundingChoicesProviderPreferenceOpened = true
-  lastFundingChoicesProviderToggleCount = visibleInputs.length
+  lastFundingChoicesProviderToggleCount = providerInputs.length
   lastFundingChoicesActiveProviderToggleCount = activeInputs.length
-  lastFundingChoicesProviderInspectedCount = visibleInputs.length
+  lastFundingChoicesProviderInspectedCount = providerInputs.length
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
 
   return true
