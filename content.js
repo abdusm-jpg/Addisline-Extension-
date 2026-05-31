@@ -113,6 +113,7 @@ let lastFundingChoicesProviderManageVendorsMode = ''
 let lastFundingChoicesProviderManageVendorsAllowClick = false
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
+let fundingChoicesProviderPhase1Scheduled = false
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -9815,6 +9816,64 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   return clickedCount > 0
 }
 
+function completeFundingChoicesProviderPhase1Attempt(root, providerPhaseClicked) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  const diagnosticRoot =
+    providerPanel || getFundingChoicesRoot(root) || root
+
+  collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
+  recordCurrentSiteDiagnostic({
+    status: providerPhaseClicked ? 'partial' : 'skipped',
+    reason: providerPhaseClicked
+      ? 'fc_provider_visible_toggles_phase1_clicked'
+      : 'fc_provider_visible_toggles_phase1_skipped',
+    candidates: [diagnosticRoot],
+    blockedReason: '',
+    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+  })
+  rejectFlowCompleted = true
+  stopObserver()
+  setLastAction('settings_opened')
+  setLastError('')
+}
+
+function scheduleFundingChoicesProviderPhase1(root, mainToggleResult = null) {
+  if (
+    fundingChoicesProviderPhase1Scheduled ||
+    !hasFundingChoicesMainToggleStableSuccess(mainToggleResult)
+  ) {
+    return false
+  }
+
+  fundingChoicesProviderPhase1Scheduled = true
+
+  setTimeout(() => {
+    if (!shouldRunOnThisSite()) return
+
+    const providerPanel =
+      getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+    if (providerPanel) {
+      completeFundingChoicesProviderPhase1Attempt(
+        providerPanel,
+        handleFundingChoicesVisibleProviderTogglesPhase1(providerPanel)
+      )
+      return
+    }
+
+    const fallbackRoot =
+      getFundingChoicesRoot(root) || root
+
+    collectFundingChoicesLightweightControlDiagnostics(fallbackRoot)
+    finalizeFundingChoicesMainToggleStableSuccess(
+      fallbackRoot
+    )
+  }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
+
+  return true
+}
+
 function handleFundingChoicesProviderPanelToggles(root) {
   const startedAt =
     Date.now()
@@ -11736,26 +11795,17 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
         hasFundingChoicesMainToggleStableSuccess(mainToggleResult) &&
         getVisibleFundingChoicesProviderPreferencesPanel(providerRoot)
       ) {
-        const providerPhaseClicked =
+        completeFundingChoicesProviderPhase1Attempt(
+          providerRoot,
           handleFundingChoicesVisibleProviderTogglesPhase1(providerRoot)
+        )
+        return
+      }
 
-        collectFundingChoicesLightweightControlDiagnostics(providerRoot)
-        recordCurrentSiteDiagnostic({
-          status: providerPhaseClicked ? 'partial' : 'skipped',
-          reason: providerPhaseClicked
-            ? 'fc_provider_visible_toggles_phase1_clicked'
-            : 'fc_provider_visible_toggles_phase1_skipped',
-          candidates: [
-            getVisibleFundingChoicesProviderPreferencesPanel(providerRoot) ||
-              providerRoot,
-          ],
-          blockedReason: '',
-          fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
-        })
-        rejectFlowCompleted = true
-        stopObserver()
-        setLastAction('settings_opened')
-        setLastError('')
+      if (
+        mainToggleResult?.reason === 'fc_main_toggles_clicked_panel_transitioned' &&
+        scheduleFundingChoicesProviderPhase1(providerRoot, mainToggleResult)
+      ) {
         return
       }
 
@@ -12097,6 +12147,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderManageVendorsAllowClick = false
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
+    fundingChoicesProviderPhase1Scheduled = false
 
     const preferenceToggleResult =
       handleFundingChoicesPreferenceCategoryToggles(
