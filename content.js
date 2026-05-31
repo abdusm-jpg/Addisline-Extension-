@@ -113,7 +113,6 @@ let lastFundingChoicesProviderManageVendorsMode = ''
 let lastFundingChoicesProviderManageVendorsAllowClick = false
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
-let fundingChoicesProviderPhase1Scheduled = false
 let lightweightSettingsOpenAttempted = false
 let lastDirectRejectScanBudgetCapped = false
 let lastLightweightSettingsBudgetCapped = false
@@ -207,9 +206,6 @@ const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT = 30
 const MAX_FUNDING_CHOICES_PROVIDER_ACTIVE_CLICKS = 10
 const FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS = 500
-const MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS = 9
-const FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS = 300
-const FUNDING_CHOICES_PROVIDER_PHASE1_RETRY_DELAY_MS = 300
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 48
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -9652,18 +9648,11 @@ function isFundingChoicesProviderToggleInPanel(input, providerPanel) {
   )
 }
 
-function getBoundedFundingChoicesProviderToggleInputs(
-  root,
-  startedAt,
-  budgetMs = FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS,
-  useDocumentProviderPanel = true
-) {
+function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
   if (!root) return []
 
   const providerPanel =
-    useDocumentProviderPanel
-      ? getVisibleFundingChoicesProviderPreferencesPanel(root)
-      : null
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
   const queryRoot =
     providerPanel ? document : root
   const inputs = []
@@ -9675,7 +9664,7 @@ function getBoundedFundingChoicesProviderToggleInputs(
   )) {
     if (
       inputs.length >= MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT ||
-      hasElapsedBudget(startedAt, budgetMs)
+      hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS)
     ) {
       break
     }
@@ -9736,176 +9725,6 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
   lastFundingChoicesActiveProviderToggleCount = activeInputs.length
   lastFundingChoicesProviderInspectedCount = visibleInputs.length
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
-
-  return true
-}
-
-function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
-  const providerPanel =
-    getVisibleFundingChoicesProviderPreferencesPanel(root)
-
-  if (!providerPanel) return false
-
-  const startedAt =
-    Date.now()
-  const visibleInputs =
-    getBoundedFundingChoicesProviderToggleInputs(
-      providerPanel,
-      startedAt,
-      FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS
-    )
-      .filter((input) =>
-        isFundingChoicesProviderToggleVisible(input, providerPanel)
-      )
-  const activeInputs =
-    visibleInputs.filter((input) =>
-      getFundingChoicesPreferenceToggleState(input) === 'enabled'
-    )
-  let clickedCount = 0
-
-  lastFundingChoicesProviderPreferenceOpened = true
-  lastFundingChoicesProviderToggleCount = visibleInputs.length
-  lastFundingChoicesActiveProviderToggleCount = activeInputs.length
-  lastFundingChoicesProviderInspectedCount = visibleInputs.length
-  lastFundingChoicesProviderActiveFoundCount = activeInputs.length
-  lastFundingChoicesProviderTimeBudgetExceeded = false
-
-  for (const input of activeInputs) {
-    if (clickedCount >= MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS) {
-      break
-    }
-
-    if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
-      lastFundingChoicesProviderTimeBudgetExceeded = true
-      break
-    }
-
-    if (
-      getFundingChoicesPreferenceToggleState(input) !== 'enabled' ||
-      !isFundingChoicesProviderToggleVisible(input, providerPanel)
-    ) {
-      continue
-    }
-
-    if (!dispatchFundingChoicesPreferenceToggleClick(input, providerPanel)) {
-      continue
-    }
-
-    const sliderKey =
-      getFundingChoicesSliderKey(input, providerPanel)
-
-    if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
-      clickedCount += 1
-      lastFundingChoicesProviderClickedCount += 1
-      lastFundingChoicesProviderToggleMethod =
-        lastFundingChoicesProviderToggleMethod || 'input_pointer_click'
-
-      if (sliderKey) {
-        lastFundingChoicesClickedSliderKeys.push(sliderKey)
-      }
-    }
-  }
-
-  const remainingActiveInputs =
-    visibleInputs.filter((input) =>
-      getFundingChoicesPreferenceToggleState(input) === 'enabled'
-    )
-
-  lastFundingChoicesActiveProviderToggleCount = remainingActiveInputs.length
-
-  return clickedCount > 0
-}
-
-function completeFundingChoicesProviderPhase1Attempt(root, providerPhaseClicked) {
-  const providerPanel =
-    getVisibleFundingChoicesProviderPreferencesPanel(root)
-  const diagnosticRoot =
-    providerPanel || getFundingChoicesRoot(root) || root
-
-  collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
-  recordCurrentSiteDiagnostic({
-    status: providerPhaseClicked ? 'partial' : 'skipped',
-    reason: providerPhaseClicked
-      ? 'fc_provider_visible_toggles_phase1_clicked'
-      : 'fc_provider_visible_toggles_phase1_skipped',
-    candidates: [diagnosticRoot],
-    blockedReason: '',
-    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
-  })
-  rejectFlowCompleted = true
-  stopObserver()
-  setLastAction('settings_opened')
-  setLastError('')
-}
-
-function tryFundingChoicesProviderPhase1WhenReady(
-  root,
-  retryIfEmpty = true
-) {
-  const providerPanel =
-    getVisibleFundingChoicesProviderPreferencesPanel(root)
-
-  if (!providerPanel) return false
-
-  refreshFundingChoicesProviderPanelDiagnostics(providerPanel)
-
-  if (lastFundingChoicesProviderToggleCount === 0 && retryIfEmpty) {
-    setTimeout(() => {
-      if (!shouldRunOnThisSite()) return
-
-      if (!tryFundingChoicesProviderPhase1WhenReady(root, false)) {
-        const fallbackRoot =
-          getFundingChoicesRoot(root) || root
-
-        collectFundingChoicesLightweightControlDiagnostics(fallbackRoot)
-        finalizeFundingChoicesMainToggleStableSuccess(fallbackRoot)
-      }
-    }, FUNDING_CHOICES_PROVIDER_PHASE1_RETRY_DELAY_MS)
-
-    return true
-  }
-
-  completeFundingChoicesProviderPhase1Attempt(
-    providerPanel,
-    lastFundingChoicesActiveProviderToggleCount > 0
-      ? handleFundingChoicesVisibleProviderTogglesPhase1(providerPanel)
-      : false
-  )
-
-  return true
-}
-
-function scheduleFundingChoicesProviderPhase1(root, mainToggleResult = null) {
-  if (
-    fundingChoicesProviderPhase1Scheduled ||
-    !hasFundingChoicesMainToggleStableSuccess(mainToggleResult)
-  ) {
-    return false
-  }
-
-  fundingChoicesProviderPhase1Scheduled = true
-
-  setTimeout(() => {
-    if (!shouldRunOnThisSite()) return
-
-    const providerPanel =
-      getVisibleFundingChoicesProviderPreferencesPanel(root)
-
-    if (
-      providerPanel &&
-      tryFundingChoicesProviderPhase1WhenReady(providerPanel)
-    ) {
-      return
-    }
-
-    const fallbackRoot =
-      getFundingChoicesRoot(root) || root
-
-    collectFundingChoicesLightweightControlDiagnostics(fallbackRoot)
-    finalizeFundingChoicesMainToggleStableSuccess(
-      fallbackRoot
-    )
-  }, FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS)
 
   return true
 }
@@ -11827,21 +11646,6 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
 
       collectFundingChoicesControlDiagnostics(providerRoot)
     } else {
-      if (
-        hasFundingChoicesMainToggleStableSuccess(mainToggleResult) &&
-        getVisibleFundingChoicesProviderPreferencesPanel(providerRoot)
-      ) {
-        tryFundingChoicesProviderPhase1WhenReady(providerRoot)
-        return
-      }
-
-      if (
-        mainToggleResult?.reason === 'fc_main_toggles_clicked_panel_transitioned' &&
-        scheduleFundingChoicesProviderPhase1(providerRoot, mainToggleResult)
-      ) {
-        return
-      }
-
       collectFundingChoicesLightweightControlDiagnostics(providerRoot)
     }
   } catch (error) {
@@ -12180,7 +11984,6 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderManageVendorsAllowClick = false
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
-    fundingChoicesProviderPhase1Scheduled = false
 
     const preferenceToggleResult =
       handleFundingChoicesPreferenceCategoryToggles(
