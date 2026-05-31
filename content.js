@@ -8473,6 +8473,56 @@ function isFundingChoicesProviderPreferencesPanel(root) {
   ])
 }
 
+function getVisibleFundingChoicesProviderPreferencesPanel(root = document) {
+  const fcRoot =
+    getFundingChoicesRoot(root) || root || document
+  const providerSignalElements =
+    safeQuerySelectorAll(
+      document,
+      [
+        '[class*="fc-vendor" i]',
+        '[class*="vendor" i]',
+        '[class*="vendors" i]',
+        '[class*="provider" i]',
+        '[class*="providers" i]',
+        '[class*="proveidor" i]',
+        '[class*="proveedor" i]',
+        '[id*="vendor" i]',
+        '[id*="provider" i]',
+      ].join(',')
+    )
+      .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP * 8)
+  const candidates =
+    uniqueElements([
+      getVisibleFundingChoicesPanel(),
+      fcRoot,
+      root,
+      ...providerSignalElements.map((element) =>
+        safeClosest(
+          element,
+          '.fc-dialog, .fc-data-preferences-dialog, .fc-consent-root, [role="dialog"], [aria-modal="true"]'
+        )
+      ),
+      ...providerSignalElements,
+      ...safeQuerySelectorAll(
+        document,
+        [
+          '.fc-dialog',
+          '.fc-data-preferences-dialog',
+          '.fc-consent-root',
+          '[role="dialog"]',
+          '[aria-modal="true"]',
+        ].join(',')
+      ),
+    ])
+
+  return candidates.find((candidate) =>
+    candidate &&
+      isVisible(candidate) &&
+      isFundingChoicesProviderPreferencesPanel(candidate)
+  ) || null
+}
+
 function isCurrentFundingChoicesProviderPreferencesPanel(root) {
   const visiblePanel =
     getVisibleFundingChoicesPanel()
@@ -9583,6 +9633,44 @@ function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
   return inputs
 }
 
+function isFundingChoicesProviderToggleVisible(input, root) {
+  if (!input || !root?.contains?.(input)) return false
+
+  if (isVisible(input)) return true
+
+  return getFundingChoicesPreferenceClickTargets(input, root)
+    .some(({ element }) =>
+      element && isVisible(element)
+    )
+}
+
+function refreshFundingChoicesProviderPanelDiagnostics(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (!providerPanel) return false
+
+  const startedAt =
+    Date.now()
+  const visibleInputs =
+    getBoundedFundingChoicesProviderToggleInputs(providerPanel, startedAt)
+      .filter((input) =>
+        isFundingChoicesProviderToggleVisible(input, providerPanel)
+      )
+  const activeInputs =
+    visibleInputs.filter((input) =>
+      getFundingChoicesPreferenceToggleState(input) === 'enabled'
+    )
+
+  lastFundingChoicesProviderPreferenceOpened = true
+  lastFundingChoicesProviderToggleCount = visibleInputs.length
+  lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+  lastFundingChoicesProviderInspectedCount = visibleInputs.length
+  lastFundingChoicesProviderActiveFoundCount = activeInputs.length
+
+  return true
+}
+
 function handleFundingChoicesProviderPanelToggles(root) {
   const startedAt =
     Date.now()
@@ -10304,6 +10392,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     return null
   }
 
+  refreshFundingChoicesProviderPanelDiagnostics(root)
+
   const sliders =
     getFundingChoicesToggleCandidates(root)
   const activeSliders =
@@ -10463,6 +10553,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     lastFundingChoicesControlDiagnostics = null
     return null
   }
+
+  refreshFundingChoicesProviderPanelDiagnostics(root)
 
   const controls =
     safeQuerySelectorAll(
