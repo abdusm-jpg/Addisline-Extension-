@@ -8442,10 +8442,20 @@ function isFundingChoicesProviderPreferencesPanel(root) {
 
   const classText =
     getClassNameText(root)
+  const descendantClassSignal =
+    safeQuerySelectorAll(
+      root,
+      '[class*="fc-vendor" i], [class*="vendor" i], [class*="vendors" i], [class*="provider" i], [class*="providers" i], [class*="proveidor" i], [class*="proveedor" i], [id*="vendor" i], [id*="provider" i]'
+    )
+      .slice(0, 8)
+      .map((element) =>
+        `${getClassNameText(element)} ${element?.id || ''}`
+      )
+      .join(' ')
   const text =
-    getText(root).slice(0, 1500)
+    getText(root).slice(0, 2500)
   const signal =
-    normalizeMatchText(`${classText} ${text}`)
+    normalizeMatchText(`${classText} ${descendantClassSignal} ${text}`)
 
   return textHasAny(signal, [
     'preferencies de proveidors',
@@ -8460,6 +8470,21 @@ function isFundingChoicesProviderPreferencesPanel(root) {
     'vendors panel',
     'providers panel',
   ])
+}
+
+function isCurrentFundingChoicesProviderPreferencesPanel(root) {
+  const visiblePanel =
+    getVisibleFundingChoicesPanel()
+  const currentRoot =
+    getFundingChoicesRoot(root) || null
+
+  return [
+    visiblePanel,
+    currentRoot,
+    root,
+  ].some((candidate) =>
+    candidate && isFundingChoicesProviderPreferencesPanel(candidate)
+  )
 }
 
 function findFundingChoicesPreferenceInputByKey(root, key) {
@@ -9360,29 +9385,27 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     })
   }
 
-  const remainingActive =
-    prioritizeFundingChoicesPreferenceToggleInputs(
-      getFundingChoicesPreferenceToggleInputs(
-        root,
-        Date.now(),
-        FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
-      ),
-      root
-    )
-      .filter((input) =>
-        getFundingChoicesPreferenceToggleState(input) === 'enabled'
-      )
   const mainPanelTransitionedToProvider =
     scope !== 'provider' &&
     lastFundingChoicesMainClickedCount > 0 &&
-    isFundingChoicesProviderPreferencesPanel(getFundingChoicesRoot(root) || root)
+    isCurrentFundingChoicesProviderPreferencesPanel(root)
+  const remainingActive =
+    mainPanelTransitionedToProvider
+      ? []
+      : prioritizeFundingChoicesPreferenceToggleInputs(
+          getFundingChoicesPreferenceToggleInputs(
+            root,
+            Date.now(),
+            FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+          ),
+          root
+        )
+          .filter((input) =>
+            getFundingChoicesPreferenceToggleState(input) === 'enabled'
+          )
   const remainingActiveKeys =
     new Set(
-      (
-        mainPanelTransitionedToProvider
-          ? []
-          : remainingActive
-      )
+      remainingActive
         .map((input) =>
           getFundingChoicesSliderKey(input, root)
         )
