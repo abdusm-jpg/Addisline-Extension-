@@ -8837,10 +8837,30 @@ function getFundingChoicesProviderActivationMethods(input, root, preferredMethod
 }
 
 function getFundingChoicesMainActivationMethods(input, root, preferredMethod = '') {
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  const wrapper =
+    safeClosest(input, '.fc-preference-slider')
+  const slider =
+    wrapper && root?.contains?.(wrapper)
+      ? safeQuerySelectorAll(wrapper, '.fc-slider-el')[0] || null
+      : null
   const methods = [
     {
       name: 'input_pointer_click',
       run: () => dispatchFundingChoicesPreferenceToggleClick(input, root),
+    },
+    {
+      name: 'label_pointer_click',
+      run: () => dispatchFundingChoicesPreferenceToggleClick(label, root),
+    },
+    {
+      name: 'wrapper_pointer_click',
+      run: () => dispatchFundingChoicesPreferenceToggleClick(wrapper, root),
+    },
+    {
+      name: 'slider_pointer_click',
+      run: () => dispatchFundingChoicesPreferenceToggleClick(slider, root),
     },
     {
       name: 'keyboard_space',
@@ -10356,7 +10376,9 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount: 0,
-    preferenceToggleActions: [],
+    preferenceToggleActions:
+      lastFundingChoicesPreferenceToggleActions
+        .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS),
     controls,
   }
 
@@ -17827,6 +17849,12 @@ function scanPage() {
     cleanupBannerSuppressions()
 
     if (attemptVisibleFundingChoicesManageVendorsNormalFlow(decisionTrace)) {
+      if (
+        lastDiagnosticDecisionTrace &&
+        Array.isArray(lastDiagnosticDecisionTrace.steps)
+      ) {
+        decisionTrace.steps = lastDiagnosticDecisionTrace.steps.slice()
+      }
       updateLastDiagnosticDecisionTrace(decisionTrace)
       return
     }
