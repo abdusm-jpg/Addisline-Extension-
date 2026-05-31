@@ -12471,6 +12471,19 @@ function logCMPBannerClassifications(candidates) {
   }
 }
 
+/*
+ * CMP strategy router, current behavior preserved:
+ * A. Direct reject: click a visible safe reject/no-consent control when found.
+ * B. Manage options: open settings, disable visible optional consent or
+ *    legitimate-interest toggles, then save/confirm only when safe.
+ * C. Funding Choices main: for Gestionar opciones plus Consentir, open
+ *    Gestionar opciones and disable main FC toggles; never click Consentir.
+ * D. Funding Choices provider: intentionally disabled. Future work can open
+ *    Preferencies de proveidors after main success and handle provider toggles
+ *    in bounded phases.
+ * E. Unsafe accept-only: if only positive consent is available, do nothing and
+ *    keep the safe skip path.
+ */
 function findDirectSafeRejectControl(decisionTrace = null) {
   if (!shouldRunOnThisSite()) {
     addDiagnosticDecisionStep(decisionTrace, {
