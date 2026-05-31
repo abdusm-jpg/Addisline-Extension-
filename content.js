@@ -201,6 +201,7 @@ const FUNDING_CHOICES_PANEL_DELAY_MS = 500
 const FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS = 350
 const FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS = 300
 const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
+const MAX_FUNDING_CHOICES_MAIN_INPUT_CLICKS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT = 30
 const MAX_FUNDING_CHOICES_PROVIDER_ACTIVE_CLICKS = 10
@@ -9181,7 +9182,19 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     elapsedMs: Date.now() - startedAt,
   })
 
-  for (const input of activeInputs.slice(0, maxClicks)) {
+  const effectiveMaxClicks =
+    scope === 'provider'
+      ? maxClicks
+      : Math.min(
+          maxClicks,
+          Math.max(
+            0,
+            MAX_FUNDING_CHOICES_MAIN_INPUT_CLICKS -
+              lastFundingChoicesMainClickedCount
+          )
+        )
+
+  for (const input of activeInputs.slice(0, effectiveMaxClicks)) {
     const actionDiagnostic =
       actionDiagnostics.get(input) ||
       getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
@@ -9263,7 +9276,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       }
     } else {
       const clickTargets =
-        getFundingChoicesPreferenceClickTargets(input, root)
+        lastFundingChoicesMainToggleMethod === 'input'
+          ? [{ element: input, type: 'input' }]
+          : getFundingChoicesPreferenceClickTargets(input, root)
 
       if (clickTargets.length === 0) {
         actionDiagnostic.skippedReason = 'click_target_not_found'
