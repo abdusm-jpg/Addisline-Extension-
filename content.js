@@ -9210,44 +9210,45 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         }
       }
     } else {
-      const mainMethods =
-        getFundingChoicesMainActivationMethods(
-          input,
-          root,
-          lastFundingChoicesMainToggleMethod
-        )
+      const clickTargets =
+        getFundingChoicesPreferenceClickTargets(input, root)
 
-      for (const method of mainMethods) {
-        const currentBefore =
-          getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
+      if (clickTargets.length === 0) {
+        actionDiagnostic.skippedReason = 'click_target_not_found'
+        continue
+      }
 
-        if (getFundingChoicesPreferenceToggleState(currentBefore) !== 'enabled') {
+      for (const { element, type } of clickTargets) {
+        if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
           break
         }
 
-        if (!method.run()) {
+        if (!dispatchFundingChoicesPreferenceToggleClick(element, root)) {
           continue
         }
 
         dispatchedForInput = true
         actionDiagnostic.clickTarget =
           actionDiagnostic.clickTarget
-            ? `${actionDiagnostic.clickTarget},${method.name}`
-            : method.name
+            ? `${actionDiagnostic.clickTarget},${type}`
+            : type
         actionDiagnostic.clickDispatched = true
         actionDiagnostic.clicked = true
+        actionDiagnostic.ariaPressedAfter =
+          String(
+            (findFundingChoicesPreferenceInputByKey(root, sliderKey) || input)
+              ?.getAttribute?.('aria-pressed') || ''
+          ).slice(0, 20)
+        actionDiagnostic.checkedAfter =
+          Boolean((findFundingChoicesPreferenceInputByKey(root, sliderKey) || input)?.checked)
 
         const currentAfter =
           getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
-        actionDiagnostic.ariaPressedAfter =
-          String(currentAfter?.getAttribute?.('aria-pressed') || '').slice(0, 20)
-        actionDiagnostic.checkedAfter =
-          Boolean(currentAfter?.checked)
 
         if (getFundingChoicesPreferenceToggleState(currentAfter) !== 'enabled') {
           disabledCount += 1
           lastFundingChoicesMainClickedCount += 1
-          lastFundingChoicesMainToggleMethod = method.name
+          lastFundingChoicesMainToggleMethod = type
           if (sliderKey) {
             lastFundingChoicesClickedSliderKeys.push(sliderKey)
           }
