@@ -200,6 +200,8 @@ const FUNDING_CHOICES_HELPER_BUDGET_MS = 800
 const FUNDING_CHOICES_PANEL_DELAY_MS = 500
 const FUNDING_CHOICES_PROVIDER_PANEL_DELAY_MS = 350
 const FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS = 300
+const FUNDING_CHOICES_MAIN_TOGGLE_BUDGET_MS = 500
+const MAX_FUNDING_CHOICES_MAIN_TOGGLE_DISCOVERY_INPUTS = 3
 const MAX_FUNDING_CHOICES_TOGGLE_CLICKS = 10
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT = 30
@@ -8735,6 +8737,34 @@ function dispatchFundingChoicesPreferenceToggleClick(element, root) {
   }
 }
 
+function dispatchFundingChoicesPreferenceElementClick(element, root) {
+  if (
+    !shouldRunOnThisSite() ||
+    !element ||
+    !root?.contains?.(element) ||
+    !canUsePageActionBudget('fundingChoicesPreferenceElementClick')
+  ) {
+    return false
+  }
+
+  try {
+    element.scrollIntoView?.({
+      block: 'center',
+      inline: 'nearest',
+    })
+  } catch {
+    // Best-effort alignment before clicking the FC owner element.
+  }
+
+  try {
+    element.click()
+    return true
+  } catch (error) {
+    log('Funding Choices element click failed:', error)
+    return false
+  }
+}
+
 function dispatchFundingChoicesKeyboardToggle(input, root, key) {
   if (
     !shouldRunOnThisSite() ||
@@ -8784,6 +8814,49 @@ function dispatchFundingChoicesKeyboardToggle(input, root, key) {
     log('Funding Choices keyboard toggle failed:', error)
     return false
   }
+}
+
+function isFundingChoicesClickableAncestor(element, root) {
+  if (!element || !root?.contains?.(element) || !isVisible(element)) {
+    return false
+  }
+
+  const role =
+    normalizeMatchText(element.getAttribute?.('role') || '')
+  const style =
+    safeGetComputedStyle(element)
+
+  return (
+    safeMatches(element, 'button, a, label, [onclick], [tabindex]') ||
+    role === 'button' ||
+    role === 'switch' ||
+    role === 'checkbox' ||
+    style?.cursor === 'pointer'
+  )
+}
+
+function getFundingChoicesMainToggleClickableAncestor(input, root) {
+  if (!input || !root?.contains?.(input)) return null
+
+  let current =
+    input.parentElement
+  let depth = 0
+
+  while (
+    current &&
+    current !== root &&
+    root.contains(current) &&
+    depth < 8
+  ) {
+    if (isFundingChoicesClickableAncestor(current, root)) {
+      return current
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return null
 }
 
 function getFundingChoicesProviderActivationMethods(input, root, preferredMethod = '') {
@@ -8837,6 +8910,8 @@ function getFundingChoicesProviderActivationMethods(input, root, preferredMethod
 }
 
 function getFundingChoicesMainActivationMethods(input, root, preferredMethod = '') {
+  const clickableAncestor =
+    getFundingChoicesMainToggleClickableAncestor(input, root)
   const label =
     safeClosest(input, 'label.fc-preference-slider-container')
   const wrapper =
@@ -8846,6 +8921,14 @@ function getFundingChoicesMainActivationMethods(input, root, preferredMethod = '
       ? safeQuerySelectorAll(wrapper, '.fc-slider-el')[0] || null
       : null
   const methods = [
+    {
+      name: 'ancestor_click',
+      run: () => dispatchFundingChoicesPreferenceElementClick(clickableAncestor, root),
+    },
+    {
+      name: 'ancestor_pointer_click',
+      run: () => dispatchFundingChoicesPreferenceToggleClick(clickableAncestor, root),
+    },
     {
       name: 'input_pointer_click',
       run: () => dispatchFundingChoicesPreferenceToggleClick(input, root),
@@ -9129,7 +9212,34 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     elapsedMs: Date.now() - startedAt,
   })
 
-  for (const input of activeInputs.slice(0, maxClicks)) {
+  const attemptBudgetMs =
+    scope === 'provider'
+      ? FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+      : FUNDING_CHOICES_MAIN_TOGGLE_BUDGET_MS
+  let mainDiscoveryInputCount = 0
+
+  const attemptedInputs =
+    scope === 'provider'
+      ? activeInputs.slice(0, maxClicks)
+      : activeInputs
+
+  for (const input of attemptedInputs) {
+    if (hasElapsedBudget(startedAt, attemptBudgetMs)) {
+      break
+    }
+
+    if (
+      scope !== 'provider' &&
+      !lastFundingChoicesMainToggleMethod &&
+      mainDiscoveryInputCount >= MAX_FUNDING_CHOICES_MAIN_TOGGLE_DISCOVERY_INPUTS
+    ) {
+      break
+    }
+
+    if (scope !== 'provider' && !lastFundingChoicesMainToggleMethod) {
+      mainDiscoveryInputCount += 1
+    }
+
     const actionDiagnostic =
       actionDiagnostics.get(input) ||
       getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
@@ -9173,6 +9283,10 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         )
 
       for (const method of providerMethods) {
+        if (hasElapsedBudget(startedAt, attemptBudgetMs)) {
+          break
+        }
+
         const currentBefore =
           getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
 
@@ -9218,8 +9332,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         )
 
       for (const method of mainMethods) {
+        if (hasElapsedBudget(startedAt, attemptBudgetMs)) {
+          break
+        }
+
         const currentBefore =
-          getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
+          input
 
         if (getFundingChoicesPreferenceToggleState(currentBefore) !== 'enabled') {
           break
@@ -9238,7 +9356,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         actionDiagnostic.clicked = true
 
         const currentAfter =
-          getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
+          input
         actionDiagnostic.ariaPressedAfter =
           String(currentAfter?.getAttribute?.('aria-pressed') || '').slice(0, 20)
         actionDiagnostic.checkedAfter =
@@ -9257,7 +9375,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     }
 
     const currentInput =
-      findFundingChoicesPreferenceInputByKey(root, sliderKey) || input
+      scope === 'provider'
+        ? findFundingChoicesPreferenceInputByKey(root, sliderKey) || input
+        : input
     actionDiagnostic.ariaPressedAfter =
       String(currentInput?.getAttribute?.('aria-pressed') || '').slice(0, 20)
     actionDiagnostic.checkedAfter =
@@ -9313,17 +9433,22 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   }
 
   const remainingActive =
-    prioritizeFundingChoicesPreferenceToggleInputs(
-      getFundingChoicesPreferenceToggleInputs(
-        root,
-        Date.now(),
-        FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
-      ),
-      root
-    )
-      .filter((input) =>
-        getFundingChoicesPreferenceToggleState(input) === 'enabled'
-      )
+    scope === 'provider'
+      ? prioritizeFundingChoicesPreferenceToggleInputs(
+          getFundingChoicesPreferenceToggleInputs(
+            root,
+            Date.now(),
+            FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS
+          ),
+          root
+        )
+          .filter((input) =>
+            getFundingChoicesPreferenceToggleState(input) === 'enabled'
+          )
+      : activeInputs.filter((input) =>
+          root.contains(input) &&
+          getFundingChoicesPreferenceToggleState(input) === 'enabled'
+        )
 
   if (scope === 'provider') {
     lastFundingChoicesActiveProviderToggleCount = remainingActive.length
@@ -9333,7 +9458,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
   const incompleteDisable =
     activeInputs.length > disabledCount ||
-    hasElapsedBudget(startedAt, FUNDING_CHOICES_SLIDER_SCAN_BUDGET_MS)
+    hasElapsedBudget(startedAt, attemptBudgetMs)
 
   appendLastDiagnosticDecisionStep({
     strategy: disableTrace,
