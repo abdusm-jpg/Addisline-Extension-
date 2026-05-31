@@ -8494,9 +8494,6 @@ function getVisibleFundingChoicesProviderPreferencesPanel(root = document) {
       .slice(0, MAX_DIRECT_CLICKABLE_DIAGNOSTICS_PER_GROUP * 8)
   const candidates =
     uniqueElements([
-      getVisibleFundingChoicesPanel(),
-      fcRoot,
-      root,
       ...providerSignalElements.map((element) =>
         safeClosest(
           element,
@@ -8504,6 +8501,9 @@ function getVisibleFundingChoicesProviderPreferencesPanel(root = document) {
         )
       ),
       ...providerSignalElements,
+      getVisibleFundingChoicesPanel(),
+      fcRoot,
+      root,
       ...safeQuerySelectorAll(
         document,
         [
@@ -9601,25 +9601,67 @@ function isFundingChoicesProviderToggleOnScreen(input, root) {
   )
 }
 
+const FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS = [
+  'input.gvl-vendor',
+  'input.fc-preference-legitimate-interest.gvl-vendor',
+  'input.fc-preference-consent.gvl-vendor',
+  'label.fc-preference-slider-container input[aria-pressed]',
+  'label.fc-preference-slider-container input[type="checkbox"]',
+  'label.fc-preference-slider-container[class*="vendor" i]',
+  '.fc-preference-slider-container input[aria-pressed]',
+  '.fc-preference-slider-container input[type="checkbox"]',
+  'label.fc-preference-slider-container .fc-preference-slider input[type="checkbox"][role="button"]',
+  '.fc-preference-slider input[type="checkbox"][role="button"]',
+  '.fc-preference-slider input[type="checkbox"]',
+  '.fc-preference-slider [role="button"][aria-pressed]',
+  '.fc-preference-slider [aria-checked]',
+].join(',')
+
+function getFundingChoicesProviderToggleInput(candidate) {
+  if (!candidate) return null
+
+  if (candidate.matches?.('label.fc-preference-slider-container')) {
+    return safeQuerySelectorAll(
+      candidate,
+      'input.gvl-vendor, input[aria-pressed], input[aria-checked], input[type="checkbox"], [role="button"][aria-pressed], [aria-checked]'
+    )[0] || null
+  }
+
+  return candidate
+}
+
+function isFundingChoicesProviderToggleInPanel(input, providerPanel) {
+  if (!input || !providerPanel) return false
+
+  if (providerPanel.contains(input)) return true
+
+  const dialog =
+    safeClosest(
+      input,
+      '.fc-dialog, .fc-data-preferences-dialog, .fc-consent-root, [role="dialog"], [aria-modal="true"]'
+    )
+
+  return Boolean(
+    dialog &&
+      dialog === providerPanel &&
+      isFundingChoicesProviderPreferencesPanel(dialog)
+  )
+}
+
 function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
   if (!root) return []
 
-  const selectors = [
-    'input.fc-preference-legitimate-interest.gvl-vendor',
-    'input.fc-preference-consent.gvl-vendor',
-    'label.fc-preference-slider-container[class*="vendor" i]',
-    '.fc-preference-slider-container input[aria-pressed]',
-    '.fc-preference-slider-container input[type="checkbox"]',
-    'label.fc-preference-slider-container .fc-preference-slider input[type="checkbox"][role="button"]',
-    '.fc-preference-slider input[type="checkbox"][role="button"]',
-    '.fc-preference-slider input[type="checkbox"]',
-    '.fc-preference-slider [role="button"][aria-pressed]',
-    '.fc-preference-slider [aria-checked]',
-  ].join(',')
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  const queryRoot =
+    providerPanel ? document : root
   const inputs = []
   const seen = new Set()
 
-  for (const candidate of safeQuerySelectorAll(root, selectors)) {
+  for (const candidate of safeQuerySelectorAll(
+    queryRoot,
+    FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS
+  )) {
     if (
       inputs.length >= MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT ||
       hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS)
@@ -9628,14 +9670,17 @@ function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
     }
 
     const input =
-      candidate?.matches?.('label.fc-preference-slider-container')
-        ? safeQuerySelectorAll(
-            candidate,
-            'input[aria-pressed], input[aria-checked], input[type="checkbox"], [role="button"][aria-pressed], [aria-checked]'
-          )[0] || null
-        : candidate
+      getFundingChoicesProviderToggleInput(candidate)
 
-    if (!input || !root.contains(input) || seen.has(input)) {
+    if (
+      !input ||
+      seen.has(input) ||
+      (
+        providerPanel
+          ? !isFundingChoicesProviderToggleInPanel(input, providerPanel)
+          : !root.contains(input)
+      )
+    ) {
       continue
     }
 
