@@ -9825,6 +9825,53 @@ function isFundingChoicesProviderInputActiveForPhase1(input) {
   )
 }
 
+function getFundingChoicesProviderPhase1ClickTargets(input, root) {
+  if (!input || !root?.contains?.(input)) return []
+
+  const helperTargets =
+    getFundingChoicesPreferenceClickTargets(input, root)
+  const targetByType =
+    new Map(
+      helperTargets.map((target) => [
+        target.type,
+        target,
+      ])
+    )
+  const wrapper =
+    safeClosest(input, '.fc-preference-slider')
+  const targets = [
+    targetByType.get('label'),
+    targetByType.get('slider'),
+    wrapper && root.contains(wrapper)
+      ? {
+          element: wrapper,
+          type: 'wrapper',
+        }
+      : null,
+    targetByType.get('input') ||
+      {
+        element: input,
+        type: 'input',
+      },
+  ]
+  const seen =
+    new Set()
+
+  return targets
+    .filter((target) => {
+      if (
+        !target?.element ||
+        !root.contains(target.element) ||
+        seen.has(target.element)
+      ) {
+        return false
+      }
+
+      seen.add(target.element)
+      return true
+    })
+}
+
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -9864,14 +9911,34 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       providerPanel.contains(input)
         ? providerPanel
         : document
+    const clickTargets =
+      getFundingChoicesProviderPhase1ClickTargets(input, clickRoot)
 
-    if (!dispatchFundingChoicesPreferenceToggleClick(input, clickRoot)) {
-      continue
-    }
+    for (const { element } of clickTargets) {
+      if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
+        lastFundingChoicesProviderTimeBudgetExceeded = true
+        break
+      }
 
-    if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
-      clickedCount += 1
-      lastFundingChoicesProviderClickedCount += 1
+      if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+        break
+      }
+
+      if (!dispatchFundingChoicesPreferenceToggleClick(element, clickRoot)) {
+        continue
+      }
+
+      if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+        clickedCount += 1
+        lastFundingChoicesProviderClickedCount += 1
+        break
+      }
+
+      if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
+        clickedCount += 1
+        lastFundingChoicesProviderClickedCount += 1
+        break
+      }
     }
   }
 
