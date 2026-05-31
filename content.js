@@ -206,6 +206,8 @@ const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT = 30
 const MAX_FUNDING_CHOICES_PROVIDER_ACTIVE_CLICKS = 10
 const FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS = 500
+const MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS = 9
+const FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS = 300
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 48
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -9648,11 +9650,18 @@ function isFundingChoicesProviderToggleInPanel(input, providerPanel) {
   )
 }
 
-function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
+function getBoundedFundingChoicesProviderToggleInputs(
+  root,
+  startedAt,
+  budgetMs = FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS,
+  useDocumentProviderPanel = true
+) {
   if (!root) return []
 
   const providerPanel =
-    getVisibleFundingChoicesProviderPreferencesPanel(root)
+    useDocumentProviderPanel
+      ? getVisibleFundingChoicesProviderPreferencesPanel(root)
+      : null
   const queryRoot =
     providerPanel ? document : root
   const inputs = []
@@ -9664,7 +9673,7 @@ function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
   )) {
     if (
       inputs.length >= MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT ||
-      hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS)
+      hasElapsedBudget(startedAt, budgetMs)
     ) {
       break
     }
@@ -9727,6 +9736,83 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
 
   return true
+}
+
+function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (!providerPanel) return false
+
+  const startedAt =
+    Date.now()
+  const visibleInputs =
+    getBoundedFundingChoicesProviderToggleInputs(
+      providerPanel,
+      startedAt,
+      FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+      false
+    )
+      .filter((input) =>
+        isFundingChoicesProviderToggleVisible(input, providerPanel)
+      )
+  const activeInputs =
+    visibleInputs.filter((input) =>
+      getFundingChoicesPreferenceToggleState(input) === 'enabled'
+    )
+  let clickedCount = 0
+
+  lastFundingChoicesProviderPreferenceOpened = true
+  lastFundingChoicesProviderToggleCount = visibleInputs.length
+  lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+  lastFundingChoicesProviderInspectedCount = visibleInputs.length
+  lastFundingChoicesProviderActiveFoundCount = activeInputs.length
+  lastFundingChoicesProviderTimeBudgetExceeded = false
+
+  for (const input of activeInputs) {
+    if (clickedCount >= MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS) {
+      break
+    }
+
+    if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
+      lastFundingChoicesProviderTimeBudgetExceeded = true
+      break
+    }
+
+    if (
+      getFundingChoicesPreferenceToggleState(input) !== 'enabled' ||
+      !isFundingChoicesProviderToggleVisible(input, providerPanel)
+    ) {
+      continue
+    }
+
+    if (!dispatchFundingChoicesPreferenceToggleClick(input, providerPanel)) {
+      continue
+    }
+
+    const sliderKey =
+      getFundingChoicesSliderKey(input, providerPanel)
+
+    if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+      clickedCount += 1
+      lastFundingChoicesProviderClickedCount += 1
+      lastFundingChoicesProviderToggleMethod =
+        lastFundingChoicesProviderToggleMethod || 'input_pointer_click'
+
+      if (sliderKey) {
+        lastFundingChoicesClickedSliderKeys.push(sliderKey)
+      }
+    }
+  }
+
+  const remainingActiveInputs =
+    visibleInputs.filter((input) =>
+      getFundingChoicesPreferenceToggleState(input) === 'enabled'
+    )
+
+  lastFundingChoicesActiveProviderToggleCount = remainingActiveInputs.length
+
+  return clickedCount > 0
 }
 
 function handleFundingChoicesProviderPanelToggles(root) {
@@ -11646,6 +11732,33 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
 
       collectFundingChoicesControlDiagnostics(providerRoot)
     } else {
+      if (
+        hasFundingChoicesMainToggleStableSuccess(mainToggleResult) &&
+        getVisibleFundingChoicesProviderPreferencesPanel(providerRoot)
+      ) {
+        const providerPhaseClicked =
+          handleFundingChoicesVisibleProviderTogglesPhase1(providerRoot)
+
+        collectFundingChoicesLightweightControlDiagnostics(providerRoot)
+        recordCurrentSiteDiagnostic({
+          status: providerPhaseClicked ? 'partial' : 'skipped',
+          reason: providerPhaseClicked
+            ? 'fc_provider_visible_toggles_phase1_clicked'
+            : 'fc_provider_visible_toggles_phase1_skipped',
+          candidates: [
+            getVisibleFundingChoicesProviderPreferencesPanel(providerRoot) ||
+              providerRoot,
+          ],
+          blockedReason: '',
+          fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+        })
+        rejectFlowCompleted = true
+        stopObserver()
+        setLastAction('settings_opened')
+        setLastError('')
+        return
+      }
+
       collectFundingChoicesLightweightControlDiagnostics(providerRoot)
     }
   } catch (error) {
