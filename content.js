@@ -225,6 +225,8 @@ const MAX_BOTTOM_BANNER_DIAGNOSTICS = 5
 const MAX_BOTTOM_BANNER_CONTROL_TEXTS = 5
 const MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES = 5
 const MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS = 8
+const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML = 600
+const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -4040,6 +4042,9 @@ function recordCurrentSiteDiagnostic({
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsClicked),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
+            ...sanitizeFundingChoicesProviderFirstActiveToggleDiagnostic(
+              fundingChoicesControlDiagnostics
+            ),
             preferenceToggleActions:
               (Array.isArray(fundingChoicesControlDiagnostics.preferenceToggleActions)
                 ? fundingChoicesControlDiagnostics.preferenceToggleActions
@@ -9765,6 +9770,266 @@ function isFundingChoicesProviderToggleVisible(input, root) {
     )
 }
 
+function getFundingChoicesProviderDiagnosticHTML(element) {
+  return String(element?.outerHTML || '')
+    .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML)
+}
+
+function getFundingChoicesProviderDiagnosticDataAttributes(element) {
+  const dataAttributes = {}
+
+  for (const attribute of Array.from(element?.attributes || [])) {
+    if (!String(attribute?.name || '').startsWith('data-')) {
+      continue
+    }
+
+    dataAttributes[attribute.name] =
+      String(attribute.value || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
+  }
+
+  return dataAttributes
+}
+
+function getFundingChoicesProviderDiagnosticClass(element) {
+  return getClassNameText(element)
+    .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
+}
+
+function getFundingChoicesProviderFirstActiveInputAttrs(input) {
+  if (!input) return null
+
+  return {
+    id:
+      String(input.id || input.getAttribute?.('id') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    name:
+      String(input.name || input.getAttribute?.('name') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    class:
+      getFundingChoicesProviderDiagnosticClass(input),
+    role:
+      String(input.getAttribute?.('role') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    type:
+      String(input.type || input.getAttribute?.('type') || '')
+        .slice(0, 40),
+    checked:
+      Boolean(input.checked),
+    ariaPressed:
+      String(input.getAttribute?.('aria-pressed') || '')
+        .slice(0, 40),
+    ariaChecked:
+      String(input.getAttribute?.('aria-checked') || '')
+        .slice(0, 40),
+    disabled:
+      Boolean(input.disabled || input.getAttribute?.('disabled') !== null),
+    tabIndex:
+      Number(input.tabIndex) || 0,
+    dataAttributes:
+      getFundingChoicesProviderDiagnosticDataAttributes(input),
+  }
+}
+
+function getFundingChoicesProviderFirstActiveRowAttrs(row) {
+  if (!row) return null
+
+  return {
+    class:
+      getFundingChoicesProviderDiagnosticClass(row),
+    role:
+      String(row.getAttribute?.('role') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    dataAttributes:
+      getFundingChoicesProviderDiagnosticDataAttributes(row),
+  }
+}
+
+function getFundingChoicesProviderFirstActiveRow(input, label, slider) {
+  const rowSelector = [
+    '[data-vendor-id]',
+    '[data-purpose-id]',
+    '[class*="vendor" i]',
+    '[class*="provider" i]',
+    '[class*="proveidor" i]',
+    '[class*="proveedor" i]',
+    '[class*="gvl" i]',
+    '.fc-preference-row',
+    '.fc-preference-container',
+    '.fc-preference-item',
+    '[role="listitem"]',
+    'li',
+    'tr',
+  ].join(',')
+  let current =
+    label?.parentElement ||
+    slider?.parentElement ||
+    input?.parentElement ||
+    null
+
+  while (current && current !== document.documentElement) {
+    if (
+      current !== input &&
+      current !== label &&
+      current !== slider &&
+      safeMatches(current, rowSelector)
+    ) {
+      return current
+    }
+
+    current = current.parentElement
+  }
+
+  return label?.parentElement || slider?.parentElement || input?.parentElement || null
+}
+
+function getFundingChoicesProviderFirstActiveToggleDiagnostic(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (!providerPanel) return null
+
+  const startedAt =
+    Date.now()
+  const providerInputs =
+    getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
+  const input =
+    providerInputs.find((candidate) =>
+      getFundingChoicesPreferenceToggleState(candidate) === 'enabled'
+    ) || null
+
+  if (!input) return null
+
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  const slider =
+    safeClosest(input, '.fc-preference-slider')
+  const sliderEl =
+    (
+      slider &&
+      safeQuerySelectorAll(slider, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    (
+      label &&
+      safeQuerySelectorAll(label, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    null
+  const row =
+    getFundingChoicesProviderFirstActiveRow(input, label, slider)
+
+  return {
+    providerFirstActiveInputHTML:
+      getFundingChoicesProviderDiagnosticHTML(input),
+    providerFirstActiveLabelHTML:
+      getFundingChoicesProviderDiagnosticHTML(label),
+    providerFirstActiveSliderHTML:
+      getFundingChoicesProviderDiagnosticHTML(slider),
+    providerFirstActiveSliderElHTML:
+      getFundingChoicesProviderDiagnosticHTML(sliderEl),
+    providerFirstActiveRowHTML:
+      getFundingChoicesProviderDiagnosticHTML(row),
+    providerFirstActiveInputAttrs:
+      getFundingChoicesProviderFirstActiveInputAttrs(input),
+    providerFirstActiveRowAttrs:
+      getFundingChoicesProviderFirstActiveRowAttrs(row),
+  }
+}
+
+function sanitizeFundingChoicesProviderDiagnosticDataAttributes(dataAttributes) {
+  if (!dataAttributes || typeof dataAttributes !== 'object') return {}
+
+  return Object.fromEntries(
+    Object.entries(dataAttributes)
+      .filter(([key]) =>
+        String(key || '').startsWith('data-')
+      )
+      .slice(0, 12)
+      .map(([key, value]) => [
+        String(key || '').slice(0, 80),
+        String(value || '')
+          .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+      ])
+  )
+}
+
+function sanitizeFundingChoicesProviderFirstActiveInputAttrs(attrs) {
+  if (!attrs || typeof attrs !== 'object') return null
+
+  return {
+    id:
+      String(attrs.id || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    name:
+      String(attrs.name || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    class:
+      String(attrs.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    role:
+      String(attrs.role || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    type:
+      String(attrs.type || '').slice(0, 40),
+    checked:
+      Boolean(attrs.checked),
+    ariaPressed:
+      String(attrs.ariaPressed || '').slice(0, 40),
+    ariaChecked:
+      String(attrs.ariaChecked || '').slice(0, 40),
+    disabled:
+      Boolean(attrs.disabled),
+    tabIndex:
+      Number(attrs.tabIndex) || 0,
+    dataAttributes:
+      sanitizeFundingChoicesProviderDiagnosticDataAttributes(attrs.dataAttributes),
+  }
+}
+
+function sanitizeFundingChoicesProviderFirstActiveRowAttrs(attrs) {
+  if (!attrs || typeof attrs !== 'object') return null
+
+  return {
+    class:
+      String(attrs.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    role:
+      String(attrs.role || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    dataAttributes:
+      sanitizeFundingChoicesProviderDiagnosticDataAttributes(attrs.dataAttributes),
+  }
+}
+
+function sanitizeFundingChoicesProviderFirstActiveToggleDiagnostic(summary) {
+  if (!summary || typeof summary !== 'object') return {}
+
+  return {
+    providerFirstActiveInputHTML:
+      String(summary.providerFirstActiveInputHTML || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML),
+    providerFirstActiveLabelHTML:
+      String(summary.providerFirstActiveLabelHTML || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML),
+    providerFirstActiveSliderHTML:
+      String(summary.providerFirstActiveSliderHTML || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML),
+    providerFirstActiveSliderElHTML:
+      String(summary.providerFirstActiveSliderElHTML || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML),
+    providerFirstActiveRowHTML:
+      String(summary.providerFirstActiveRowHTML || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML),
+    providerFirstActiveInputAttrs:
+      sanitizeFundingChoicesProviderFirstActiveInputAttrs(
+        summary.providerFirstActiveInputAttrs
+      ),
+    providerFirstActiveRowAttrs:
+      sanitizeFundingChoicesProviderFirstActiveRowAttrs(
+        summary.providerFirstActiveRowAttrs
+      ),
+  }
+}
+
 function refreshFundingChoicesProviderPanelDiagnostics(root) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -10842,6 +11107,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       .map((control) =>
         getFundingChoicesControlDiagnostic(control, root)
       )
+  const providerFirstActiveToggleDiagnostic =
+    getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -10886,6 +11153,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
+    ...(providerFirstActiveToggleDiagnostic || {}),
     preferenceToggleActions,
     controls,
   }
@@ -10963,6 +11231,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       )
       .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
       .map(getFundingChoicesLightweightControlDiagnostic)
+  const providerFirstActiveToggleDiagnostic =
+    getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -11007,6 +11277,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount: 0,
+    ...(providerFirstActiveToggleDiagnostic || {}),
     preferenceToggleActions:
       lastFundingChoicesPreferenceToggleActions
         .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS),

@@ -2268,6 +2268,29 @@ function formatDiagnosticVisibility(visibility) {
   ].join(', ')
 }
 
+function formatDiagnosticDataAttributes(dataAttributes) {
+  if (!dataAttributes || typeof dataAttributes !== 'object') {
+    return 'none'
+  }
+
+  const entries =
+    Object.entries(dataAttributes)
+      .filter(([key]) =>
+        String(key || '').startsWith('data-')
+      )
+      .slice(0, 8)
+
+  if (entries.length === 0) {
+    return 'none'
+  }
+
+  return entries
+    .map(([key, value]) =>
+      `${String(key || '').slice(0, 50)}:${String(value || '').slice(0, 80)}`
+    )
+    .join('|')
+}
+
 function formatCurrentSiteVerificationDiagnostics(summary) {
   if (!summary || typeof summary !== 'object') {
     return 'Sin datos'
@@ -2419,6 +2442,58 @@ function formatFundingChoicesControls(summary) {
       `rect:${Math.max(0, Number(element.rectWidth) || 0)}x${Math.max(0, Number(element.rectHeight) || 0)}`,
       `text:${String(element.text || 'none').slice(0, 80)}`,
     ].join(', '))
+  }
+
+  if (
+    summary.providerFirstActiveInputHTML ||
+    summary.providerFirstActiveLabelHTML ||
+    summary.providerFirstActiveSliderHTML ||
+    summary.providerFirstActiveRowHTML
+  ) {
+    const inputAttrs =
+      summary.providerFirstActiveInputAttrs &&
+      typeof summary.providerFirstActiveInputAttrs === 'object'
+        ? summary.providerFirstActiveInputAttrs
+        : null
+    const rowAttrs =
+      summary.providerFirstActiveRowAttrs &&
+      typeof summary.providerFirstActiveRowAttrs === 'object'
+        ? summary.providerFirstActiveRowAttrs
+        : null
+
+    lines.push('providerFirstActiveToggle:')
+
+    if (inputAttrs) {
+      lines.push([
+        'inputAttrs:',
+        `id:${String(inputAttrs.id || 'none').slice(0, 80)}`,
+        `name:${String(inputAttrs.name || 'none').slice(0, 80)}`,
+        `class:${String(inputAttrs.class || 'none').slice(0, 100)}`,
+        `role:${String(inputAttrs.role || 'none').slice(0, 40)}`,
+        `type:${String(inputAttrs.type || 'none').slice(0, 30)}`,
+        `checked:${Boolean(inputAttrs.checked)}`,
+        `ariaPressed:${String(inputAttrs.ariaPressed || 'none').slice(0, 30)}`,
+        `ariaChecked:${String(inputAttrs.ariaChecked || 'none').slice(0, 30)}`,
+        `disabled:${Boolean(inputAttrs.disabled)}`,
+        `tabIndex:${Number(inputAttrs.tabIndex) || 0}`,
+        `data:${formatDiagnosticDataAttributes(inputAttrs.dataAttributes)}`,
+      ].join(', '))
+    }
+
+    if (rowAttrs) {
+      lines.push([
+        'rowAttrs:',
+        `class:${String(rowAttrs.class || 'none').slice(0, 100)}`,
+        `role:${String(rowAttrs.role || 'none').slice(0, 40)}`,
+        `data:${formatDiagnosticDataAttributes(rowAttrs.dataAttributes)}`,
+      ].join(', '))
+    }
+
+    lines.push(`inputHTML: ${String(summary.providerFirstActiveInputHTML || 'none').slice(0, 260)}`)
+    lines.push(`labelHTML: ${String(summary.providerFirstActiveLabelHTML || 'none').slice(0, 260)}`)
+    lines.push(`sliderHTML: ${String(summary.providerFirstActiveSliderHTML || 'none').slice(0, 260)}`)
+    lines.push(`sliderElHTML: ${String(summary.providerFirstActiveSliderElHTML || 'none').slice(0, 260)}`)
+    lines.push(`rowHTML: ${String(summary.providerFirstActiveRowHTML || 'none').slice(0, 260)}`)
   }
 
   if (controls.length === 0) {
