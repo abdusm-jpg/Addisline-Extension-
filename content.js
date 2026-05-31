@@ -209,6 +209,7 @@ const MAX_FUNDING_CHOICES_PROVIDER_ACTIVE_CLICKS = 10
 const FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS = 500
 const MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS = 9
 const FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS = 300
+const FUNDING_CHOICES_PROVIDER_PHASE1_RETRY_DELAY_MS = 300
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 48
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -9751,8 +9752,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     getBoundedFundingChoicesProviderToggleInputs(
       providerPanel,
       startedAt,
-      FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
-      false
+      FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS
     )
       .filter((input) =>
         isFundingChoicesProviderToggleVisible(input, providerPanel)
@@ -9838,6 +9838,43 @@ function completeFundingChoicesProviderPhase1Attempt(root, providerPhaseClicked)
   setLastError('')
 }
 
+function tryFundingChoicesProviderPhase1WhenReady(
+  root,
+  retryIfEmpty = true
+) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (!providerPanel) return false
+
+  refreshFundingChoicesProviderPanelDiagnostics(providerPanel)
+
+  if (lastFundingChoicesProviderToggleCount === 0 && retryIfEmpty) {
+    setTimeout(() => {
+      if (!shouldRunOnThisSite()) return
+
+      if (!tryFundingChoicesProviderPhase1WhenReady(root, false)) {
+        const fallbackRoot =
+          getFundingChoicesRoot(root) || root
+
+        collectFundingChoicesLightweightControlDiagnostics(fallbackRoot)
+        finalizeFundingChoicesMainToggleStableSuccess(fallbackRoot)
+      }
+    }, FUNDING_CHOICES_PROVIDER_PHASE1_RETRY_DELAY_MS)
+
+    return true
+  }
+
+  completeFundingChoicesProviderPhase1Attempt(
+    providerPanel,
+    lastFundingChoicesActiveProviderToggleCount > 0
+      ? handleFundingChoicesVisibleProviderTogglesPhase1(providerPanel)
+      : false
+  )
+
+  return true
+}
+
 function scheduleFundingChoicesProviderPhase1(root, mainToggleResult = null) {
   if (
     fundingChoicesProviderPhase1Scheduled ||
@@ -9854,11 +9891,10 @@ function scheduleFundingChoicesProviderPhase1(root, mainToggleResult = null) {
     const providerPanel =
       getVisibleFundingChoicesProviderPreferencesPanel(root)
 
-    if (providerPanel) {
-      completeFundingChoicesProviderPhase1Attempt(
-        providerPanel,
-        handleFundingChoicesVisibleProviderTogglesPhase1(providerPanel)
-      )
+    if (
+      providerPanel &&
+      tryFundingChoicesProviderPhase1WhenReady(providerPanel)
+    ) {
       return
     }
 
@@ -11795,10 +11831,7 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
         hasFundingChoicesMainToggleStableSuccess(mainToggleResult) &&
         getVisibleFundingChoicesProviderPreferencesPanel(providerRoot)
       ) {
-        completeFundingChoicesProviderPhase1Attempt(
-          providerRoot,
-          handleFundingChoicesVisibleProviderTogglesPhase1(providerRoot)
-        )
+        tryFundingChoicesProviderPhase1WhenReady(providerRoot)
         return
       }
 
