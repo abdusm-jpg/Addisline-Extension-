@@ -9605,6 +9605,11 @@ function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
   if (!root) return []
 
   const selectors = [
+    'input.fc-preference-legitimate-interest.gvl-vendor',
+    'input.fc-preference-consent.gvl-vendor',
+    'label.fc-preference-slider-container[class*="vendor" i]',
+    '.fc-preference-slider-container input[aria-pressed]',
+    '.fc-preference-slider-container input[type="checkbox"]',
     'label.fc-preference-slider-container .fc-preference-slider input[type="checkbox"][role="button"]',
     '.fc-preference-slider input[type="checkbox"][role="button"]',
     '.fc-preference-slider input[type="checkbox"]',
@@ -9614,13 +9619,21 @@ function getBoundedFundingChoicesProviderToggleInputs(root, startedAt) {
   const inputs = []
   const seen = new Set()
 
-  for (const input of safeQuerySelectorAll(root, selectors)) {
+  for (const candidate of safeQuerySelectorAll(root, selectors)) {
     if (
       inputs.length >= MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT ||
       hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS)
     ) {
       break
     }
+
+    const input =
+      candidate?.matches?.('label.fc-preference-slider-container')
+        ? safeQuerySelectorAll(
+            candidate,
+            'input[aria-pressed], input[aria-checked], input[type="checkbox"], [role="button"][aria-pressed], [aria-checked]'
+          )[0] || null
+        : candidate
 
     if (!input || !root.contains(input) || seen.has(input)) {
       continue
