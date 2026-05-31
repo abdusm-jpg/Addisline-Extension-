@@ -9107,6 +9107,8 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   }
 
   let disabledCount = 0
+  const mainClickedKeys =
+    new Set()
 
   if (scope !== 'provider') {
     appendLastDiagnosticDecisionStep({
@@ -9234,6 +9236,15 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
             : type
         actionDiagnostic.clickDispatched = true
         actionDiagnostic.clicked = true
+        lastFundingChoicesMainClickedCount += 1
+        lastFundingChoicesMainToggleMethod =
+          lastFundingChoicesMainToggleMethod || type
+        if (sliderKey) {
+          mainClickedKeys.add(sliderKey)
+          if (!lastFundingChoicesClickedSliderKeys.includes(sliderKey)) {
+            lastFundingChoicesClickedSliderKeys.push(sliderKey)
+          }
+        }
         actionDiagnostic.ariaPressedAfter =
           String(
             (findFundingChoicesPreferenceInputByKey(root, sliderKey) || input)
@@ -9247,23 +9258,26 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
         if (getFundingChoicesPreferenceToggleState(currentAfter) !== 'enabled') {
           disabledCount += 1
-          lastFundingChoicesMainClickedCount += 1
-          lastFundingChoicesMainToggleMethod = type
-          if (sliderKey) {
-            lastFundingChoicesClickedSliderKeys.push(sliderKey)
-          }
           break
         }
       }
     }
 
+    const refreshedInput =
+      findFundingChoicesPreferenceInputByKey(root, sliderKey)
     const currentInput =
-      findFundingChoicesPreferenceInputByKey(root, sliderKey) || input
+      refreshedInput || input
+    const clickedInputRemoved =
+      scope !== 'provider' &&
+      dispatchedForInput &&
+      sliderKey &&
+      !refreshedInput
     actionDiagnostic.ariaPressedAfter =
       String(currentInput?.getAttribute?.('aria-pressed') || '').slice(0, 20)
     actionDiagnostic.checkedAfter =
       Boolean(currentInput?.checked)
     actionDiagnostic.activeAfter =
+      !clickedInputRemoved &&
       getFundingChoicesPreferenceToggleState(currentInput) === 'enabled'
     actionDiagnostic.stillActive =
       actionDiagnostic.activeAfter
@@ -9325,6 +9339,24 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       .filter((input) =>
         getFundingChoicesPreferenceToggleState(input) === 'enabled'
       )
+  const remainingActiveKeys =
+    new Set(
+      remainingActive
+        .map((input) =>
+          getFundingChoicesSliderKey(input, root)
+        )
+        .filter(Boolean)
+    )
+  const clickedInactiveCount =
+    scope === 'provider'
+      ? 0
+      : Array.from(mainClickedKeys)
+          .filter((key) => !remainingActiveKeys.has(key))
+          .length
+
+  if (scope !== 'provider' && clickedInactiveCount > disabledCount) {
+    disabledCount = clickedInactiveCount
+  }
 
   if (scope === 'provider') {
     lastFundingChoicesActiveProviderToggleCount = remainingActive.length
