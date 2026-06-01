@@ -408,7 +408,7 @@ const DIAGNOSTIC_COPY_SECTION_LIMIT =
   1800
 
 const DIAGNOSTIC_COPY_TOTAL_LIMIT =
-  16000
+  120000
 
 let accountPanelExpanded =
   false
@@ -1078,6 +1078,40 @@ async function requestFundingChoicesDiagnosticRefresh() {
   }
 }
 
+function waitForDiagnosticCopyDelay(delayMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs)
+  })
+}
+
+async function waitForProviderStateOwnershipProbeForCopy(timeoutMs = 2600) {
+  const startedAt =
+    Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const stored =
+      await chrome.storage.local.get({
+        currentSiteDiagnostic: null,
+      })
+    const probe =
+      stored.currentSiteDiagnostic
+        ?.fundingChoicesControlDiagnostics
+        ?.providerStateOwnership
+
+    if (
+      !probe ||
+      typeof probe !== 'object' ||
+      !probe.running ||
+      probe.ariaProbeCompleted ||
+      probe.completed
+    ) {
+      return
+    }
+
+    await waitForDiagnosticCopyDelay(120)
+  }
+}
+
 async function copyTextToClipboard(text) {
   if (
     navigator.clipboard &&
@@ -1143,6 +1177,7 @@ copyDiagnosticButton.addEventListener(
   async () => {
     try {
       await requestFundingChoicesDiagnosticRefresh()
+      await waitForProviderStateOwnershipProbeForCopy()
       await loadState()
       await copyTextToClipboard(
         buildDiagnosticCopyReport()
@@ -2353,7 +2388,38 @@ function formatProviderStateSnapshot(label, snapshot) {
     `checked:${Boolean(snapshot.checked)}`,
     `ariaPressed:${String(snapshot.ariaPressed || 'none').slice(0, 30)}`,
     `ariaChecked:${String(snapshot.ariaChecked || 'none').slice(0, 30)}`,
+    `activeState:${String(snapshot.activeState || 'none').slice(0, 30)}`,
+    `activeDetected:${Boolean(snapshot.activeDetected)}`,
+    `visualChanged:${Boolean(snapshot.visualChangedFromOriginal)}`,
+    `activeChanged:${Boolean(snapshot.activeDetectionChangedFromOriginal)}`,
   ].join(', ')
+}
+
+function formatProviderAttributeMutationProbe(label, probe) {
+  if (!probe || typeof probe !== 'object') {
+    return `${label}: none`
+  }
+
+  return [
+    [
+      `${label}:`,
+      `mutation:${String(probe.mutation || 'none').slice(0, 100)}`,
+      `restoredAfter500ms:${Boolean(probe.restoredAfter500ms)}`,
+      `visualChangedAfter500ms:${Boolean(probe.visualChangedAfter500ms)}`,
+      `activeDetectionChangedAfter500ms:${Boolean(probe.activeDetectionChangedAfter500ms)}`,
+      `error:${String(probe.error || 'none').slice(0, 120)}`,
+      `restoreError:${String(probe.restoreError || 'none').slice(0, 120)}`,
+    ].join(', '),
+    formatProviderStateSnapshot(`${label}.original`, probe.original),
+    formatProviderStateSnapshot(`${label}.immediate`, probe.immediate),
+    formatProviderStateSnapshot(`${label}.requestAnimationFrame`, probe.raf),
+    formatProviderStateSnapshot(`${label}.after100ms`, probe.after100ms),
+    formatProviderStateSnapshot(`${label}.after500ms`, probe.after500ms),
+    formatProviderStateSnapshot(
+      `${label}.restoredOriginalAfterProbe`,
+      probe.restoredOriginalAfterProbe
+    ),
+  ].join('\n')
 }
 
 function formatProviderStateOwnershipCopySection(diagnostic) {
@@ -2381,6 +2447,7 @@ function formatProviderStateOwnershipCopySection(diagnostic) {
       `mutation:${String(stateOwnership.mutation || 'none').slice(0, 80)}`,
       `running:${Boolean(stateOwnership.running)}`,
       `completed:${Boolean(stateOwnership.completed)}`,
+      `ariaProbeCompleted:${Boolean(stateOwnership.ariaProbeCompleted)}`,
       `originalCheckedAttribute:${String(stateOwnership.originalCheckedAttribute || 'none').slice(0, 40)}`,
       `checkedRestoredAfter500ms:${Boolean(stateOwnership.checkedRestoredAfter500ms)}`,
       `ariaPressedRestoredAfter500ms:${Boolean(stateOwnership.ariaPressedRestoredAfter500ms)}`,
@@ -2396,6 +2463,25 @@ function formatProviderStateOwnershipCopySection(diagnostic) {
       'restoredOriginalAfterProbe',
       stateOwnership.restoredOriginalAfterProbe
     ),
+    formatProviderStateSnapshot(
+      'restoredOriginalAfterAriaProbe',
+      stateOwnership.restoredOriginalAfterAriaProbe
+    ),
+    formatProviderAttributeMutationProbe(
+      'ariaPressedSetFalse',
+      stateOwnership.ariaPressedSetFalse
+    ),
+    formatProviderAttributeMutationProbe(
+      'ariaPressedRemove',
+      stateOwnership.ariaPressedRemove
+    ),
+    formatProviderAttributeMutationProbe(
+      'ariaCheckedSetFalse',
+      stateOwnership.ariaCheckedSetFalse
+    ),
+    `inputOuterHTML:\n${String(stateOwnership.inputOuterHTML || 'none')}`,
+    `labelOuterHTML:\n${String(stateOwnership.labelOuterHTML || 'none')}`,
+    `rowOuterHTML:\n${String(stateOwnership.rowOuterHTML || 'none')}`,
   ].join('\n')
 }
 

@@ -9979,6 +9979,43 @@ function getFundingChoicesProviderFirstActiveRow(input, label, slider) {
 function getFundingChoicesProviderInputStateSnapshot(input) {
   if (!input) return null
 
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  const slider =
+    safeClosest(input, '.fc-preference-slider')
+  const sliderEl =
+    (
+      slider &&
+      safeQuerySelectorAll(slider, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    (
+      label &&
+      safeQuerySelectorAll(label, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    null
+  const row =
+    getFundingChoicesProviderFirstActiveRow(input, label, slider)
+  const activeState =
+    getFundingChoicesPreferenceToggleState(input)
+  const inputVisual =
+    getFundingChoicesProviderElementVisualSnapshot(input)
+  const labelVisual =
+    getFundingChoicesProviderElementVisualSnapshot(label)
+  const sliderVisual =
+    getFundingChoicesProviderElementVisualSnapshot(slider)
+  const sliderElVisual =
+    getFundingChoicesProviderElementVisualSnapshot(sliderEl)
+  const rowVisual =
+    getFundingChoicesProviderElementVisualSnapshot(row)
+  const visualSignature =
+    getFundingChoicesProviderVisualSignature({
+      inputVisual,
+      labelVisual,
+      sliderVisual,
+      sliderElVisual,
+      rowVisual,
+    })
+
   return {
     checked:
       Boolean(input.checked),
@@ -9986,6 +10023,71 @@ function getFundingChoicesProviderInputStateSnapshot(input) {
       String(input.getAttribute?.('aria-pressed') || '').slice(0, 40),
     ariaChecked:
       String(input.getAttribute?.('aria-checked') || '').slice(0, 40),
+    activeState:
+      String(activeState || 'unknown').slice(0, 40),
+    activeDetected:
+      activeState === 'enabled',
+    visualSignature:
+      visualSignature.slice(0, 500),
+    inputVisual,
+    labelVisual,
+    sliderVisual,
+    sliderElVisual,
+    rowVisual,
+  }
+}
+
+function getFundingChoicesProviderElementVisualSnapshot(element) {
+  if (!element) return null
+
+  let style = null
+
+  try {
+    style =
+      window.getComputedStyle(element)
+  } catch {
+    style = null
+  }
+
+  return {
+    tagName:
+      String(element.tagName || '').slice(0, 40),
+    class:
+      getFundingChoicesProviderDiagnosticClass(element),
+    display:
+      String(style?.display || '').slice(0, 40),
+    visibility:
+      String(style?.visibility || '').slice(0, 40),
+    opacity:
+      String(style?.opacity || '').slice(0, 40),
+    backgroundColor:
+      String(style?.backgroundColor || '').slice(0, 80),
+    color:
+      String(style?.color || '').slice(0, 80),
+    transform:
+      String(style?.transform || '').slice(0, 120),
+    left:
+      String(style?.left || '').slice(0, 40),
+    right:
+      String(style?.right || '').slice(0, 40),
+  }
+}
+
+function getFundingChoicesProviderVisualSignature(snapshot) {
+  return JSON.stringify(snapshot || {})
+}
+
+function addFundingChoicesProviderSnapshotComparisons(snapshot, original) {
+  if (!snapshot || !original) return snapshot
+
+  return {
+    ...snapshot,
+    visualChangedFromOriginal:
+      String(snapshot.visualSignature || '') !==
+        String(original.visualSignature || ''),
+    activeDetectionChangedFromOriginal:
+      String(snapshot.activeState || '') !==
+        String(original.activeState || ''),
   }
 }
 
@@ -10006,6 +10108,252 @@ function isFundingChoicesProviderStateRestored(original, sample) {
       sample &&
       Boolean(sample.checked) === Boolean(original.checked)
   )
+}
+
+function getFundingChoicesProviderOriginalProbeValues(input) {
+  return {
+    checked:
+      Boolean(input?.checked),
+    checkedAttribute:
+      input?.getAttribute?.('checked') ?? null,
+    ariaPressedExists:
+      Boolean(input?.hasAttribute?.('aria-pressed')),
+    ariaPressed:
+      input?.getAttribute?.('aria-pressed') ?? null,
+    ariaCheckedExists:
+      Boolean(input?.hasAttribute?.('aria-checked')),
+    ariaChecked:
+      input?.getAttribute?.('aria-checked') ?? null,
+  }
+}
+
+function restoreFundingChoicesProviderAttribute(input, name, existed, value) {
+  if (!input || !name) return
+
+  if (existed) {
+    input.setAttribute(name, String(value ?? ''))
+    return
+  }
+
+  input.removeAttribute(name)
+}
+
+function restoreFundingChoicesProviderOriginalProbeValues(input, originalValues) {
+  if (!input || !originalValues) return
+
+  input.checked =
+    Boolean(originalValues.checked)
+  restoreFundingChoicesProviderAttribute(
+    input,
+    'checked',
+    originalValues.checkedAttribute !== null,
+    originalValues.checkedAttribute
+  )
+  restoreFundingChoicesProviderAttribute(
+    input,
+    'aria-pressed',
+    originalValues.ariaPressedExists,
+    originalValues.ariaPressed
+  )
+  restoreFundingChoicesProviderAttribute(
+    input,
+    'aria-checked',
+    originalValues.ariaCheckedExists,
+    originalValues.ariaChecked
+  )
+}
+
+function waitForFundingChoicesProviderProbeFrame() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve())
+      return
+    }
+
+    setTimeout(resolve, 0)
+  })
+}
+
+function waitForFundingChoicesProviderProbeDelay(delayMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs)
+  })
+}
+
+function getFundingChoicesProviderComparedSnapshot(input, original) {
+  return addFundingChoicesProviderSnapshotComparisons(
+    getFundingChoicesProviderInputStateSnapshot(input),
+    original
+  )
+}
+
+async function runFundingChoicesProviderAttributeMutationProbe({
+  input,
+  diagnostic,
+  key,
+  mutation,
+  applyMutation,
+  restoreMutation,
+  restoredAttribute,
+}) {
+  if (!input?.isConnected) return null
+
+  const original =
+    getFundingChoicesProviderInputStateSnapshot(input)
+  const probe = {
+    mutation,
+    original,
+    immediate: null,
+    raf: null,
+    after100ms: null,
+    after500ms: null,
+    visualChangedAfter500ms: false,
+    activeDetectionChangedAfter500ms: false,
+    restoredAfter500ms: false,
+    restoredOriginalAfterProbe: null,
+  }
+
+  diagnostic[key] = probe
+
+  try {
+    applyMutation()
+    probe.immediate =
+      getFundingChoicesProviderComparedSnapshot(input, original)
+    storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
+
+    await waitForFundingChoicesProviderProbeFrame()
+    if (!input.isConnected) return probe
+    probe.raf =
+      getFundingChoicesProviderComparedSnapshot(input, original)
+    storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
+
+    await waitForFundingChoicesProviderProbeDelay(100)
+    if (!input.isConnected) return probe
+    probe.after100ms =
+      getFundingChoicesProviderComparedSnapshot(input, original)
+    storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
+
+    await waitForFundingChoicesProviderProbeDelay(400)
+    if (!input.isConnected) return probe
+    probe.after500ms =
+      getFundingChoicesProviderComparedSnapshot(input, original)
+    probe.visualChangedAfter500ms =
+      Boolean(probe.after500ms?.visualChangedFromOriginal)
+    probe.activeDetectionChangedAfter500ms =
+      Boolean(probe.after500ms?.activeDetectionChangedFromOriginal)
+
+    if (restoredAttribute) {
+      probe.restoredAfter500ms =
+        String(probe.after500ms?.[restoredAttribute] || '') ===
+          String(original?.[restoredAttribute] || '')
+    }
+  } catch (error) {
+    probe.error =
+      String(error?.message || error || '').slice(0, 120)
+  } finally {
+    try {
+      restoreMutation()
+      if (input.isConnected) {
+        probe.restoredOriginalAfterProbe =
+          getFundingChoicesProviderComparedSnapshot(input, original)
+      }
+    } catch (error) {
+      probe.restoreError =
+        String(error?.message || error || '').slice(0, 120)
+    }
+
+    storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
+  }
+
+  return probe
+}
+
+async function runFundingChoicesProviderAriaStateOwnershipProbe(
+  input,
+  diagnostic,
+  originalValues
+) {
+  if (!input?.isConnected) {
+    diagnostic.running = false
+    diagnostic.completed = true
+    storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
+    return
+  }
+
+  await runFundingChoicesProviderAttributeMutationProbe({
+    input,
+    diagnostic,
+    key: 'ariaPressedSetFalse',
+    mutation: 'setAttribute("aria-pressed","false")',
+    restoredAttribute: 'ariaPressed',
+    applyMutation: () => {
+      input.setAttribute('aria-pressed', 'false')
+    },
+    restoreMutation: () => {
+      restoreFundingChoicesProviderAttribute(
+        input,
+        'aria-pressed',
+        originalValues.ariaPressedExists,
+        originalValues.ariaPressed
+      )
+    },
+  })
+
+  await runFundingChoicesProviderAttributeMutationProbe({
+    input,
+    diagnostic,
+    key: 'ariaPressedRemove',
+    mutation: 'removeAttribute("aria-pressed")',
+    restoredAttribute: 'ariaPressed',
+    applyMutation: () => {
+      input.removeAttribute('aria-pressed')
+    },
+    restoreMutation: () => {
+      restoreFundingChoicesProviderAttribute(
+        input,
+        'aria-pressed',
+        originalValues.ariaPressedExists,
+        originalValues.ariaPressed
+      )
+    },
+  })
+
+  if (originalValues.ariaCheckedExists) {
+    await runFundingChoicesProviderAttributeMutationProbe({
+      input,
+      diagnostic,
+      key: 'ariaCheckedSetFalse',
+      mutation: 'setAttribute("aria-checked","false")',
+      restoredAttribute: 'ariaChecked',
+      applyMutation: () => {
+        input.setAttribute('aria-checked', 'false')
+      },
+      restoreMutation: () => {
+        restoreFundingChoicesProviderAttribute(
+          input,
+          'aria-checked',
+          originalValues.ariaCheckedExists,
+          originalValues.ariaChecked
+        )
+      },
+    })
+  } else {
+    diagnostic.ariaCheckedSetFalse = null
+  }
+
+  try {
+    restoreFundingChoicesProviderOriginalProbeValues(input, originalValues)
+    diagnostic.restoredOriginalAfterAriaProbe =
+      getFundingChoicesProviderInputStateSnapshot(input)
+  } catch (error) {
+    diagnostic.error =
+      String(error?.message || error || '').slice(0, 120)
+  }
+
+  diagnostic.running = false
+  diagnostic.completed = true
+  diagnostic.ariaProbeCompleted = true
+  storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
 }
 
 function storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic) {
@@ -10071,6 +10419,14 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
   fundingChoicesProviderStateOwnershipProbeSignature = signature
   fundingChoicesProviderStateOwnershipProbeRunning = true
 
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  const slider =
+    safeClosest(input, '.fc-preference-slider')
+  const row =
+    getFundingChoicesProviderFirstActiveRow(input, label, slider)
+  const originalValues =
+    getFundingChoicesProviderOriginalProbeValues(input)
   const originalChecked =
     Boolean(input.checked)
   const originalCheckedAttribute =
@@ -10080,6 +10436,13 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
     mutation: 'input.checked=false',
     running: true,
     completed: false,
+    inputOuterHTML:
+      String(input.outerHTML || ''),
+    labelOuterHTML:
+      String(label?.outerHTML || ''),
+    rowOuterHTML:
+      String(row?.outerHTML || ''),
+    originalValues,
     originalCheckedAttribute:
       String(originalCheckedAttribute || '').slice(0, 40),
     original:
@@ -10099,6 +10462,16 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
     ariaCheckedRestoredAfter500ms:
       false,
     restoredOriginalAfterProbe:
+      null,
+    restoredOriginalAfterAriaProbe:
+      null,
+    ariaProbeCompleted:
+      false,
+    ariaPressedSetFalse:
+      null,
+    ariaPressedRemove:
+      null,
+    ariaCheckedSetFalse:
       null,
   }
 
@@ -10165,9 +10538,12 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
           )
 
         input.checked = originalChecked
-        if (originalCheckedAttribute !== null) {
-          input.setAttribute('checked', originalCheckedAttribute)
-        }
+        restoreFundingChoicesProviderAttribute(
+          input,
+          'checked',
+          originalCheckedAttribute !== null,
+          originalCheckedAttribute
+        )
         diagnostic.restoredOriginalAfterProbe =
           getFundingChoicesProviderInputStateSnapshot(input)
       }
@@ -10176,10 +10552,15 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
         String(error?.message || error || '').slice(0, 120)
     }
 
-    diagnostic.running = false
-    diagnostic.completed = true
-    fundingChoicesProviderStateOwnershipProbeRunning = false
     storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
+    runFundingChoicesProviderAriaStateOwnershipProbe(
+      input,
+      diagnostic,
+      originalValues
+    )
+      .finally(() => {
+        fundingChoicesProviderStateOwnershipProbeRunning = false
+      })
   }, 500)
 }
 
@@ -10349,6 +10730,49 @@ function sanitizeFundingChoicesProviderStateSnapshot(snapshot) {
       String(snapshot.ariaPressed || '').slice(0, 40),
     ariaChecked:
       String(snapshot.ariaChecked || '').slice(0, 40),
+    activeState:
+      String(snapshot.activeState || '').slice(0, 40),
+    activeDetected:
+      Boolean(snapshot.activeDetected),
+    visualSignature:
+      String(snapshot.visualSignature || '').slice(0, 500),
+    visualChangedFromOriginal:
+      Boolean(snapshot.visualChangedFromOriginal),
+    activeDetectionChangedFromOriginal:
+      Boolean(snapshot.activeDetectionChangedFromOriginal),
+  }
+}
+
+function sanitizeFundingChoicesProviderAttributeMutationProbe(probe) {
+  if (!probe || typeof probe !== 'object') return null
+
+  return {
+    mutation:
+      String(probe.mutation || '').slice(0, 80),
+    original:
+      sanitizeFundingChoicesProviderStateSnapshot(probe.original),
+    immediate:
+      sanitizeFundingChoicesProviderStateSnapshot(probe.immediate),
+    raf:
+      sanitizeFundingChoicesProviderStateSnapshot(probe.raf),
+    after100ms:
+      sanitizeFundingChoicesProviderStateSnapshot(probe.after100ms),
+    after500ms:
+      sanitizeFundingChoicesProviderStateSnapshot(probe.after500ms),
+    visualChangedAfter500ms:
+      Boolean(probe.visualChangedAfter500ms),
+    activeDetectionChangedAfter500ms:
+      Boolean(probe.activeDetectionChangedAfter500ms),
+    restoredAfter500ms:
+      Boolean(probe.restoredAfter500ms),
+    restoredOriginalAfterProbe:
+      sanitizeFundingChoicesProviderStateSnapshot(
+        probe.restoredOriginalAfterProbe
+      ),
+    error:
+      String(probe.error || '').slice(0, 120),
+    restoreError:
+      String(probe.restoreError || '').slice(0, 120),
   }
 }
 
@@ -10365,6 +10789,30 @@ function sanitizeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic) {
       Boolean(diagnostic.running),
     completed:
       Boolean(diagnostic.completed),
+    inputOuterHTML:
+      String(diagnostic.inputOuterHTML || ''),
+    labelOuterHTML:
+      String(diagnostic.labelOuterHTML || ''),
+    rowOuterHTML:
+      String(diagnostic.rowOuterHTML || ''),
+    originalValues:
+      diagnostic.originalValues &&
+      typeof diagnostic.originalValues === 'object'
+        ? {
+            checked:
+              Boolean(diagnostic.originalValues.checked),
+            checkedAttribute:
+              String(diagnostic.originalValues.checkedAttribute || '').slice(0, 40),
+            ariaPressedExists:
+              Boolean(diagnostic.originalValues.ariaPressedExists),
+            ariaPressed:
+              String(diagnostic.originalValues.ariaPressed || '').slice(0, 40),
+            ariaCheckedExists:
+              Boolean(diagnostic.originalValues.ariaCheckedExists),
+            ariaChecked:
+              String(diagnostic.originalValues.ariaChecked || '').slice(0, 40),
+          }
+        : null,
     originalCheckedAttribute:
       String(diagnostic.originalCheckedAttribute || '').slice(0, 40),
     original:
@@ -10386,6 +10834,24 @@ function sanitizeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic) {
     restoredOriginalAfterProbe:
       sanitizeFundingChoicesProviderStateSnapshot(
         diagnostic.restoredOriginalAfterProbe
+      ),
+    restoredOriginalAfterAriaProbe:
+      sanitizeFundingChoicesProviderStateSnapshot(
+        diagnostic.restoredOriginalAfterAriaProbe
+      ),
+    ariaProbeCompleted:
+      Boolean(diagnostic.ariaProbeCompleted),
+    ariaPressedSetFalse:
+      sanitizeFundingChoicesProviderAttributeMutationProbe(
+        diagnostic.ariaPressedSetFalse
+      ),
+    ariaPressedRemove:
+      sanitizeFundingChoicesProviderAttributeMutationProbe(
+        diagnostic.ariaPressedRemove
+      ),
+    ariaCheckedSetFalse:
+      sanitizeFundingChoicesProviderAttributeMutationProbe(
+        diagnostic.ariaCheckedSetFalse
       ),
     error:
       String(diagnostic.error || '').slice(0, 120),
