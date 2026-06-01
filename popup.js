@@ -2291,6 +2291,62 @@ function formatDiagnosticDataAttributes(dataAttributes) {
     .join('|')
 }
 
+function formatDiagnosticPrefixedAttributes(attributes, prefix) {
+  if (!attributes || typeof attributes !== 'object') {
+    return 'none'
+  }
+
+  const normalizedPrefix =
+    String(prefix || '').toLowerCase()
+  const entries =
+    Object.entries(attributes)
+      .filter(([key]) =>
+        String(key || '').toLowerCase().startsWith(normalizedPrefix)
+      )
+      .slice(0, 8)
+
+  if (entries.length === 0) {
+    return 'none'
+  }
+
+  return entries
+    .map(([key, value]) =>
+      `${String(key || '').slice(0, 50)}:${String(value || '').slice(0, 80)}`
+    )
+    .join('|')
+}
+
+function formatProviderDiagnosticAllAttributes(label, attrs) {
+  if (!attrs || typeof attrs !== 'object') {
+    return `${label}: none`
+  }
+
+  return [
+    `${label}:`,
+    `tag:${String(attrs.tagName || 'none').slice(0, 30)}`,
+    `id:${String(attrs.id || 'none').slice(0, 80)}`,
+    `name:${String(attrs.name || 'none').slice(0, 80)}`,
+    `value:${String(attrs.value || 'none').slice(0, 80)}`,
+    `role:${String(attrs.role || 'none').slice(0, 40)}`,
+    `class:${String(attrs.class || 'none').slice(0, 100)}`,
+    `data:${formatDiagnosticPrefixedAttributes(attrs.dataAttributes, 'data-')}`,
+    `aria:${formatDiagnosticPrefixedAttributes(attrs.ariaAttributes, 'aria-')}`,
+  ].join(', ')
+}
+
+function formatProviderStateSnapshot(label, snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return `${label}: none`
+  }
+
+  return [
+    `${label}:`,
+    `checked:${Boolean(snapshot.checked)}`,
+    `ariaPressed:${String(snapshot.ariaPressed || 'none').slice(0, 30)}`,
+    `ariaChecked:${String(snapshot.ariaChecked || 'none').slice(0, 30)}`,
+  ].join(', ')
+}
+
 function formatCurrentSiteVerificationDiagnostics(summary) {
   if (!summary || typeof summary !== 'object') {
     return 'Sin datos'
@@ -2448,7 +2504,9 @@ function formatFundingChoicesControls(summary) {
     summary.providerFirstActiveInputHTML ||
     summary.providerFirstActiveLabelHTML ||
     summary.providerFirstActiveSliderHTML ||
-    summary.providerFirstActiveRowHTML
+    summary.providerFirstActiveRowHTML ||
+    summary.providerFirstActiveFullRowHTML ||
+    summary.providerStateOwnership
   ) {
     const inputAttrs =
       summary.providerFirstActiveInputAttrs &&
@@ -2459,6 +2517,11 @@ function formatFundingChoicesControls(summary) {
       summary.providerFirstActiveRowAttrs &&
       typeof summary.providerFirstActiveRowAttrs === 'object'
         ? summary.providerFirstActiveRowAttrs
+        : null
+    const stateOwnership =
+      summary.providerStateOwnership &&
+      typeof summary.providerStateOwnership === 'object'
+        ? summary.providerStateOwnership
         : null
 
     lines.push('providerFirstActiveToggle:')
@@ -2489,11 +2552,71 @@ function formatFundingChoicesControls(summary) {
       ].join(', '))
     }
 
+    lines.push(
+      formatProviderDiagnosticAllAttributes(
+        'inputAllAttrs',
+        summary.providerFirstActiveInputAllAttrs
+      )
+    )
+    lines.push(
+      formatProviderDiagnosticAllAttributes(
+        'rowAllAttrs',
+        summary.providerFirstActiveRowAllAttrs
+      )
+    )
+    lines.push(
+      formatProviderDiagnosticAllAttributes(
+        'preferenceContainerAttrs',
+        summary.providerFirstActivePreferenceContainerAttrs
+      )
+    )
+    lines.push(
+      formatProviderDiagnosticAllAttributes(
+        'sliderContainerAttrs',
+        summary.providerFirstActiveSliderContainerAttrs
+      )
+    )
+    lines.push(
+      formatProviderDiagnosticAllAttributes(
+        'sliderAttrs',
+        summary.providerFirstActiveSliderAttrs
+      )
+    )
+
+    if (stateOwnership) {
+      lines.push([
+        'providerStateOwnership:',
+        `signature:${String(stateOwnership.signature || 'none').slice(0, 80)}`,
+        `mutation:${String(stateOwnership.mutation || 'none').slice(0, 40)}`,
+        `running:${Boolean(stateOwnership.running)}`,
+        `completed:${Boolean(stateOwnership.completed)}`,
+        `checkedRestored500:${Boolean(stateOwnership.checkedRestoredAfter500ms)}`,
+        `ariaPressedRestored500:${Boolean(stateOwnership.ariaPressedRestoredAfter500ms)}`,
+        `ariaCheckedRestored500:${Boolean(stateOwnership.ariaCheckedRestoredAfter500ms)}`,
+        `error:${String(stateOwnership.error || 'none').slice(0, 80)}`,
+      ].join(', '))
+      lines.push(formatProviderStateSnapshot('original', stateOwnership.original))
+      lines.push(formatProviderStateSnapshot('immediate', stateOwnership.immediate))
+      lines.push(formatProviderStateSnapshot('raf', stateOwnership.raf))
+      lines.push(formatProviderStateSnapshot('after100ms', stateOwnership.after100ms))
+      lines.push(formatProviderStateSnapshot('after500ms', stateOwnership.after500ms))
+      lines.push(
+        formatProviderStateSnapshot(
+          'restoredOriginalAfterProbe',
+          stateOwnership.restoredOriginalAfterProbe
+        )
+      )
+    }
+
     lines.push(`inputHTML: ${String(summary.providerFirstActiveInputHTML || 'none').slice(0, 260)}`)
     lines.push(`labelHTML: ${String(summary.providerFirstActiveLabelHTML || 'none').slice(0, 260)}`)
     lines.push(`sliderHTML: ${String(summary.providerFirstActiveSliderHTML || 'none').slice(0, 260)}`)
     lines.push(`sliderElHTML: ${String(summary.providerFirstActiveSliderElHTML || 'none').slice(0, 260)}`)
     lines.push(`rowHTML: ${String(summary.providerFirstActiveRowHTML || 'none').slice(0, 260)}`)
+    lines.push(`fullRowHTML: ${String(summary.providerFirstActiveFullRowHTML || 'none').slice(0, 500)}`)
+    lines.push(`preferenceContainerHTML: ${String(summary.providerFirstActivePreferenceContainerHTML || 'none').slice(0, 500)}`)
+    lines.push(`sliderContainerHTML: ${String(summary.providerFirstActiveSliderContainerHTML || 'none').slice(0, 500)}`)
+    lines.push(`sliderFullHTML: ${String(summary.providerFirstActiveSliderFullHTML || 'none').slice(0, 500)}`)
   }
 
   if (controls.length === 0) {
