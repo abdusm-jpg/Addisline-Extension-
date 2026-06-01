@@ -11097,6 +11097,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
     if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
       mutatedCount += 1
+      lastFundingChoicesProviderClickedCount += 1
       lastFundingChoicesProviderToggleMethod = 'aria-pressed'
     }
   }
