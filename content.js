@@ -10195,6 +10195,59 @@ function dispatchFundingChoicesProviderPhase1PointerSequence(element, root) {
   }
 }
 
+function dispatchFundingChoicesProviderPhase1KeyboardSequence(input, root, key) {
+  if (
+    !shouldRunOnThisSite() ||
+    !input ||
+    !root?.contains?.(input) ||
+    !canUsePageActionBudget('fundingChoicesProviderPhase1KeyboardToggle')
+  ) {
+    return false
+  }
+
+  try {
+    const eventView =
+      input.ownerDocument?.defaultView || window
+    const isEnter =
+      key === 'Enter'
+    const keyCode =
+      isEnter ? 13 : 32
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: eventView,
+      key: isEnter ? 'Enter' : ' ',
+      code: isEnter ? 'Enter' : 'Space',
+      keyCode,
+      which: keyCode,
+    }
+
+    if (typeof input.focus === 'function') {
+      input.focus()
+    }
+
+    input.dispatchEvent(
+      new eventView.KeyboardEvent('keydown', eventInit)
+    )
+    input.dispatchEvent(
+      new eventView.KeyboardEvent('keyup', eventInit)
+    )
+
+    return true
+  } catch (error) {
+    log('Funding Choices provider phase 1 keyboard toggle failed:', error)
+    return false
+  }
+}
+
+function didFundingChoicesProviderPhase1DeactivateInput(input) {
+  return (
+    getFundingChoicesPreferenceToggleState(input) !== 'enabled' ||
+    !isFundingChoicesProviderInputActiveForPhase1(input)
+  )
+}
+
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -10234,6 +10287,45 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       providerPanel.contains(input)
         ? providerPanel
         : document
+    let keyboardChangedState = false
+
+    for (const key of [' ', 'Enter']) {
+      if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
+        lastFundingChoicesProviderTimeBudgetExceeded = true
+        break
+      }
+
+      if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
+        break
+      }
+
+      if (!dispatchFundingChoicesProviderPhase1KeyboardSequence(input, clickRoot, key)) {
+        continue
+      }
+
+      if (didFundingChoicesProviderPhase1DeactivateInput(input)) {
+        clickedCount += 1
+        lastFundingChoicesProviderClickedCount += 1
+        keyboardChangedState = true
+        break
+      }
+    }
+
+    if (
+      keyboardChangedState ||
+      clickedCount >= MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS
+    ) {
+      continue
+    }
+
+    if (lastFundingChoicesProviderTimeBudgetExceeded) {
+      break
+    }
+
+    if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
+      continue
+    }
+
     const clickTargets =
       getFundingChoicesProviderPhase1ClickTargets(input, clickRoot)
 
@@ -10251,13 +10343,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         continue
       }
 
-      if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
-        clickedCount += 1
-        lastFundingChoicesProviderClickedCount += 1
-        break
-      }
-
-      if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
+      if (didFundingChoicesProviderPhase1DeactivateInput(input)) {
         clickedCount += 1
         lastFundingChoicesProviderClickedCount += 1
         break
