@@ -395,6 +395,9 @@ let visibleReportCount =
 let latestIssueReports =
   []
 
+let latestCurrentSiteDiagnostic =
+  null
+
 const REPORTS_PAGE_SIZE =
   5
 
@@ -977,6 +980,12 @@ function buildDiagnosticCopyReport() {
       'Verification diagnostics',
       getBoundedElementText(
         currentSiteDiagnosticVerification
+      ),
+    ],
+    [
+      'Provider state ownership probe',
+      formatProviderStateOwnershipCopySection(
+        latestCurrentSiteDiagnostic
       ),
     ],
     [
@@ -2347,6 +2356,49 @@ function formatProviderStateSnapshot(label, snapshot) {
   ].join(', ')
 }
 
+function formatProviderStateOwnershipCopySection(diagnostic) {
+  const summary =
+    diagnostic?.fundingChoicesControlDiagnostics
+
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  const stateOwnership =
+    summary.providerStateOwnership &&
+    typeof summary.providerStateOwnership === 'object'
+      ? summary.providerStateOwnership
+      : null
+
+  if (!stateOwnership) {
+    return 'providerStateOwnership: none'
+  }
+
+  return [
+    [
+      'providerStateOwnership:',
+      `signature:${String(stateOwnership.signature || 'none').slice(0, 120)}`,
+      `mutation:${String(stateOwnership.mutation || 'none').slice(0, 80)}`,
+      `running:${Boolean(stateOwnership.running)}`,
+      `completed:${Boolean(stateOwnership.completed)}`,
+      `originalCheckedAttribute:${String(stateOwnership.originalCheckedAttribute || 'none').slice(0, 40)}`,
+      `checkedRestoredAfter500ms:${Boolean(stateOwnership.checkedRestoredAfter500ms)}`,
+      `ariaPressedRestoredAfter500ms:${Boolean(stateOwnership.ariaPressedRestoredAfter500ms)}`,
+      `ariaCheckedRestoredAfter500ms:${Boolean(stateOwnership.ariaCheckedRestoredAfter500ms)}`,
+      `error:${String(stateOwnership.error || 'none').slice(0, 120)}`,
+    ].join(', '),
+    formatProviderStateSnapshot('original', stateOwnership.original),
+    formatProviderStateSnapshot('immediate', stateOwnership.immediate),
+    formatProviderStateSnapshot('requestAnimationFrame', stateOwnership.raf),
+    formatProviderStateSnapshot('after100ms', stateOwnership.after100ms),
+    formatProviderStateSnapshot('after500ms', stateOwnership.after500ms),
+    formatProviderStateSnapshot(
+      'restoredOriginalAfterProbe',
+      stateOwnership.restoredOriginalAfterProbe
+    ),
+  ].join('\n')
+}
+
 function formatCurrentSiteVerificationDiagnostics(summary) {
   if (!summary || typeof summary !== 'object') {
     return 'Sin datos'
@@ -2725,6 +2777,9 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     diagnosticIsFresh
 
   if (!hasDiagnostic) {
+    latestCurrentSiteDiagnostic =
+      null
+
     currentSiteDiagnosticStatus.innerText =
       'No current diagnostic yet'
     currentSiteDiagnosticState.innerText =
@@ -2763,6 +2818,9 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'Sin datos'
     return
   }
+
+  latestCurrentSiteDiagnostic =
+    diagnostic
 
   const controls =
     Array.isArray(diagnostic.detectedControls)
