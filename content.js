@@ -8482,6 +8482,25 @@ function isFundingChoicesProviderPreferencesPanel(root) {
   ])
 }
 
+function hasFundingChoicesProviderPreferencesVisualText(root) {
+  const text =
+    getText(root).slice(0, 2500)
+
+  return textHasAny(text, [
+    'preferencies de proveidors',
+    'preferencia de proveidors',
+    'preferencias de proveedores',
+    'preferencia de proveedores',
+    'preferencies dels proveidors',
+    'provider preferences',
+    'vendor preferences',
+    'providers',
+    'vendors',
+    'proveidors',
+    'proveedores',
+  ])
+}
+
 function getVisibleFundingChoicesProviderPreferencesPanel(root = document) {
   const fcRoot =
     getFundingChoicesRoot(root) || root || document
@@ -9770,6 +9789,24 @@ function isFundingChoicesProviderToggleVisible(input, root) {
     )
 }
 
+function isFundingChoicesProviderPreferencesVisuallyVerified(root) {
+  if (
+    !root ||
+    !isVisible(root) ||
+    !hasFundingChoicesProviderPreferencesVisualText(root)
+  ) {
+    return false
+  }
+
+  const startedAt =
+    Date.now()
+
+  return getBoundedFundingChoicesProviderToggleInputs(root, startedAt)
+    .some((input) =>
+      isFundingChoicesProviderToggleVisible(input, root)
+    )
+}
+
 function getFundingChoicesProviderDiagnosticHTML(element) {
   return String(element?.outerHTML || '')
     .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML)
@@ -10034,7 +10071,17 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
 
-  if (!providerPanel) return false
+  if (
+    !providerPanel ||
+    !isFundingChoicesProviderPreferencesVisuallyVerified(providerPanel)
+  ) {
+    lastFundingChoicesProviderPreferenceOpened = false
+    lastFundingChoicesProviderToggleCount = 0
+    lastFundingChoicesActiveProviderToggleCount = 0
+    lastFundingChoicesProviderInspectedCount = 0
+    lastFundingChoicesProviderActiveFoundCount = 0
+    return false
+  }
 
   const startedAt =
     Date.now()
@@ -10057,8 +10104,6 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
   lastFundingChoicesActiveProviderToggleCount = activeInputs.length
   lastFundingChoicesProviderInspectedCount = providerInputs.length
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
-
-  maybeRunFundingChoicesProviderPhase1AfterCount(providerPanel)
 
   return true
 }
@@ -10252,7 +10297,12 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
 
-  if (!providerPanel) return false
+  if (
+    !providerPanel ||
+    !isFundingChoicesProviderPreferencesVisuallyVerified(providerPanel)
+  ) {
+    return false
+  }
 
   const startedAt =
     Date.now()
@@ -11732,7 +11782,12 @@ function getFundingChoicesManageVendorsRejectedReason(element, root) {
   if (style?.visibility === 'hidden') return 'visibility_hidden'
   if (Number.isFinite(opacity) && opacity <= 0) return 'opacity_zero'
   if (style?.pointerEvents === 'none') return 'pointer_events_none'
-  if (hasUnsafeAcceptText(element)) return 'unsafe_accept_text'
+  if (
+    hasUnsafeAcceptText(element) &&
+    !isFundingChoicesManageVendorsNavigationButton(element)
+  ) {
+    return 'unsafe_accept_text'
+  }
   if (isSensitiveActionControl(element, root)) {
     if (isFundingChoicesManageVendorsNavigationButton(element)) {
       lastFundingChoicesProviderManageVendorsSensitiveBypass = true
@@ -11928,7 +11983,10 @@ function clickFundingChoicesManageVendorsButton(control) {
     !shouldRunOnThisSite() ||
     !control ||
     !control.isConnected ||
-    hasUnsafeAcceptText(control)
+    (
+      hasUnsafeAcceptText(control) &&
+      !isFundingChoicesManageVendorsNavigationButton(control)
+    )
   ) {
     lastFundingChoicesProviderManageVendorsRejectedReason =
       'fc_manage_vendors_not_interactable'
@@ -11939,14 +11997,6 @@ function clickFundingChoicesManageVendorsButton(control) {
     lastFundingChoicesProviderManageVendorsRejectedReason =
       'page_action_budget'
     return false
-  }
-
-  try {
-    control.scrollIntoView?.({
-      block: 'center',
-    })
-  } catch {
-    // Best-effort alignment for FC's zero-geometry navigation button.
   }
 
   processedActionElements.add(control)
@@ -11999,6 +12049,151 @@ function clickFundingChoicesManageVendorsButton(control) {
     log('Funding Choices manage vendors click failed:', error)
     return false
   }
+}
+
+function getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root = document) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  return providerPanel &&
+    isFundingChoicesProviderPreferencesVisuallyVerified(providerPanel)
+    ? providerPanel
+    : null
+}
+
+function recordFundingChoicesProviderPreferencesVisibleEntry(
+  root,
+  clickedControl,
+  reason = 'fc_provider_preferences_visible_opened'
+) {
+  const providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+  const opened =
+    Boolean(providerPanel)
+  const diagnosticRoot =
+    providerPanel ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document
+
+  lastFundingChoicesProviderPreferenceOpened = opened
+  collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
+
+  recordCurrentSiteDiagnostic({
+    status: opened ? 'settingsOpened' : 'partial',
+    reason: opened
+      ? reason
+      : 'fc_provider_preferences_visual_verification_failed',
+    candidates: diagnosticRoot ? [diagnosticRoot] : [],
+    matchedRejectElement: clickedControl,
+    matchedRejectText: getActionText(clickedControl),
+    blockedReason: opened
+      ? ''
+      : 'provider_preferences_visual_verification_failed',
+    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+  })
+
+  rejectFlowCompleted = true
+  stopObserver()
+  setLastAction('settings_opened')
+  setLastError('')
+
+  return opened
+}
+
+function openFundingChoicesProviderPreferencesVisibleEntry(root) {
+  const startedAt =
+    Date.now()
+  const alreadyOpenPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (alreadyOpenPanel) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences_visible_entry',
+      status: 'already_open',
+      found: 1,
+      scanned: 1,
+      elapsedMs: Date.now() - startedAt,
+    })
+    recordFundingChoicesProviderPreferencesVisibleEntry(
+      alreadyOpenPanel,
+      null,
+      'fc_provider_preferences_already_visible'
+    )
+    return true
+  }
+
+  const manageVendorsButton =
+    findFundingChoicesManageVendorsButton(root, startedAt, {
+      mode: 'visible_entry',
+      allowClick: true,
+    })
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_preferences_visible_entry',
+    status: manageVendorsButton ? 'found' : 'not_found',
+    reason: lastFundingChoicesProviderManageVendorsRejectedReason || '',
+    found: manageVendorsButton ? 1 : 0,
+    scanned: 1,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  if (!manageVendorsButton) {
+    return false
+  }
+
+  lastFundingChoicesProviderPreferenceClickMethod =
+    'manage_vendors_selector'
+  lastFundingChoicesProviderPreferenceClickableTargetTag =
+    manageVendorsButton.tagName?.toLowerCase?.() || ''
+
+  if (!clickFundingChoicesManageVendorsButton(manageVendorsButton)) {
+    lastFundingChoicesProviderPreferenceClickSuccess = false
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_preferences_visible_entry',
+      status: 'skipped',
+      reason:
+        lastFundingChoicesProviderManageVendorsRejectedReason ||
+        'fc_manage_vendors_click_failed',
+      found: 1,
+      scanned: 1,
+      elapsedMs: Date.now() - startedAt,
+    })
+    recordFundingChoicesProviderPreferencesVisibleEntry(
+      root,
+      manageVendorsButton
+    )
+    return true
+  }
+
+  lastFundingChoicesProviderManageVendorsClicked = true
+  lastFundingChoicesProviderPreferenceClickSuccess = true
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_preferences_visible_entry',
+    status: 'clicked',
+    found: 1,
+    scanned: 1,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  if (getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)) {
+    recordFundingChoicesProviderPreferencesVisibleEntry(
+      root,
+      manageVendorsButton
+    )
+    return true
+  }
+
+  setTimeout(() => {
+    if (rejectFlowCompleted) return
+    recordFundingChoicesProviderPreferencesVisibleEntry(
+      root,
+      manageVendorsButton
+    )
+  }, 250)
+
+  return true
 }
 
 function refreshFundingChoicesDiagnosticsForVisiblePanel(source = 'popup') {
@@ -12174,16 +12369,6 @@ function openFundingChoicesProviderPreferences(root, preferredProviderControl = 
     }
   }
 
-  if (lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector') {
-    try {
-      providerControl.scrollIntoView?.({
-        block: 'center',
-      })
-    } catch {
-      // Best-effort alignment before the FC click.
-    }
-  }
-
   const providerControlClicked =
     lastFundingChoicesProviderPreferenceClickMethod === 'manage_vendors_selector'
       ? clickFundingChoicesManageVendorsButton(providerControl)
@@ -12246,6 +12431,19 @@ function openFundingChoicesProviderPreferences(root, preferredProviderControl = 
     found: 1,
     elapsedMs: Date.now() - startedAt,
   })
+
+  const verifiedProviderPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (!verifiedProviderPanel) {
+    lastFundingChoicesProviderPreferenceOpened = false
+    return {
+      ok: false,
+      opened: false,
+      reason: 'fc_provider_preferences_visual_verification_failed',
+      blockedReason: 'provider_preferences_visual_verification_failed',
+    }
+  }
 
   lastFundingChoicesProviderPreferenceOpened = true
 
@@ -12343,7 +12541,7 @@ function finishFundingChoicesFlowAfterProvider(currentRoot, mainToggleResult = n
     } else {
       if (
         hasFundingChoicesMainToggleStableSuccess(mainToggleResult) &&
-        refreshFundingChoicesProviderPanelDiagnostics(providerRoot)
+        openFundingChoicesProviderPreferencesVisibleEntry(providerRoot)
       ) {
         return
       }
