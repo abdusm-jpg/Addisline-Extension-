@@ -545,6 +545,24 @@ const fundingChoicesUnsafePositiveTexts = [
   'allow all',
 ]
 
+const fundingChoicesProviderStrictSaveTexts = [
+  'guardar',
+  'guardar opciones',
+  'confirmar opciones',
+  'confirmar les opcions',
+  'desar',
+  'save choices',
+  'confirm choices',
+]
+
+const fundingChoicesProviderStrictSaveBlockedTexts = [
+  'consentir',
+  'acceptar',
+  'aceptar',
+  'accept all',
+  'allow all',
+]
+
 const fundingChoicesRequiredToggleTexts = [
   'necessary',
   'strictly necessary',
@@ -8379,6 +8397,170 @@ function findFundingChoicesSafeAction(root, startedAt, budgetMs) {
   return null
 }
 
+function isFundingChoicesProviderStrictSaveButton(control) {
+  const tagName =
+    String(control?.tagName || '').toLowerCase()
+  const role =
+    normalizeMatchText(control?.getAttribute?.('role') || '')
+  const inputType =
+    normalizeMatchText(control?.getAttribute?.('type') || control?.type || '')
+
+  return (
+    tagName === 'button' ||
+    role === 'button' ||
+    (
+      tagName === 'input' &&
+      (
+        inputType === 'button' ||
+        inputType === 'submit'
+      )
+    )
+  )
+}
+
+function getFundingChoicesProviderStrictSaveVisibleText(control) {
+  return normalizeMatchText([
+    control?.innerText,
+    control?.textContent,
+    control?.getAttribute?.('aria-label'),
+    control?.getAttribute?.('title'),
+    control?.value,
+    control?.getAttribute?.('value'),
+  ].join(' '))
+}
+
+function isFundingChoicesProviderStrictSaveAction(control, root) {
+  if (
+    !control ||
+    !root?.contains?.(control) ||
+    !control.isConnected ||
+    !isFundingChoicesProviderStrictSaveButton(control) ||
+    !isVisible(control) ||
+    getCookieDebugDisabledState(control) === 'disabled' ||
+    isInsideNonCookieModal(control) ||
+    isSensitiveActionControl(control, root)
+  ) {
+    return false
+  }
+
+  const visibleText =
+    getFundingChoicesProviderStrictSaveVisibleText(control)
+  const actionSignal =
+    getActionText(control)
+
+  if (
+    !textHasAny(visibleText, fundingChoicesProviderStrictSaveTexts) ||
+    hasUnsafeAcceptText(control) ||
+    textHasAny(actionSignal, fundingChoicesUnsafePositiveTexts) ||
+    textHasAny(actionSignal, fundingChoicesProviderStrictSaveBlockedTexts)
+  ) {
+    return false
+  }
+
+  return true
+}
+
+function getFundingChoicesProviderStrictSaveSearchRoots(root) {
+  const providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  const fcRoot =
+    getFundingChoicesRoot(providerPanel || root) ||
+    getFundingChoicesRoot(root) ||
+    getVisibleFundingChoicesPanel()
+
+  return uniqueElements([
+    providerPanel,
+    fcRoot,
+    root,
+  ])
+    .filter((candidate) =>
+      candidate &&
+      typeof candidate.querySelectorAll === 'function'
+    )
+}
+
+function findFundingChoicesProviderStrictSaveAction(root, startedAt, budgetMs) {
+  const searchRoots =
+    getFundingChoicesProviderStrictSaveSearchRoots(root)
+
+  for (const searchRoot of searchRoots) {
+    if (hasElapsedBudget(startedAt, budgetMs)) {
+      return null
+    }
+
+    const controls =
+      uniqueElements([
+        ...safeQuerySelectorAll(
+          searchRoot,
+          'button, [role="button"], input[type="button"], input[type="submit"]'
+        ),
+        ...getDirectClickableControls(searchRoot, {
+          startedAt,
+          budgetMs,
+        }),
+      ])
+
+    for (const control of controls) {
+      if (hasElapsedBudget(startedAt, budgetMs)) {
+        return null
+      }
+
+      if (isFundingChoicesProviderStrictSaveAction(control, searchRoot)) {
+        return control
+      }
+    }
+  }
+
+  return null
+}
+
+function clickFundingChoicesProviderStrictSaveAction(root) {
+  const startedAt =
+    Date.now()
+  const saveControl =
+    findFundingChoicesProviderStrictSaveAction(
+      root,
+      startedAt,
+      FUNDING_CHOICES_HELPER_BUDGET_MS
+    )
+
+  if (!saveControl) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_aria_save',
+      status: 'skipped',
+      reason: hasElapsedBudget(startedAt, FUNDING_CHOICES_HELPER_BUDGET_MS)
+        ? 'budget_capped'
+        : 'safe_save_not_found',
+      found: 0,
+      elapsedMs: Date.now() - startedAt,
+    })
+
+    return {
+      clicked: false,
+      control: null,
+      reason: 'safe_save_not_found',
+    }
+  }
+
+  const clicked =
+    clickCMPSpecificControl(saveControl)
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_aria_save',
+    status: clicked ? 'clicked' : 'failed',
+    reason: clicked ? '' : 'safe_save_click_failed',
+    found: 1,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  return {
+    clicked,
+    control: saveControl,
+    reason: clicked ? '' : 'safe_save_click_failed',
+  }
+}
+
 function getFundingChoicesSliderWrapper(control, root) {
   const wrapper =
     safeClosest(control, '.fc-preference-slider')
@@ -12796,25 +12978,56 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
 
   collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
 
+  const providerSaveResult =
+    providerPhaseHandled &&
+    Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0 &&
+    Math.max(0, Number(lastFundingChoicesProviderClickedCount) || 0) > 0 &&
+    lastFundingChoicesProviderToggleMethod === 'aria-pressed'
+      ? clickFundingChoicesProviderStrictSaveAction(diagnosticRoot)
+      : {
+          clicked: false,
+          control: null,
+          reason: '',
+        }
+  const providerSaved =
+    Boolean(providerSaveResult.clicked)
+  const matchedElement =
+    providerSaveResult.control || clickedControl
+
   recordCurrentSiteDiagnostic({
     status: providerPhaseHandled ? 'partial' : opened ? 'settingsOpened' : 'partial',
     reason: opened
-      ? providerPhaseHandled
-        ? 'fc_provider_aria_pressed_disabled'
-        : reason
+      ? providerSaved
+        ? 'fc_provider_aria_pressed_saved'
+        : providerPhaseHandled
+          ? 'fc_provider_aria_pressed_disabled'
+          : reason
       : 'fc_provider_preferences_visual_verification_failed',
     candidates: diagnosticRoot ? [diagnosticRoot] : [],
-    matchedRejectElement: clickedControl,
-    matchedRejectText: getActionText(clickedControl),
+    matchedRejectElement: matchedElement,
+    matchedRejectText: getActionText(matchedElement),
     blockedReason: opened
       ? ''
       : 'provider_preferences_visual_verification_failed',
     fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
   })
 
+  if (providerSaved) {
+    recordCookieAuditAfterSuccessfulAction({
+      type: 'save',
+      container: diagnosticRoot,
+      element: providerSaveResult.control,
+    })
+    finalizeCookieActionSuccess({
+      type: 'save',
+      container: diagnosticRoot,
+      element: providerSaveResult.control,
+    })
+  }
+
   rejectFlowCompleted = true
   stopObserver()
-  setLastAction('settings_opened')
+  setLastAction(providerSaved ? 'preferences_saved' : 'settings_opened')
   setLastError('')
 
   return opened
