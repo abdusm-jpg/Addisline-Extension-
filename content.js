@@ -211,7 +211,7 @@ const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT = 30
 const MAX_FUNDING_CHOICES_PROVIDER_ACTIVE_CLICKS = 10
 const FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS = 500
-const MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS = 5
+const MAX_FUNDING_CHOICES_PROVIDER_ARIA_PRESSED_MUTATIONS = 9
 const FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS = 200
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 48
@@ -8630,6 +8630,29 @@ function getFundingChoicesPreferenceToggleState(input) {
   return 'unknown'
 }
 
+function getFundingChoicesProviderAriaPressedToggleState(input) {
+  const ariaPressed =
+    normalizeMatchText(input?.getAttribute?.('aria-pressed') || '')
+
+  if (ariaPressed === 'true') {
+    return 'enabled'
+  }
+
+  if (ariaPressed === 'false') {
+    return 'disabled'
+  }
+
+  return 'unknown'
+}
+
+function isFundingChoicesProviderAriaPressedToggleActive(input) {
+  return Boolean(
+    input &&
+      input.matches?.('input.gvl-vendor') &&
+      getFundingChoicesProviderAriaPressedToggleState(input) === 'enabled'
+  )
+}
+
 function getFundingChoicesPreferenceToggleRank(input, root) {
   const label =
     getFundingChoicesPreferenceToggleLabel(input, root)
@@ -9996,7 +10019,7 @@ function getFundingChoicesProviderInputStateSnapshot(input) {
   const row =
     getFundingChoicesProviderFirstActiveRow(input, label, slider)
   const activeState =
-    getFundingChoicesPreferenceToggleState(input)
+    getFundingChoicesProviderAriaPressedToggleState(input)
   const inputVisual =
     getFundingChoicesProviderElementVisualSnapshot(input)
   const labelVisual =
@@ -10575,9 +10598,7 @@ function getFundingChoicesProviderFirstActiveToggleDiagnostic(root) {
   const providerInputs =
     getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
   const input =
-    providerInputs.find((candidate) =>
-      getFundingChoicesPreferenceToggleState(candidate) === 'enabled'
-    ) || null
+    providerInputs.find(isFundingChoicesProviderAriaPressedToggleActive) || null
 
   if (!input) return null
 
@@ -11001,9 +11022,7 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
       ? visibleInputs
       : getDocumentFundingChoicesProviderToggleInputs(startedAt)
   const activeInputs =
-    providerInputs.filter((input) =>
-      getFundingChoicesPreferenceToggleState(input) === 'enabled'
-    )
+    providerInputs.filter(isFundingChoicesProviderAriaPressedToggleActive)
 
   lastFundingChoicesProviderPreferenceOpened = true
   lastFundingChoicesProviderToggleCount = providerInputs.length
@@ -11032,171 +11051,7 @@ function getFundingChoicesStableProviderToggleInputs(root, startedAt) {
 }
 
 function isFundingChoicesProviderInputActiveForPhase1(input) {
-  return Boolean(
-    input &&
-      (
-        input.checked === true ||
-        normalizeMatchText(input.getAttribute?.('aria-pressed') || '') === 'true'
-      )
-  )
-}
-
-function getFundingChoicesProviderPhase1ClickTargets(input, root) {
-  if (!input || !root?.contains?.(input)) return []
-
-  const helperTargets =
-    getFundingChoicesPreferenceClickTargets(input, root)
-  const targetByType =
-    new Map(
-      helperTargets.map((target) => [
-        target.type,
-        target,
-      ])
-    )
-  const wrapper =
-    safeClosest(input, '.fc-preference-slider')
-  const targets = [
-    targetByType.get('label'),
-    targetByType.get('slider'),
-    wrapper && root.contains(wrapper)
-      ? {
-          element: wrapper,
-          type: 'wrapper',
-        }
-      : null,
-    targetByType.get('input') ||
-      {
-        element: input,
-        type: 'input',
-      },
-  ]
-  const seen =
-    new Set()
-
-  return targets
-    .filter((target) => {
-      if (
-        !target?.element ||
-        !root.contains(target.element) ||
-        seen.has(target.element)
-      ) {
-        return false
-      }
-
-      seen.add(target.element)
-      return true
-    })
-}
-
-function dispatchFundingChoicesProviderPhase1PointerSequence(element, root) {
-  if (
-    !shouldRunOnThisSite() ||
-    !element ||
-    !root?.contains?.(element) ||
-    processedActionElements.has(element) ||
-    !canUsePageActionBudget('fundingChoicesProviderPhase1Toggle')
-  ) {
-    return false
-  }
-
-  processedActionElements.add(element)
-
-  try {
-    const eventView =
-      element.ownerDocument?.defaultView || window
-    const baseEventInit = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      view: eventView,
-    }
-    const pointerEventInit = {
-      ...baseEventInit,
-      pointerType: 'mouse',
-      isPrimary: true,
-    }
-
-    if (typeof eventView.PointerEvent === 'function') {
-      element.dispatchEvent(
-        new eventView.PointerEvent('pointerdown', pointerEventInit)
-      )
-    }
-
-    element.dispatchEvent(
-      new eventView.MouseEvent('mousedown', baseEventInit)
-    )
-
-    if (typeof eventView.PointerEvent === 'function') {
-      element.dispatchEvent(
-        new eventView.PointerEvent('pointerup', pointerEventInit)
-      )
-    }
-
-    element.dispatchEvent(
-      new eventView.MouseEvent('mouseup', baseEventInit)
-    )
-    element.dispatchEvent(
-      new eventView.MouseEvent('click', baseEventInit)
-    )
-
-    return true
-  } catch (error) {
-    log('Funding Choices provider phase 1 toggle click failed:', error)
-    return false
-  }
-}
-
-function dispatchFundingChoicesProviderPhase1KeyboardSequence(input, root, key) {
-  if (
-    !shouldRunOnThisSite() ||
-    !input ||
-    !root?.contains?.(input) ||
-    !canUsePageActionBudget('fundingChoicesProviderPhase1KeyboardToggle')
-  ) {
-    return false
-  }
-
-  try {
-    const eventView =
-      input.ownerDocument?.defaultView || window
-    const isEnter =
-      key === 'Enter'
-    const keyCode =
-      isEnter ? 13 : 32
-    const eventInit = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      view: eventView,
-      key: isEnter ? 'Enter' : ' ',
-      code: isEnter ? 'Enter' : 'Space',
-      keyCode,
-      which: keyCode,
-    }
-
-    if (typeof input.focus === 'function') {
-      input.focus()
-    }
-
-    input.dispatchEvent(
-      new eventView.KeyboardEvent('keydown', eventInit)
-    )
-    input.dispatchEvent(
-      new eventView.KeyboardEvent('keyup', eventInit)
-    )
-
-    return true
-  } catch (error) {
-    log('Funding Choices provider phase 1 keyboard toggle failed:', error)
-    return false
-  }
-}
-
-function didFundingChoicesProviderPhase1DeactivateInput(input) {
-  return (
-    getFundingChoicesPreferenceToggleState(input) !== 'enabled' ||
-    !isFundingChoicesProviderInputActiveForPhase1(input)
-  )
+  return isFundingChoicesProviderAriaPressedToggleActive(input)
 }
 
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
@@ -11216,7 +11071,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
   const activeInputs =
     providerInputs.filter(isFundingChoicesProviderInputActiveForPhase1)
-  let clickedCount = 0
+  let mutatedCount = 0
 
   lastFundingChoicesProviderPreferenceOpened = true
   lastFundingChoicesProviderToggleCount = providerInputs.length
@@ -11225,11 +11080,10 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
   lastFundingChoicesProviderTimeBudgetExceeded = false
 
-  for (const input of activeInputs) {
-    if (clickedCount >= MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS) {
-      break
-    }
-
+  for (const input of activeInputs.slice(
+    0,
+    MAX_FUNDING_CHOICES_PROVIDER_ARIA_PRESSED_MUTATIONS
+  )) {
     if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
       lastFundingChoicesProviderTimeBudgetExceeded = true
       break
@@ -11239,81 +11093,21 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       continue
     }
 
-    const clickRoot =
-      providerPanel.contains(input)
-        ? providerPanel
-        : document
-    let keyboardChangedState = false
-
-    for (const key of [' ', 'Enter']) {
-      if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
-        lastFundingChoicesProviderTimeBudgetExceeded = true
-        break
-      }
-
-      if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
-        break
-      }
-
-      if (!dispatchFundingChoicesProviderPhase1KeyboardSequence(input, clickRoot, key)) {
-        continue
-      }
-
-      if (didFundingChoicesProviderPhase1DeactivateInput(input)) {
-        clickedCount += 1
-        lastFundingChoicesProviderClickedCount += 1
-        keyboardChangedState = true
-        break
-      }
-    }
-
-    if (
-      keyboardChangedState ||
-      clickedCount >= MAX_FUNDING_CHOICES_PROVIDER_PHASE1_CLICKS
-    ) {
-      continue
-    }
-
-    if (lastFundingChoicesProviderTimeBudgetExceeded) {
-      break
-    }
+    input.setAttribute('aria-pressed', 'false')
 
     if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
-      continue
-    }
-
-    const clickTargets =
-      getFundingChoicesProviderPhase1ClickTargets(input, clickRoot)
-
-    for (const { element } of clickTargets) {
-      if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
-        lastFundingChoicesProviderTimeBudgetExceeded = true
-        break
-      }
-
-      if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
-        break
-      }
-
-      if (!dispatchFundingChoicesProviderPhase1PointerSequence(element, clickRoot)) {
-        continue
-      }
-
-      if (didFundingChoicesProviderPhase1DeactivateInput(input)) {
-        clickedCount += 1
-        lastFundingChoicesProviderClickedCount += 1
-        break
-      }
+      mutatedCount += 1
+      lastFundingChoicesProviderToggleMethod = 'aria-pressed'
     }
   }
 
   lastFundingChoicesActiveProviderToggleCount =
     providerInputs.filter(isFundingChoicesProviderInputActiveForPhase1).length
 
-  return clickedCount > 0
+  return mutatedCount > 0
 }
 
-function finishFundingChoicesProviderPhase1(root, providerPhaseClicked) {
+function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
   const diagnosticRoot =
@@ -11321,10 +11115,10 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseClicked) {
 
   collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
   recordCurrentSiteDiagnostic({
-    status: providerPhaseClicked ? 'partial' : 'skipped',
-    reason: providerPhaseClicked
-      ? 'fc_provider_visible_toggles_phase1_clicked'
-      : 'fc_provider_visible_toggles_phase1_skipped',
+    status: providerPhaseHandled ? 'partial' : 'skipped',
+    reason: providerPhaseHandled
+      ? 'fc_provider_aria_pressed_disabled'
+      : 'fc_provider_aria_pressed_skipped',
     candidates: [diagnosticRoot],
     blockedReason: '',
     fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
@@ -11352,22 +11146,20 @@ function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
   try {
     const activeBefore =
       lastFundingChoicesActiveProviderToggleCount
-    const clickedBefore =
-      lastFundingChoicesProviderClickedCount
-    const providerPhaseClicked =
+    const providerPhaseHandled =
       handleFundingChoicesVisibleProviderTogglesPhase1(root)
-    const clickedDelta =
-      Math.max(0, lastFundingChoicesProviderClickedCount - clickedBefore)
+    const handledCount =
+      Math.max(0, activeBefore - lastFundingChoicesActiveProviderToggleCount)
 
     appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_phase1_visible_toggles',
-      status: providerPhaseClicked ? 'clicked' : 'skipped',
-      reason: providerPhaseClicked ? '' : 'provider_visible_toggle_click_no_change',
-      found: clickedDelta,
+      strategy: 'fc.provider_phase1_aria_pressed',
+      status: providerPhaseHandled ? 'handled' : 'skipped',
+      reason: providerPhaseHandled ? '' : 'provider_aria_pressed_no_change',
+      found: handledCount,
       scanned: activeBefore,
     })
 
-    finishFundingChoicesProviderPhase1(root, providerPhaseClicked)
+    finishFundingChoicesProviderPhase1(root, providerPhaseHandled)
     return true
   } finally {
     fundingChoicesProviderPhase1Running = false
@@ -12983,12 +12775,32 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     document
 
   lastFundingChoicesProviderPreferenceOpened = opened
+  const providerPhaseHandled =
+    Boolean(
+      opened &&
+        Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0 &&
+        handleFundingChoicesVisibleProviderTogglesPhase1(diagnosticRoot)
+    )
+
+  if (opened) {
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_phase1_aria_pressed',
+      status: providerPhaseHandled ? 'handled' : 'skipped',
+      reason: providerPhaseHandled ? '' : 'provider_aria_pressed_no_active_inputs',
+      found: Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0) -
+        Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
+      scanned: Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0),
+    })
+  }
+
   collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
 
   recordCurrentSiteDiagnostic({
-    status: opened ? 'settingsOpened' : 'partial',
+    status: providerPhaseHandled ? 'partial' : opened ? 'settingsOpened' : 'partial',
     reason: opened
-      ? reason
+      ? providerPhaseHandled
+        ? 'fc_provider_aria_pressed_disabled'
+        : reason
       : 'fc_provider_preferences_visual_verification_failed',
     candidates: diagnosticRoot ? [diagnosticRoot] : [],
     matchedRejectElement: clickedControl,
