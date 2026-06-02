@@ -2479,9 +2479,7 @@ function formatProviderStateOwnershipCopySection(diagnostic) {
       'ariaCheckedSetFalse',
       stateOwnership.ariaCheckedSetFalse
     ),
-    `inputOuterHTML:\n${String(stateOwnership.inputOuterHTML || 'none')}`,
-    `labelOuterHTML:\n${String(stateOwnership.labelOuterHTML || 'none')}`,
-    `rowOuterHTML:\n${String(stateOwnership.rowOuterHTML || 'none')}`,
+    'outerHTML: omitted',
   ].join('\n')
 }
 
@@ -2644,13 +2642,13 @@ function formatFundingChoicesControls(summary) {
           .filter((candidate) =>
             candidate && typeof candidate === 'object'
           )
-          .slice(0, 16)
+          .slice(0, 5)
       : Array.isArray(summary.providerSaveCandidates)
         ? summary.providerSaveCandidates
           .filter((candidate) =>
             candidate && typeof candidate === 'object'
           )
-          .slice(0, 16)
+          .slice(0, 5)
         : []
 
   lines.push([
@@ -2661,7 +2659,7 @@ function formatFundingChoicesControls(summary) {
   ].join(', '))
 
   if (fundingChoicesGlobalSaveControls.length === 0) {
-    lines.push('fundingChoicesGlobalSaveControlDetails: none')
+    lines.push('fundingChoicesGlobalSaveControlDetails: summary_only')
   } else {
     fundingChoicesGlobalSaveControls.forEach((candidate, index) => {
       const visibility =
@@ -2801,15 +2799,7 @@ function formatFundingChoicesControls(summary) {
       )
     }
 
-    lines.push(`inputHTML: ${String(summary.providerFirstActiveInputHTML || 'none').slice(0, 260)}`)
-    lines.push(`labelHTML: ${String(summary.providerFirstActiveLabelHTML || 'none').slice(0, 260)}`)
-    lines.push(`sliderHTML: ${String(summary.providerFirstActiveSliderHTML || 'none').slice(0, 260)}`)
-    lines.push(`sliderElHTML: ${String(summary.providerFirstActiveSliderElHTML || 'none').slice(0, 260)}`)
-    lines.push(`rowHTML: ${String(summary.providerFirstActiveRowHTML || 'none').slice(0, 260)}`)
-    lines.push(`fullRowHTML: ${String(summary.providerFirstActiveFullRowHTML || 'none').slice(0, 500)}`)
-    lines.push(`preferenceContainerHTML: ${String(summary.providerFirstActivePreferenceContainerHTML || 'none').slice(0, 500)}`)
-    lines.push(`sliderContainerHTML: ${String(summary.providerFirstActiveSliderContainerHTML || 'none').slice(0, 500)}`)
-    lines.push(`sliderFullHTML: ${String(summary.providerFirstActiveSliderFullHTML || 'none').slice(0, 500)}`)
+    lines.push('providerFirstActiveHTML: omitted')
   }
 
   if (controls.length === 0) {
@@ -2859,10 +2849,6 @@ function formatFundingChoicesControls(summary) {
         `id:${String(action.inputId || 'none').slice(0, 30)}`,
         `name:${String(action.inputName || 'none').slice(0, 30)}`,
         `class:${String(action.inputClass || 'none').slice(0, 50)}`,
-        `inputHTML:${String(action.inputOuterHTML || 'none').slice(0, 80)}`,
-        `wrapperHTML:${String(action.wrapperOuterHTML || 'none').slice(0, 80)}`,
-        `labelHTML:${String(action.labelOuterHTML || 'none').slice(0, 80)}`,
-        `ancestorHTML:${String(action.ancestorOuterHTML || 'none').slice(0, 80)}`,
         `sliderClass:${String(action.sliderClass || 'none').slice(0, 50)}`,
         `before:${String(action.ariaPressedBefore || 'none').slice(0, 12)}`,
         `checkedBefore:${Boolean(action.checkedBefore)}`,

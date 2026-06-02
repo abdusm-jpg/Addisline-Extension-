@@ -228,7 +228,7 @@ const MAX_BOTTOM_BANNER_DIAGNOSTICS = 5
 const MAX_BOTTOM_BANNER_CONTROL_TEXTS = 5
 const MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES = 5
 const MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS = 8
-const MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS = 16
+const MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS = 5
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML = 600
 const MAX_FUNDING_CHOICES_PROVIDER_STATE_DIAGNOSTIC_HTML = 2000
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
@@ -3611,6 +3611,8 @@ function recordCurrentSiteDiagnostic({
       prioritizedCmpRootsFound,
       explicitRejectControlDetected,
     })
+  const includeFundingChoicesVerboseDetails =
+    shouldCollectFundingChoicesVerboseDiagnostics()
   const resolvedExperimentalBottomBannerProbe =
     updateExperimentalBottomBannerProbe(
       diagnosticClassification,
@@ -4087,67 +4089,69 @@ function recordCurrentSiteDiagnostic({
                   0
               ),
             fundingChoicesGlobalSaveControls:
-              (
-                Array.isArray(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls)
-                  ? fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls
-                  : Array.isArray(fundingChoicesControlDiagnostics.providerSaveCandidates)
-                    ? fundingChoicesControlDiagnostics.providerSaveCandidates
-                    : []
-              )
-                .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
-                .map((candidate) => ({
-                  tag:
-                    String(candidate?.tag || '').slice(0, 24),
-                  className:
-                    String(candidate?.className || '').slice(0, 160),
-                  text:
-                    String(candidate?.text || '').slice(0, 140),
-                  actionText:
-                    String(candidate?.actionText || '').slice(0, 180),
-                  ariaLabel:
-                    String(candidate?.ariaLabel || '').slice(0, 140),
-                  disabled:
-                    Boolean(candidate?.disabled),
-                  visibility:
-                    candidate?.visibility && typeof candidate.visibility === 'object'
-                      ? {
-                          visible:
-                            Boolean(candidate.visibility.visible),
-                          connected:
-                            Boolean(candidate.visibility.connected),
-                          display:
-                            String(candidate.visibility.display || '').slice(0, 24),
-                          visibility:
-                            String(candidate.visibility.visibility || '').slice(0, 24),
-                          opacity:
-                            String(candidate.visibility.opacity || '').slice(0, 12),
-                          pointerEvents:
-                            String(candidate.visibility.pointerEvents || '').slice(0, 24),
-                          rectWidth:
-                            Math.max(0, Number(candidate.visibility.rectWidth) || 0),
-                          rectHeight:
-                            Math.max(0, Number(candidate.visibility.rectHeight) || 0),
-                          offsetParent:
-                            Boolean(candidate.visibility.offsetParent),
-                        }
-                      : null,
-                  candidateType:
-                    String(candidate?.candidateType || 'other').slice(0, 24),
-                  saveTextMatch:
-                    Boolean(candidate?.saveTextMatch),
-                  saveCandidate:
-                    Boolean(candidate?.saveCandidate),
-                  blockedPositiveConsent:
-                    Boolean(candidate?.blockedPositiveConsent),
-                  blockedReason:
-                    String(candidate?.blockedReason || '').slice(0, 80),
-                  panelContains:
-                    Boolean(candidate?.panelContains),
-                  fcRootContains:
-                    Boolean(candidate?.fcRootContains),
-                  documentLevel:
-                    Boolean(candidate?.documentLevel),
-                })),
+              includeFundingChoicesVerboseDetails
+                ? (
+                    Array.isArray(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls)
+                      ? fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls
+                      : Array.isArray(fundingChoicesControlDiagnostics.providerSaveCandidates)
+                        ? fundingChoicesControlDiagnostics.providerSaveCandidates
+                        : []
+                  )
+                    .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
+                    .map((candidate) => ({
+                      tag:
+                        String(candidate?.tag || '').slice(0, 24),
+                      className:
+                        String(candidate?.className || '').slice(0, 160),
+                      text:
+                        String(candidate?.text || '').slice(0, 140),
+                      actionText:
+                        String(candidate?.actionText || '').slice(0, 180),
+                      ariaLabel:
+                        String(candidate?.ariaLabel || '').slice(0, 140),
+                      disabled:
+                        Boolean(candidate?.disabled),
+                      visibility:
+                        candidate?.visibility && typeof candidate.visibility === 'object'
+                          ? {
+                              visible:
+                                Boolean(candidate.visibility.visible),
+                              connected:
+                                Boolean(candidate.visibility.connected),
+                              display:
+                                String(candidate.visibility.display || '').slice(0, 24),
+                              visibility:
+                                String(candidate.visibility.visibility || '').slice(0, 24),
+                              opacity:
+                                String(candidate.visibility.opacity || '').slice(0, 12),
+                              pointerEvents:
+                                String(candidate.visibility.pointerEvents || '').slice(0, 24),
+                              rectWidth:
+                                Math.max(0, Number(candidate.visibility.rectWidth) || 0),
+                              rectHeight:
+                                Math.max(0, Number(candidate.visibility.rectHeight) || 0),
+                              offsetParent:
+                                Boolean(candidate.visibility.offsetParent),
+                            }
+                          : null,
+                      candidateType:
+                        String(candidate?.candidateType || 'other').slice(0, 24),
+                      saveTextMatch:
+                        Boolean(candidate?.saveTextMatch),
+                      saveCandidate:
+                        Boolean(candidate?.saveCandidate),
+                      blockedPositiveConsent:
+                        Boolean(candidate?.blockedPositiveConsent),
+                      blockedReason:
+                        String(candidate?.blockedReason || '').slice(0, 80),
+                      panelContains:
+                        Boolean(candidate?.panelContains),
+                      fcRootContains:
+                        Boolean(candidate?.fcRootContains),
+                      documentLevel:
+                        Boolean(candidate?.documentLevel),
+                    }))
+                : [],
             providerSaveCandidateCount:
               Math.max(
                 0,
@@ -4170,14 +4174,16 @@ function recordCurrentSiteDiagnostic({
                   0
               ),
             providerSaveCandidates:
-              (
-                Array.isArray(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls)
-                  ? fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls
-                  : Array.isArray(fundingChoicesControlDiagnostics.providerSaveCandidates)
-                    ? fundingChoicesControlDiagnostics.providerSaveCandidates
-                    : []
-              )
-                .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS),
+              includeFundingChoicesVerboseDetails
+                ? (
+                    Array.isArray(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls)
+                      ? fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls
+                      : Array.isArray(fundingChoicesControlDiagnostics.providerSaveCandidates)
+                        ? fundingChoicesControlDiagnostics.providerSaveCandidates
+                        : []
+                  )
+                    .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
+                : [],
             ...sanitizeFundingChoicesProviderFirstActiveToggleDiagnostic(
               fundingChoicesControlDiagnostics
             ),
@@ -4198,13 +4204,21 @@ function recordCurrentSiteDiagnostic({
                   inputClass:
                     String(action?.inputClass || '').slice(0, 90),
                   inputOuterHTML:
-                    String(action?.inputOuterHTML || '').slice(0, 220),
+                    includeFundingChoicesVerboseDetails
+                      ? String(action?.inputOuterHTML || '').slice(0, 220)
+                      : '',
                   wrapperOuterHTML:
-                    String(action?.wrapperOuterHTML || '').slice(0, 220),
+                    includeFundingChoicesVerboseDetails
+                      ? String(action?.wrapperOuterHTML || '').slice(0, 220)
+                      : '',
                   labelOuterHTML:
-                    String(action?.labelOuterHTML || '').slice(0, 220),
+                    includeFundingChoicesVerboseDetails
+                      ? String(action?.labelOuterHTML || '').slice(0, 220)
+                      : '',
                   ancestorOuterHTML:
-                    String(action?.ancestorOuterHTML || '').slice(0, 220),
+                    includeFundingChoicesVerboseDetails
+                      ? String(action?.ancestorOuterHTML || '').slice(0, 220)
+                      : '',
                   sliderClass:
                     String(action?.sliderClass || '').slice(0, 90),
                   ariaPressedBefore:
@@ -8699,6 +8713,26 @@ function shouldDiagnoseFundingChoicesProviderSaveCandidates() {
   )
 }
 
+function shouldCollectFundingChoicesVerboseDiagnostics() {
+  return Boolean(
+    DEBUG ||
+      COOKIE_DEBUG ||
+      ENABLE_VERBOSE_DIAGNOSTICS ||
+      REJECT_FLOW_DEBUG
+  )
+}
+
+function shouldCollectFundingChoicesGlobalSaveControlDetails() {
+  return shouldCollectFundingChoicesVerboseDiagnostics()
+}
+
+function isFundingChoicesHelpTipControl(control) {
+  return Boolean(
+    safeMatches(control, '.fc-help-tip') ||
+      safeClosest(control, '.fc-help-tip')
+  )
+}
+
 function getFundingChoicesProviderSaveCandidateVisibility(control) {
   const rect =
     getSafeClientRect(control)
@@ -8726,6 +8760,10 @@ function getFundingChoicesProviderSaveCandidateVisibility(control) {
 }
 
 function isFundingChoicesProviderSaveDiagnosticControl(control) {
+  if (isFundingChoicesHelpTipControl(control)) {
+    return false
+  }
+
   const tagName =
     String(control?.tagName || '').toLowerCase()
   const type =
@@ -8912,6 +8950,45 @@ function getFundingChoicesGlobalSaveCandidatePriority(candidate) {
   return priority
 }
 
+function collectFundingChoicesSaveDiagnosticControls(searchRoots, maxControls) {
+  const controls = []
+  const limit =
+    Math.max(0, Number(maxControls) || 0)
+  const selector =
+    'button, a, [role="button"], input[type="button"], input[type="submit"]'
+
+  if (limit === 0) {
+    return controls
+  }
+
+  for (const searchRoot of searchRoots) {
+    if (controls.length >= limit) break
+    if (!searchRoot || typeof searchRoot.querySelectorAll !== 'function') {
+      continue
+    }
+
+    const rootControls =
+      safeQuerySelectorAll(searchRoot, selector)
+
+    for (const control of rootControls) {
+      if (controls.length >= limit) break
+      if (
+        !control?.isConnected ||
+        controls.includes(control) ||
+        isFundingChoicesHelpTipControl(control) ||
+        !isVisible(control) ||
+        !isFundingChoicesProviderSaveDiagnosticControl(control)
+      ) {
+        continue
+      }
+
+      controls.push(control)
+    }
+  }
+
+  return controls
+}
+
 function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
   if (!shouldDiagnoseFundingChoicesProviderSaveCandidates()) {
     return {
@@ -8928,6 +9005,8 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
 
   const searchRoots =
     getVisibleFundingChoicesSaveDiagnosticRoots(root)
+  const includeDetails =
+    shouldCollectFundingChoicesGlobalSaveControlDetails()
   const providerPanel =
     getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -8935,31 +9014,11 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
     getFundingChoicesRoot(providerPanel || root) ||
     getFundingChoicesRoot(root) ||
     getVisibleFundingChoicesPanel()
-  const documentControls =
-    safeQuerySelectorAll(
-      document,
-      'button, a, [role="button"], input[type="button"], input[type="submit"]'
-    )
-      .filter((control) =>
-        isFundingChoicesDocumentLevelSaveDiagnosticControl(control, searchRoots)
-      )
   const controls =
-    uniqueElements(
-      [
-        ...searchRoots.flatMap((searchRoot) =>
-          safeQuerySelectorAll(
-            searchRoot,
-            'button, a, [role="button"], input[type="button"], input[type="submit"]'
-          )
-        ),
-        ...documentControls,
-      ]
+    collectFundingChoicesSaveDiagnosticControls(
+      searchRoots,
+      MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS
     )
-      .filter((control) =>
-        control?.isConnected &&
-        isVisible(control) &&
-        isFundingChoicesProviderSaveDiagnosticControl(control)
-      )
       .map((control) => {
         const visibility =
           getFundingChoicesProviderSaveCandidateVisibility(control)
@@ -9033,7 +9092,7 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
     fundingChoicesGlobalPositiveConsentBlockedCount: controls.filter((control) =>
       control.blockedPositiveConsent
     ).length,
-    fundingChoicesGlobalSaveControls: controls,
+    fundingChoicesGlobalSaveControls: includeDetails ? controls : [],
     providerSaveCandidateCount: controls.length,
     providerStrictSaveCandidateCount: controls.filter((control) =>
       control.saveCandidate
@@ -9041,7 +9100,7 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
     providerPositiveConsentBlockedCount: controls.filter((control) =>
       control.blockedPositiveConsent
     ).length,
-    providerSaveCandidates: controls,
+    providerSaveCandidates: includeDetails ? controls : [],
   }
 }
 
@@ -9446,6 +9505,8 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
     safeClosest(input, 'button, [role="button"]')
   const activeBefore =
     getFundingChoicesPreferenceToggleState(input) === 'enabled'
+  const includeHtmlDiagnostics =
+    shouldCollectFundingChoicesVerboseDiagnostics()
 
   return {
     ariaLabel:
@@ -9457,13 +9518,21 @@ function getFundingChoicesPreferenceToggleActionDiagnostic(input, root) {
     inputClass:
       inputMeta.className.slice(0, 90),
     inputOuterHTML:
-      String(input?.outerHTML || '').slice(0, 220),
+      includeHtmlDiagnostics
+        ? String(input?.outerHTML || '').slice(0, 220)
+        : '',
     wrapperOuterHTML:
-      String(wrapper?.outerHTML || '').slice(0, 220),
+      includeHtmlDiagnostics
+        ? String(wrapper?.outerHTML || '').slice(0, 220)
+        : '',
     labelOuterHTML:
-      String(label?.outerHTML || '').slice(0, 220),
+      includeHtmlDiagnostics
+        ? String(label?.outerHTML || '').slice(0, 220)
+        : '',
     ancestorOuterHTML:
-      String(ancestor?.outerHTML || '').slice(0, 220),
+      includeHtmlDiagnostics
+        ? String(ancestor?.outerHTML || '').slice(0, 220)
+        : '',
     sliderClass:
       getClassNameText(slider).slice(0, 90),
     ariaPressedBefore:
