@@ -124,6 +124,7 @@ let lastFundingChoicesProviderPersistenceVerified = false
 let lastFundingChoicesProviderPersistenceReopenClicked = false
 let lastFundingChoicesProviderPersistenceReason = ''
 let lastFundingChoicesProviderReopenCandidateCount = 0
+let lastFundingChoicesProviderReopenCandidateVisibleCount = 0
 let lastFundingChoicesProviderReopenCandidateTotalCount = 0
 let lastFundingChoicesProviderReopenCandidates = []
 let lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack = false
@@ -4103,6 +4104,8 @@ function recordCurrentSiteDiagnostic({
               String(fundingChoicesControlDiagnostics.providerPersistenceReason || '').slice(0, 80),
             providerReopenCandidateCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerReopenCandidateCount) || 0),
+            providerReopenCandidateVisibleCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerReopenCandidateVisibleCount) || 0),
             providerReopenCandidateTotalCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerReopenCandidateTotalCount) || 0),
             providerReopenOriginalManageVendorsExistsAfterBack:
@@ -4115,8 +4118,12 @@ function recordCurrentSiteDiagnostic({
                 : [])
                 .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
                 .map((candidate) => ({
+                  tag:
+                    String(candidate?.tag || '').slice(0, 24),
                   text:
                     String(candidate?.text || '').slice(0, 90),
+                  ariaLabel:
+                    String(candidate?.ariaLabel || '').slice(0, 90),
                   className:
                     String(candidate?.className || '').slice(0, 120),
                   visible:
@@ -9189,6 +9196,7 @@ function resetFundingChoicesProviderSaveBackDiagnostics() {
   lastFundingChoicesProviderPersistenceReopenClicked = false
   lastFundingChoicesProviderPersistenceReason = ''
   lastFundingChoicesProviderReopenCandidateCount = 0
+  lastFundingChoicesProviderReopenCandidateVisibleCount = 0
   lastFundingChoicesProviderReopenCandidateTotalCount = 0
   lastFundingChoicesProviderReopenCandidates = []
   lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack = false
@@ -9421,6 +9429,8 @@ function applyFundingChoicesProviderPersistenceDiagnostics(diagnostics) {
     lastFundingChoicesProviderPersistenceReason
   diagnostics.providerReopenCandidateCount =
     lastFundingChoicesProviderReopenCandidateCount
+  diagnostics.providerReopenCandidateVisibleCount =
+    lastFundingChoicesProviderReopenCandidateVisibleCount
   diagnostics.providerReopenCandidateTotalCount =
     lastFundingChoicesProviderReopenCandidateTotalCount
   diagnostics.providerReopenCandidates =
@@ -9439,8 +9449,13 @@ function getFundingChoicesProviderReopenCandidateDiagnostic(element) {
     getSafeClientRect(element)
 
   return {
+    tag:
+      String(element?.tagName || '').toLowerCase().slice(0, 24),
     text:
       normalizeMatchText(getActionText(element)).slice(0, 90),
+    ariaLabel:
+      normalizeMatchText(element?.getAttribute?.('aria-label') || '')
+        .slice(0, 90),
     className:
       getClassNameText(element).slice(0, 120),
     visible:
@@ -9473,6 +9488,7 @@ function diagnoseFundingChoicesProviderReopenPathAfterBack(
   lastFundingChoicesProviderPersistenceReason =
     'provider_reopen_diagnostic_only'
   lastFundingChoicesProviderReopenCandidateCount = 0
+  lastFundingChoicesProviderReopenCandidateVisibleCount = 0
   lastFundingChoicesProviderReopenCandidateTotalCount = 0
   lastFundingChoicesProviderReopenCandidates = []
   lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack = false
@@ -9509,6 +9525,8 @@ function diagnoseFundingChoicesProviderReopenPathAfterBack(
   lastFundingChoicesProviderReopenCandidateTotalCount =
     candidates.length
   lastFundingChoicesProviderReopenCandidateCount =
+    visibleCandidates.length
+  lastFundingChoicesProviderReopenCandidateVisibleCount =
     visibleCandidates.length
   lastFundingChoicesProviderReopenCandidates =
     candidates
@@ -13311,6 +13329,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPersistenceReopenClicked: lastFundingChoicesProviderPersistenceReopenClicked,
     providerPersistenceReason: lastFundingChoicesProviderPersistenceReason,
     providerReopenCandidateCount: lastFundingChoicesProviderReopenCandidateCount,
+    providerReopenCandidateVisibleCount: lastFundingChoicesProviderReopenCandidateVisibleCount,
     providerReopenCandidateTotalCount: lastFundingChoicesProviderReopenCandidateTotalCount,
     providerReopenCandidates:
       lastFundingChoicesProviderReopenCandidates
@@ -13457,6 +13476,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerPersistenceReopenClicked: lastFundingChoicesProviderPersistenceReopenClicked,
     providerPersistenceReason: lastFundingChoicesProviderPersistenceReason,
     providerReopenCandidateCount: lastFundingChoicesProviderReopenCandidateCount,
+    providerReopenCandidateVisibleCount: lastFundingChoicesProviderReopenCandidateVisibleCount,
     providerReopenCandidateTotalCount: lastFundingChoicesProviderReopenCandidateTotalCount,
     providerReopenCandidates:
       lastFundingChoicesProviderReopenCandidates

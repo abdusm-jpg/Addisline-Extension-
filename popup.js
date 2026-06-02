@@ -2618,10 +2618,6 @@ function formatFundingChoicesControls(summary) {
       `providerPersistenceVerified: ${Boolean(summary.providerPersistenceVerified)}`,
       `providerPersistenceReopenClicked: ${Boolean(summary.providerPersistenceReopenClicked)}`,
       `providerPersistenceReason: ${String(summary.providerPersistenceReason || 'none').slice(0, 60)}`,
-      `providerReopenCandidateCount: ${Math.max(0, Number(summary.providerReopenCandidateCount) || 0)}`,
-      `providerReopenCandidateTotalCount: ${Math.max(0, Number(summary.providerReopenCandidateTotalCount) || 0)}`,
-      `providerReopenOriginalExistsAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsExistsAfterBack)}`,
-      `providerReopenOriginalConnectedAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsConnectedAfterBack)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', '),
@@ -2658,20 +2654,40 @@ function formatFundingChoicesControls(summary) {
           )
           .slice(0, 5)
       : []
+  const providerReopenCandidateCount =
+    Math.max(0, Number(summary.providerReopenCandidateCount) || 0)
+  const providerReopenCandidateVisibleCount =
+    Math.max(
+      0,
+      Number(summary.providerReopenCandidateVisibleCount) ||
+        providerReopenCandidateCount
+    )
+  const providerReopenCandidateTotalCount =
+    Math.max(0, Number(summary.providerReopenCandidateTotalCount) || 0)
+
+  lines.push('providerReopenCandidateDiagnostics:')
+  lines.push([
+    `providerReopenCandidateCount: ${providerReopenCandidateCount}`,
+    `providerReopenCandidateVisibleCount: ${providerReopenCandidateVisibleCount}`,
+    `providerReopenCandidateTotalCount: ${providerReopenCandidateTotalCount}`,
+    `originalManageVendorsConnectedAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsConnectedAfterBack)}`,
+    `originalManageVendorsExistsAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsExistsAfterBack)}`,
+  ].join(', '))
 
   if (providerReopenCandidates.length > 0) {
-    lines.push('providerReopenCandidates:')
+    lines.push('providerReopenCandidateDetails:')
     providerReopenCandidates.forEach((candidate, index) => {
       lines.push([
-        `${index + 1}. text:${String(candidate.text || 'none').slice(0, 70)}`,
+        `${index + 1}. tag:${String(candidate.tag || 'unknown').slice(0, 24)}`,
         `class:${String(candidate.className || 'none').slice(0, 80)}`,
-        `visible:${Boolean(candidate.visible)}`,
+        `text:${String(candidate.text || 'none').slice(0, 70)}`,
+        `aria-label:${String(candidate.ariaLabel || 'none').slice(0, 70)}`,
         `connected:${Boolean(candidate.connected)}`,
         `disabled:${Boolean(candidate.disabled)}`,
+        `visible:${Boolean(candidate.visible)}`,
         `display:${String(candidate.display || 'none').slice(0, 18)}`,
         `visibility:${String(candidate.visibility || 'none').slice(0, 18)}`,
-        `opacity:${String(candidate.opacity || 'none').slice(0, 12)}`,
-        `pointer:${String(candidate.pointerEvents || 'none').slice(0, 18)}`,
+        `pointerEvents:${String(candidate.pointerEvents || 'none').slice(0, 18)}`,
         `rect:${Math.max(0, Number(candidate.rectWidth) || 0)}x${Math.max(0, Number(candidate.rectHeight) || 0)}`,
       ].join(' | '))
     })
