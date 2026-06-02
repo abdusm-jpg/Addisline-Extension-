@@ -2618,6 +2618,10 @@ function formatFundingChoicesControls(summary) {
       `providerPersistenceVerified: ${Boolean(summary.providerPersistenceVerified)}`,
       `providerPersistenceReopenClicked: ${Boolean(summary.providerPersistenceReopenClicked)}`,
       `providerPersistenceReason: ${String(summary.providerPersistenceReason || 'none').slice(0, 60)}`,
+      `providerReopenCandidateCount: ${Math.max(0, Number(summary.providerReopenCandidateCount) || 0)}`,
+      `providerReopenCandidateTotalCount: ${Math.max(0, Number(summary.providerReopenCandidateTotalCount) || 0)}`,
+      `providerReopenOriginalExistsAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsExistsAfterBack)}`,
+      `providerReopenOriginalConnectedAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsConnectedAfterBack)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', '),
@@ -2644,6 +2648,33 @@ function formatFundingChoicesControls(summary) {
       `rect:${Math.max(0, Number(element.rectWidth) || 0)}x${Math.max(0, Number(element.rectHeight) || 0)}`,
       `text:${String(element.text || 'none').slice(0, 80)}`,
     ].join(', '))
+  }
+
+  const providerReopenCandidates =
+    Array.isArray(summary.providerReopenCandidates)
+      ? summary.providerReopenCandidates
+          .filter((candidate) =>
+            candidate && typeof candidate === 'object'
+          )
+          .slice(0, 5)
+      : []
+
+  if (providerReopenCandidates.length > 0) {
+    lines.push('providerReopenCandidates:')
+    providerReopenCandidates.forEach((candidate, index) => {
+      lines.push([
+        `${index + 1}. text:${String(candidate.text || 'none').slice(0, 70)}`,
+        `class:${String(candidate.className || 'none').slice(0, 80)}`,
+        `visible:${Boolean(candidate.visible)}`,
+        `connected:${Boolean(candidate.connected)}`,
+        `disabled:${Boolean(candidate.disabled)}`,
+        `display:${String(candidate.display || 'none').slice(0, 18)}`,
+        `visibility:${String(candidate.visibility || 'none').slice(0, 18)}`,
+        `opacity:${String(candidate.opacity || 'none').slice(0, 12)}`,
+        `pointer:${String(candidate.pointerEvents || 'none').slice(0, 18)}`,
+        `rect:${Math.max(0, Number(candidate.rectWidth) || 0)}x${Math.max(0, Number(candidate.rectHeight) || 0)}`,
+      ].join(' | '))
+    })
   }
 
   const fundingChoicesGlobalSaveControls =

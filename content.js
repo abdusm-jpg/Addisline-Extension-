@@ -123,6 +123,11 @@ let lastFundingChoicesProviderSaveAfterBackPositiveBlockedCount = 0
 let lastFundingChoicesProviderPersistenceVerified = false
 let lastFundingChoicesProviderPersistenceReopenClicked = false
 let lastFundingChoicesProviderPersistenceReason = ''
+let lastFundingChoicesProviderReopenCandidateCount = 0
+let lastFundingChoicesProviderReopenCandidateTotalCount = 0
+let lastFundingChoicesProviderReopenCandidates = []
+let lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack = false
+let lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack = false
 let lastFundingChoicesProviderStateOwnershipDiagnostic = null
 let fundingChoicesProviderStateOwnershipProbeSignature = ''
 let fundingChoicesProviderStateOwnershipProbeRunning = false
@@ -243,7 +248,6 @@ const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML = 600
 const MAX_FUNDING_CHOICES_PROVIDER_STATE_DIAGNOSTIC_HTML = 2000
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
 const FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS = 120
-const FUNDING_CHOICES_PROVIDER_PERSISTENCE_DIAGNOSTIC_DELAY_MS = 120
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -4097,6 +4101,43 @@ function recordCurrentSiteDiagnostic({
               Boolean(fundingChoicesControlDiagnostics.providerPersistenceReopenClicked),
             providerPersistenceReason:
               String(fundingChoicesControlDiagnostics.providerPersistenceReason || '').slice(0, 80),
+            providerReopenCandidateCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerReopenCandidateCount) || 0),
+            providerReopenCandidateTotalCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerReopenCandidateTotalCount) || 0),
+            providerReopenOriginalManageVendorsExistsAfterBack:
+              Boolean(fundingChoicesControlDiagnostics.providerReopenOriginalManageVendorsExistsAfterBack),
+            providerReopenOriginalManageVendorsConnectedAfterBack:
+              Boolean(fundingChoicesControlDiagnostics.providerReopenOriginalManageVendorsConnectedAfterBack),
+            providerReopenCandidates:
+              (Array.isArray(fundingChoicesControlDiagnostics.providerReopenCandidates)
+                ? fundingChoicesControlDiagnostics.providerReopenCandidates
+                : [])
+                .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
+                .map((candidate) => ({
+                  text:
+                    String(candidate?.text || '').slice(0, 90),
+                  className:
+                    String(candidate?.className || '').slice(0, 120),
+                  visible:
+                    Boolean(candidate?.visible),
+                  connected:
+                    Boolean(candidate?.connected),
+                  disabled:
+                    Boolean(candidate?.disabled),
+                  display:
+                    String(candidate?.display || '').slice(0, 24),
+                  visibility:
+                    String(candidate?.visibility || '').slice(0, 24),
+                  opacity:
+                    String(candidate?.opacity || '').slice(0, 12),
+                  pointerEvents:
+                    String(candidate?.pointerEvents || '').slice(0, 24),
+                  rectWidth:
+                    Math.max(0, Number(candidate?.rectWidth) || 0),
+                  rectHeight:
+                    Math.max(0, Number(candidate?.rectHeight) || 0),
+                })),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             fundingChoicesGlobalSaveControlCount:
@@ -9147,6 +9188,11 @@ function resetFundingChoicesProviderSaveBackDiagnostics() {
   lastFundingChoicesProviderPersistenceVerified = false
   lastFundingChoicesProviderPersistenceReopenClicked = false
   lastFundingChoicesProviderPersistenceReason = ''
+  lastFundingChoicesProviderReopenCandidateCount = 0
+  lastFundingChoicesProviderReopenCandidateTotalCount = 0
+  lastFundingChoicesProviderReopenCandidates = []
+  lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack = false
+  lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack = false
 }
 
 function shouldDiagnoseFundingChoicesProviderSaveAfterAriaSuccess(providerPhaseHandled) {
@@ -9373,106 +9419,119 @@ function applyFundingChoicesProviderPersistenceDiagnostics(diagnostics) {
     lastFundingChoicesProviderPersistenceReopenClicked
   diagnostics.providerPersistenceReason =
     lastFundingChoicesProviderPersistenceReason
+  diagnostics.providerReopenCandidateCount =
+    lastFundingChoicesProviderReopenCandidateCount
+  diagnostics.providerReopenCandidateTotalCount =
+    lastFundingChoicesProviderReopenCandidateTotalCount
+  diagnostics.providerReopenCandidates =
+    lastFundingChoicesProviderReopenCandidates
+      .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
+  diagnostics.providerReopenOriginalManageVendorsExistsAfterBack =
+    lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack
+  diagnostics.providerReopenOriginalManageVendorsConnectedAfterBack =
+    lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack
 }
 
-function clickFundingChoicesProviderPreferencesForPersistenceDiagnostics(root) {
+function getFundingChoicesProviderReopenCandidateDiagnostic(element) {
+  const style =
+    safeGetComputedStyle(element)
+  const rect =
+    getSafeClientRect(element)
+
+  return {
+    text:
+      normalizeMatchText(getActionText(element)).slice(0, 90),
+    className:
+      getClassNameText(element).slice(0, 120),
+    visible:
+      Boolean(element && isVisible(element)),
+    connected:
+      Boolean(element?.isConnected),
+    disabled:
+      getCookieDebugDisabledState(element) === 'disabled',
+    display:
+      String(style?.display || '').slice(0, 24),
+    visibility:
+      String(style?.visibility || '').slice(0, 24),
+    opacity:
+      String(style?.opacity || '').slice(0, 12),
+    pointerEvents:
+      String(style?.pointerEvents || '').slice(0, 24),
+    rectWidth:
+      Math.round(Math.max(0, Number(rect?.width) || 0)),
+    rectHeight:
+      Math.round(Math.max(0, Number(rect?.height) || 0)),
+  }
+}
+
+function diagnoseFundingChoicesProviderReopenPathAfterBack(
+  root,
+  originalManageVendorsControl = null
+) {
   lastFundingChoicesProviderPersistenceVerified = false
   lastFundingChoicesProviderPersistenceReopenClicked = false
-  lastFundingChoicesProviderPersistenceReason = ''
+  lastFundingChoicesProviderPersistenceReason =
+    'provider_reopen_diagnostic_only'
+  lastFundingChoicesProviderReopenCandidateCount = 0
+  lastFundingChoicesProviderReopenCandidateTotalCount = 0
+  lastFundingChoicesProviderReopenCandidates = []
+  lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack = false
+  lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack =
+    Boolean(originalManageVendorsControl?.isConnected)
 
   const startedAt =
     Date.now()
-  const lookup =
-    getFundingChoicesManageVendorsLookup(root)
-  const control =
-    lookup.control || null
-
-  if (!control) {
-    lastFundingChoicesProviderPersistenceReason =
-      lookup.rejectedReason || 'provider_reopen_control_not_found'
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_aria_persistence_reopen',
-      status: 'not_found',
-      reason: lastFundingChoicesProviderPersistenceReason,
-      found: 0,
-      scanned: Math.max(0, Number(lookup.count) || 0),
-      elapsedMs: Date.now() - startedAt,
-    })
-
-    return false
-  }
-
-  const clicked =
-    clickFundingChoicesManageVendorsButton(control)
-
-  lastFundingChoicesProviderPersistenceReopenClicked =
-    Boolean(clicked)
-  if (clicked) {
-    lastFundingChoicesProviderManageVendorsFound = true
-    lastFundingChoicesProviderManageVendorsClicked = true
-  } else {
-    lastFundingChoicesProviderPersistenceReason =
-      lastFundingChoicesProviderManageVendorsRejectedReason ||
-      'provider_reopen_click_failed'
-  }
-
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_aria_persistence_reopen',
-    status: clicked ? 'clicked' : 'skipped',
-    reason: lastFundingChoicesProviderPersistenceReason,
-    found: 1,
-    scanned: Math.max(0, Number(lookup.count) || 0),
-    elapsedMs: Date.now() - startedAt,
-  })
-
-  return clicked
-}
-
-function verifyFundingChoicesProviderAriaPersistenceFromVisiblePanel(root) {
-  const providerPanel =
-    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
-    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(document) ||
-    getVisibleFundingChoicesProviderPreferencesPanel(root) ||
-    getVisibleFundingChoicesProviderPreferencesPanel(document)
-  const reopened =
-    Boolean(
-      providerPanel &&
-        refreshFundingChoicesProviderPanelDiagnostics(providerPanel)
+  const selector =
+    'button.fc-manage-vendors, .fc-navigation-button.fc-manage-vendors, [class*="fc-manage-vendors"]'
+  const fcRoot =
+    getFundingChoicesRoot(root) ||
+    getVisibleFundingChoicesPanel() ||
+    root ||
+    document
+  const candidates =
+    uniqueElements([
+      ...safeQuerySelectorAll(fcRoot, selector),
+      ...safeQuerySelectorAll(document, selector),
+    ])
+  const visibleCandidates =
+    candidates.filter((candidate) =>
+      candidate?.isConnected &&
+      isVisible(candidate)
     )
 
-  lastFundingChoicesProviderPersistenceVerified =
+  lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack =
     Boolean(
-      reopened &&
-        Math.max(0, Number(lastFundingChoicesProviderToggleCount) || 0) > 0 &&
-        Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0
+      candidates.some((candidate) =>
+        candidate?.isConnected &&
+          safeMatches(candidate, '.fc-manage-vendors')
+      )
     )
-
-  if (lastFundingChoicesProviderPersistenceVerified) {
-    lastFundingChoicesProviderPersistenceReason = ''
-  } else if (!reopened) {
-    lastFundingChoicesProviderPersistenceReason =
-      'provider_preferences_not_reopened'
-  } else if (Math.max(0, Number(lastFundingChoicesProviderToggleCount) || 0) === 0) {
-    lastFundingChoicesProviderPersistenceReason =
-      'provider_toggle_count_zero_after_reopen'
-  } else {
-    lastFundingChoicesProviderPersistenceReason =
-      'provider_active_after_reopen'
-  }
+  lastFundingChoicesProviderReopenCandidateTotalCount =
+    candidates.length
+  lastFundingChoicesProviderReopenCandidateCount =
+    visibleCandidates.length
+  lastFundingChoicesProviderReopenCandidates =
+    candidates
+      .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
+      .map(getFundingChoicesProviderReopenCandidateDiagnostic)
 
   applyFundingChoicesProviderPersistenceDiagnostics(
     lastFundingChoicesControlDiagnostics
   )
 
   appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_aria_persistence',
-    status: lastFundingChoicesProviderPersistenceVerified ? 'verified' : 'failed',
+    strategy: 'fc.provider_reopen_after_back_diagnostics',
+    status: 'ran',
     reason: lastFundingChoicesProviderPersistenceReason,
-    found: Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
-    scanned: Math.max(0, Number(lastFundingChoicesProviderToggleCount) || 0),
+    found: lastFundingChoicesProviderReopenCandidateCount,
+    scanned: lastFundingChoicesProviderReopenCandidateTotalCount,
+    originalExists: lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack,
+    originalConnected:
+      lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack,
+    elapsedMs: Date.now() - startedAt,
   })
 
-  return lastFundingChoicesProviderPersistenceVerified
+  return true
 }
 
 function clickFundingChoicesProviderStrictSaveAction(root) {
@@ -12363,24 +12422,7 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
     }
 
     if (shouldDiagnoseProviderSave && backDiagnosticResult.clicked) {
-      const persistenceReopenClicked =
-        clickFundingChoicesProviderPreferencesForPersistenceDiagnostics(
-          finalDiagnosticRoot
-        )
-
-      if (persistenceReopenClicked) {
-        setTimeout(() => {
-          verifyFundingChoicesProviderAriaPersistenceFromVisiblePanel(
-            finalDiagnosticRoot
-          )
-          recordFinalDiagnostic()
-        }, FUNDING_CHOICES_PROVIDER_PERSISTENCE_DIAGNOSTIC_DELAY_MS)
-        return
-      }
-
-      verifyFundingChoicesProviderAriaPersistenceFromVisiblePanel(
-        finalDiagnosticRoot
-      )
+      diagnoseFundingChoicesProviderReopenPathAfterBack(finalDiagnosticRoot)
     }
 
     recordFinalDiagnostic()
@@ -13268,6 +13310,15 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPersistenceVerified: lastFundingChoicesProviderPersistenceVerified,
     providerPersistenceReopenClicked: lastFundingChoicesProviderPersistenceReopenClicked,
     providerPersistenceReason: lastFundingChoicesProviderPersistenceReason,
+    providerReopenCandidateCount: lastFundingChoicesProviderReopenCandidateCount,
+    providerReopenCandidateTotalCount: lastFundingChoicesProviderReopenCandidateTotalCount,
+    providerReopenCandidates:
+      lastFundingChoicesProviderReopenCandidates
+        .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS),
+    providerReopenOriginalManageVendorsExistsAfterBack:
+      lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack,
+    providerReopenOriginalManageVendorsConnectedAfterBack:
+      lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack,
     clickableOwnerCount,
     ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
@@ -13405,6 +13456,15 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerPersistenceVerified: lastFundingChoicesProviderPersistenceVerified,
     providerPersistenceReopenClicked: lastFundingChoicesProviderPersistenceReopenClicked,
     providerPersistenceReason: lastFundingChoicesProviderPersistenceReason,
+    providerReopenCandidateCount: lastFundingChoicesProviderReopenCandidateCount,
+    providerReopenCandidateTotalCount: lastFundingChoicesProviderReopenCandidateTotalCount,
+    providerReopenCandidates:
+      lastFundingChoicesProviderReopenCandidates
+        .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS),
+    providerReopenOriginalManageVendorsExistsAfterBack:
+      lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack,
+    providerReopenOriginalManageVendorsConnectedAfterBack:
+      lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack,
     clickableOwnerCount: 0,
     ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
@@ -14198,23 +14258,9 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     }
 
     if (shouldDiagnoseProviderSave && backDiagnosticResult.clicked) {
-      const persistenceReopenClicked =
-        clickFundingChoicesProviderPreferencesForPersistenceDiagnostics(
-          finalDiagnosticRoot
-        )
-
-      if (persistenceReopenClicked) {
-        setTimeout(() => {
-          verifyFundingChoicesProviderAriaPersistenceFromVisiblePanel(
-            finalDiagnosticRoot
-          )
-          recordFinalDiagnostic()
-        }, FUNDING_CHOICES_PROVIDER_PERSISTENCE_DIAGNOSTIC_DELAY_MS)
-        return
-      }
-
-      verifyFundingChoicesProviderAriaPersistenceFromVisiblePanel(
-        finalDiagnosticRoot
+      diagnoseFundingChoicesProviderReopenPathAfterBack(
+        finalDiagnosticRoot,
+        clickedControl
       )
     }
 
