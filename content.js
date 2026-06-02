@@ -113,6 +113,13 @@ let lastFundingChoicesProviderManageVendorsMode = ''
 let lastFundingChoicesProviderManageVendorsAllowClick = false
 let lastFundingChoicesProviderManageVendorsFound = false
 let lastFundingChoicesProviderManageVendorsClicked = false
+let lastFundingChoicesProviderSaveBackFound = false
+let lastFundingChoicesProviderSaveBackClicked = false
+let lastFundingChoicesProviderSaveBackReason = ''
+let lastFundingChoicesProviderSaveBackText = ''
+let lastFundingChoicesProviderSaveAfterBackControlCount = 0
+let lastFundingChoicesProviderSaveAfterBackStrictCount = 0
+let lastFundingChoicesProviderSaveAfterBackPositiveBlockedCount = 0
 let lastFundingChoicesProviderStateOwnershipDiagnostic = null
 let fundingChoicesProviderStateOwnershipProbeSignature = ''
 let fundingChoicesProviderStateOwnershipProbeRunning = false
@@ -232,6 +239,7 @@ const MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS = 5
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML = 600
 const MAX_FUNDING_CHOICES_PROVIDER_STATE_DIAGNOSTIC_HTML = 2000
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
+const FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS = 120
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -4065,6 +4073,20 @@ function recordCurrentSiteDiagnostic({
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsFound),
             providerManageVendorsClicked:
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsClicked),
+            providerSaveBackFound:
+              Boolean(fundingChoicesControlDiagnostics.providerSaveBackFound),
+            providerSaveBackClicked:
+              Boolean(fundingChoicesControlDiagnostics.providerSaveBackClicked),
+            providerSaveBackReason:
+              String(fundingChoicesControlDiagnostics.providerSaveBackReason || '').slice(0, 80),
+            providerSaveBackText:
+              String(fundingChoicesControlDiagnostics.providerSaveBackText || '').slice(0, 80),
+            providerSaveAfterBackControlCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerSaveAfterBackControlCount) || 0),
+            providerSaveAfterBackStrictCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerSaveAfterBackStrictCount) || 0),
+            providerSaveAfterBackPositiveBlockedCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerSaveAfterBackPositiveBlockedCount) || 0),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
             fundingChoicesGlobalSaveControlCount:
@@ -9104,6 +9126,219 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
   }
 }
 
+function resetFundingChoicesProviderSaveBackDiagnostics() {
+  lastFundingChoicesProviderSaveBackFound = false
+  lastFundingChoicesProviderSaveBackClicked = false
+  lastFundingChoicesProviderSaveBackReason = ''
+  lastFundingChoicesProviderSaveBackText = ''
+  lastFundingChoicesProviderSaveAfterBackControlCount = 0
+  lastFundingChoicesProviderSaveAfterBackStrictCount = 0
+  lastFundingChoicesProviderSaveAfterBackPositiveBlockedCount = 0
+}
+
+function shouldDiagnoseFundingChoicesProviderSaveAfterAriaSuccess(providerPhaseHandled) {
+  return Boolean(
+    providerPhaseHandled &&
+      Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0 &&
+      Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0 &&
+      Math.max(0, Number(lastFundingChoicesProviderClickedCount) || 0) > 0 &&
+      lastFundingChoicesProviderToggleMethod === 'aria-pressed'
+  )
+}
+
+function getFundingChoicesProviderSaveBackSearchRoots(root) {
+  const providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  const fcRoot =
+    getFundingChoicesRoot(providerPanel || root) ||
+    getFundingChoicesRoot(root) ||
+    getVisibleFundingChoicesPanel()
+
+  return uniqueElements([
+    providerPanel,
+    fcRoot,
+    root,
+    getVisibleFundingChoicesPanel(),
+    document,
+  ])
+    .filter((candidate) =>
+      candidate &&
+      typeof candidate.querySelectorAll === 'function'
+    )
+}
+
+function isFundingChoicesProviderSaveBackButton(control) {
+  if (
+    !control?.isConnected ||
+    !isVisible(control) ||
+    getCookieDebugDisabledState(control) === 'disabled' ||
+    String(control?.getAttribute?.('aria-hidden') || '') === 'true' ||
+    hasUnsafeAcceptText(control)
+  ) {
+    return false
+  }
+
+  if (
+    !safeMatches(
+      control,
+      '.fc-vendor-preferences-back, .fc-dialog-header-back-button'
+    )
+  ) {
+    return false
+  }
+
+  const signal =
+    normalizeMatchText([
+      getActionText(control),
+      control?.getAttribute?.('aria-label'),
+      getClassNameText(control),
+    ].join(' '))
+
+  if (
+    textHasAny(signal, fundingChoicesUnsafePositiveTexts) ||
+    textHasAny(signal, fundingChoicesProviderStrictSaveBlockedTexts)
+  ) {
+    return false
+  }
+
+  return true
+}
+
+function findFundingChoicesProviderSaveBackButton(root) {
+  const selector =
+    '.fc-vendor-preferences-back, .fc-dialog-header-back-button'
+  const controls = []
+
+  for (const searchRoot of getFundingChoicesProviderSaveBackSearchRoots(root)) {
+    if (controls.length >= MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS) break
+
+    for (const control of safeQuerySelectorAll(searchRoot, selector)) {
+      if (controls.length >= MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS) break
+      if (controls.includes(control)) continue
+      controls.push(control)
+    }
+  }
+
+  return {
+    control:
+      controls.find(isFundingChoicesProviderSaveBackButton) || null,
+    scanned: controls.length,
+  }
+}
+
+function clickFundingChoicesProviderSaveBackForDiagnostics(root) {
+  resetFundingChoicesProviderSaveBackDiagnostics()
+
+  const startedAt =
+    Date.now()
+  const { control, scanned } =
+    findFundingChoicesProviderSaveBackButton(root)
+
+  lastFundingChoicesProviderSaveBackFound =
+    Boolean(control)
+  lastFundingChoicesProviderSaveBackText =
+    normalizeMatchText(getActionText(control)).slice(0, 80)
+
+  if (!control) {
+    lastFundingChoicesProviderSaveBackReason =
+      'provider_back_button_not_found'
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_back_for_save',
+      status: 'not_found',
+      reason: lastFundingChoicesProviderSaveBackReason,
+      found: 0,
+      scanned,
+      elapsedMs: Date.now() - startedAt,
+    })
+
+    return {
+      clicked: false,
+      found: false,
+      scanned,
+    }
+  }
+
+  const clicked =
+    clickElementSafely(control, {
+      includePointerEvents: true,
+    })
+
+  lastFundingChoicesProviderSaveBackClicked =
+    Boolean(clicked)
+  lastFundingChoicesProviderSaveBackReason =
+    clicked ? '' : 'provider_back_click_failed'
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_back_for_save',
+    status: clicked ? 'clicked' : 'skipped',
+    reason: lastFundingChoicesProviderSaveBackReason,
+    found: 1,
+    scanned,
+    elapsedMs: Date.now() - startedAt,
+  })
+
+  return {
+    clicked,
+    found: true,
+    scanned,
+  }
+}
+
+function getFundingChoicesPostProviderBackDiagnosticRoot(root) {
+  return (
+    getVisibleFundingChoicesPanel() ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document
+  )
+}
+
+function updateFundingChoicesProviderSaveAfterBackDiagnostics(diagnostics) {
+  if (!lastFundingChoicesProviderSaveBackClicked) {
+    return
+  }
+
+  lastFundingChoicesProviderSaveAfterBackControlCount =
+    Math.max(
+      0,
+      Number(diagnostics?.fundingChoicesGlobalSaveControlCount) ||
+        Number(diagnostics?.providerSaveCandidateCount) ||
+        0
+    )
+  lastFundingChoicesProviderSaveAfterBackStrictCount =
+    Math.max(
+      0,
+      Number(diagnostics?.fundingChoicesGlobalStrictSaveControlCount) ||
+        Number(diagnostics?.providerStrictSaveCandidateCount) ||
+        0
+    )
+  lastFundingChoicesProviderSaveAfterBackPositiveBlockedCount =
+    Math.max(
+      0,
+      Number(diagnostics?.fundingChoicesGlobalPositiveConsentBlockedCount) ||
+        Number(diagnostics?.providerPositiveConsentBlockedCount) ||
+        0
+    )
+
+  if (diagnostics && typeof diagnostics === 'object') {
+    diagnostics.providerSaveBackFound =
+      lastFundingChoicesProviderSaveBackFound
+    diagnostics.providerSaveBackClicked =
+      lastFundingChoicesProviderSaveBackClicked
+    diagnostics.providerSaveBackReason =
+      lastFundingChoicesProviderSaveBackReason
+    diagnostics.providerSaveBackText =
+      lastFundingChoicesProviderSaveBackText
+    diagnostics.providerSaveAfterBackControlCount =
+      lastFundingChoicesProviderSaveAfterBackControlCount
+    diagnostics.providerSaveAfterBackStrictCount =
+      lastFundingChoicesProviderSaveAfterBackStrictCount
+    diagnostics.providerSaveAfterBackPositiveBlockedCount =
+      lastFundingChoicesProviderSaveAfterBackPositiveBlockedCount
+  }
+}
+
 function clickFundingChoicesProviderStrictSaveAction(root) {
   const startedAt =
     Date.now()
@@ -11894,21 +12129,113 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
     getVisibleFundingChoicesProviderPreferencesPanel(root)
   const diagnosticRoot =
     providerPanel || getFundingChoicesRoot(root) || root
+  const shouldDiagnoseProviderSave =
+    shouldDiagnoseFundingChoicesProviderSaveAfterAriaSuccess(providerPhaseHandled)
+  const backDiagnosticResult =
+    shouldDiagnoseProviderSave
+      ? clickFundingChoicesProviderSaveBackForDiagnostics(diagnosticRoot)
+      : {
+          clicked: false,
+        }
 
-  collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
-  recordCurrentSiteDiagnostic({
-    status: providerPhaseHandled ? 'partial' : 'skipped',
-    reason: providerPhaseHandled
-      ? 'fc_provider_aria_pressed_disabled'
-      : 'fc_provider_aria_pressed_skipped',
-    candidates: [diagnosticRoot],
-    blockedReason: '',
-    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
-  })
-  rejectFlowCompleted = true
-  stopObserver()
-  setLastAction('settings_opened')
-  setLastError('')
+  const finishDiagnostic = () => {
+    const finalDiagnosticRoot =
+      backDiagnosticResult.clicked
+        ? getFundingChoicesPostProviderBackDiagnosticRoot(root)
+        : diagnosticRoot
+
+    collectFundingChoicesLightweightControlDiagnostics(finalDiagnosticRoot)
+
+    if (backDiagnosticResult.clicked) {
+      updateFundingChoicesProviderSaveAfterBackDiagnostics(
+        lastFundingChoicesControlDiagnostics
+      )
+    }
+
+    const providerSaveCandidateCount =
+      Math.max(
+        0,
+        Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalSaveControlCount) ||
+          Number(lastFundingChoicesControlDiagnostics?.providerSaveCandidateCount) ||
+          0
+      )
+    const providerStrictSaveCandidateCount =
+      Math.max(
+        0,
+        Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalStrictSaveControlCount) ||
+          Number(lastFundingChoicesControlDiagnostics?.providerStrictSaveCandidateCount) ||
+          0
+      )
+    const providerPositiveConsentBlockedCount =
+      Math.max(
+        0,
+        Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalPositiveConsentBlockedCount) ||
+          Number(lastFundingChoicesControlDiagnostics?.providerPositiveConsentBlockedCount) ||
+          0
+      )
+
+    if (shouldDiagnoseProviderSave) {
+      lastSettingsSaveDetected =
+        providerStrictSaveCandidateCount > 0
+      lastSettingsSaveClicked = false
+      lastSettingsSaveVerification =
+        backDiagnosticResult.clicked
+          ? providerStrictSaveCandidateCount > 0
+            ? 'fc_provider_save_after_back_candidate_diagnostic_only'
+            : 'fc_provider_save_after_back_candidate_not_found'
+          : backDiagnosticResult.found === false
+            ? 'fc_provider_back_button_not_found'
+            : backDiagnosticResult.found === true
+              ? 'fc_provider_back_click_failed'
+              : providerStrictSaveCandidateCount > 0
+                ? 'fc_provider_save_candidate_diagnostic_only'
+                : 'fc_provider_save_candidate_not_found'
+
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.global_save_controls',
+        status: 'skipped',
+        reason: backDiagnosticResult.clicked
+          ? 'diagnostic_after_provider_back'
+          : lastSettingsSaveVerification,
+        found: providerStrictSaveCandidateCount,
+        scanned: providerSaveCandidateCount,
+        blocked: providerPositiveConsentBlockedCount,
+      })
+    }
+
+    recordCurrentSiteDiagnostic({
+      status: providerPhaseHandled ? 'partial' : 'skipped',
+      reason: providerPhaseHandled
+        ? 'fc_provider_aria_pressed_disabled'
+        : 'fc_provider_aria_pressed_skipped',
+      candidates: [finalDiagnosticRoot],
+      blockedReason: '',
+      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+      settingsSaveDetected: shouldDiagnoseProviderSave
+        ? providerStrictSaveCandidateCount > 0
+        : lastSettingsSaveDetected,
+      settingsSaveClicked: false,
+      settingsSaveVerification: shouldDiagnoseProviderSave
+        ? lastSettingsSaveVerification
+        : lastSettingsSaveVerification || '',
+    })
+    rejectFlowCompleted = true
+    stopObserver()
+    setLastAction('settings_opened')
+    setLastError('')
+  }
+
+  if (backDiagnosticResult.clicked) {
+    rejectFlowCompleted = true
+    stopObserver()
+    setTimeout(
+      finishDiagnostic,
+      FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS
+    )
+    return
+  }
+
+  finishDiagnostic()
 }
 
 function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
@@ -12770,6 +13097,13 @@ function collectFundingChoicesControlDiagnostics(root) {
     manageVendorsAllowClick: lastFundingChoicesProviderManageVendorsAllowClick,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
+    providerSaveBackFound: lastFundingChoicesProviderSaveBackFound,
+    providerSaveBackClicked: lastFundingChoicesProviderSaveBackClicked,
+    providerSaveBackReason: lastFundingChoicesProviderSaveBackReason,
+    providerSaveBackText: lastFundingChoicesProviderSaveBackText,
+    providerSaveAfterBackControlCount: lastFundingChoicesProviderSaveAfterBackControlCount,
+    providerSaveAfterBackStrictCount: lastFundingChoicesProviderSaveAfterBackStrictCount,
+    providerSaveAfterBackPositiveBlockedCount: lastFundingChoicesProviderSaveAfterBackPositiveBlockedCount,
     clickableOwnerCount,
     ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
@@ -12897,6 +13231,13 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     manageVendorsAllowClick: lastFundingChoicesProviderManageVendorsAllowClick,
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
+    providerSaveBackFound: lastFundingChoicesProviderSaveBackFound,
+    providerSaveBackClicked: lastFundingChoicesProviderSaveBackClicked,
+    providerSaveBackReason: lastFundingChoicesProviderSaveBackReason,
+    providerSaveBackText: lastFundingChoicesProviderSaveBackText,
+    providerSaveAfterBackControlCount: lastFundingChoicesProviderSaveAfterBackControlCount,
+    providerSaveAfterBackStrictCount: lastFundingChoicesProviderSaveAfterBackStrictCount,
+    providerSaveAfterBackPositiveBlockedCount: lastFundingChoicesProviderSaveAfterBackPositiveBlockedCount,
     clickableOwnerCount: 0,
     ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
@@ -13581,85 +13922,124 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     })
   }
 
-  collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
-
   const shouldDiagnoseProviderSave =
-    providerPhaseHandled &&
-    Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0 &&
-    Math.max(0, Number(lastFundingChoicesProviderClickedCount) || 0) > 0 &&
-    lastFundingChoicesProviderToggleMethod === 'aria-pressed'
-  const providerSaveCandidateCount =
-    Math.max(
-      0,
-      Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalSaveControlCount) ||
-        Number(lastFundingChoicesControlDiagnostics?.providerSaveCandidateCount) ||
-        0
-    )
-  const providerStrictSaveCandidateCount =
-    Math.max(
-      0,
-      Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalStrictSaveControlCount) ||
-        Number(lastFundingChoicesControlDiagnostics?.providerStrictSaveCandidateCount) ||
-        0
-    )
-  const providerPositiveConsentBlockedCount =
-    Math.max(
-      0,
-      Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalPositiveConsentBlockedCount) ||
-        Number(lastFundingChoicesControlDiagnostics?.providerPositiveConsentBlockedCount) ||
-        0
-    )
+    shouldDiagnoseFundingChoicesProviderSaveAfterAriaSuccess(providerPhaseHandled)
+  const backDiagnosticResult =
+    shouldDiagnoseProviderSave
+      ? clickFundingChoicesProviderSaveBackForDiagnostics(diagnosticRoot)
+      : {
+          clicked: false,
+        }
 
-  if (shouldDiagnoseProviderSave) {
-    lastSettingsSaveDetected =
-      providerStrictSaveCandidateCount > 0
-    lastSettingsSaveClicked = false
-    lastSettingsSaveVerification =
-      providerStrictSaveCandidateCount > 0
-        ? 'fc_provider_save_candidate_diagnostic_only'
-        : 'fc_provider_save_candidate_not_found'
+  const finishDiagnostic = () => {
+    const finalDiagnosticRoot =
+      backDiagnosticResult.clicked
+        ? getFundingChoicesPostProviderBackDiagnosticRoot(root)
+        : diagnosticRoot
 
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.global_save_controls',
-      status: 'skipped',
-      reason: 'diagnostic_only',
-      found: providerStrictSaveCandidateCount,
-      scanned: providerSaveCandidateCount,
-      blocked: providerPositiveConsentBlockedCount,
+    collectFundingChoicesLightweightControlDiagnostics(finalDiagnosticRoot)
+
+    if (backDiagnosticResult.clicked) {
+      updateFundingChoicesProviderSaveAfterBackDiagnostics(
+        lastFundingChoicesControlDiagnostics
+      )
+    }
+
+    const providerSaveCandidateCount =
+      Math.max(
+        0,
+        Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalSaveControlCount) ||
+          Number(lastFundingChoicesControlDiagnostics?.providerSaveCandidateCount) ||
+          0
+      )
+    const providerStrictSaveCandidateCount =
+      Math.max(
+        0,
+        Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalStrictSaveControlCount) ||
+          Number(lastFundingChoicesControlDiagnostics?.providerStrictSaveCandidateCount) ||
+          0
+      )
+    const providerPositiveConsentBlockedCount =
+      Math.max(
+        0,
+        Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalPositiveConsentBlockedCount) ||
+          Number(lastFundingChoicesControlDiagnostics?.providerPositiveConsentBlockedCount) ||
+          0
+      )
+
+    if (shouldDiagnoseProviderSave) {
+      lastSettingsSaveDetected =
+        providerStrictSaveCandidateCount > 0
+      lastSettingsSaveClicked = false
+      lastSettingsSaveVerification =
+        backDiagnosticResult.clicked
+          ? providerStrictSaveCandidateCount > 0
+            ? 'fc_provider_save_after_back_candidate_diagnostic_only'
+            : 'fc_provider_save_after_back_candidate_not_found'
+          : backDiagnosticResult.found === false
+            ? 'fc_provider_back_button_not_found'
+            : backDiagnosticResult.found === true
+              ? 'fc_provider_back_click_failed'
+              : providerStrictSaveCandidateCount > 0
+                ? 'fc_provider_save_candidate_diagnostic_only'
+                : 'fc_provider_save_candidate_not_found'
+
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.global_save_controls',
+        status: 'skipped',
+        reason: backDiagnosticResult.clicked
+          ? 'diagnostic_after_provider_back'
+          : lastSettingsSaveVerification,
+        found: providerStrictSaveCandidateCount,
+        scanned: providerSaveCandidateCount,
+        blocked: providerPositiveConsentBlockedCount,
+      })
+    }
+
+    const providerSaved = false
+    const matchedElement =
+      clickedControl
+
+    recordCurrentSiteDiagnostic({
+      status: providerPhaseHandled ? 'partial' : opened ? 'settingsOpened' : 'partial',
+      reason: opened
+        ? providerPhaseHandled
+          ? 'fc_provider_aria_pressed_disabled'
+          : reason
+        : 'fc_provider_preferences_visual_verification_failed',
+      candidates: finalDiagnosticRoot ? [finalDiagnosticRoot] : [],
+      matchedRejectElement: matchedElement,
+      matchedRejectText: getActionText(matchedElement),
+      blockedReason: opened
+        ? ''
+        : 'provider_preferences_visual_verification_failed',
+      fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+      settingsSaveDetected: shouldDiagnoseProviderSave
+        ? providerStrictSaveCandidateCount > 0
+        : lastSettingsSaveDetected,
+      settingsSaveClicked: false,
+      settingsSaveVerification: shouldDiagnoseProviderSave
+        ? lastSettingsSaveVerification
+        : lastSettingsSaveVerification || '',
     })
+
+    rejectFlowCompleted = true
+    stopObserver()
+    setLastAction(providerSaved ? 'preferences_saved' : 'settings_opened')
+    setLastError('')
   }
 
-  const providerSaved = false
-  const matchedElement =
-    clickedControl
+  if (backDiagnosticResult.clicked) {
+    rejectFlowCompleted = true
+    stopObserver()
+    setTimeout(
+      finishDiagnostic,
+      FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS
+    )
+    return opened
+  }
 
-  recordCurrentSiteDiagnostic({
-    status: providerPhaseHandled ? 'partial' : opened ? 'settingsOpened' : 'partial',
-    reason: opened
-      ? providerPhaseHandled
-        ? 'fc_provider_aria_pressed_disabled'
-        : reason
-      : 'fc_provider_preferences_visual_verification_failed',
-    candidates: diagnosticRoot ? [diagnosticRoot] : [],
-    matchedRejectElement: matchedElement,
-    matchedRejectText: getActionText(matchedElement),
-    blockedReason: opened
-      ? ''
-      : 'provider_preferences_visual_verification_failed',
-    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
-    settingsSaveDetected: shouldDiagnoseProviderSave
-      ? providerStrictSaveCandidateCount > 0
-      : lastSettingsSaveDetected,
-    settingsSaveClicked: false,
-    settingsSaveVerification: shouldDiagnoseProviderSave
-      ? lastSettingsSaveVerification
-      : lastSettingsSaveVerification || '',
-  })
-
-  rejectFlowCompleted = true
-  stopObserver()
-  setLastAction(providerSaved ? 'preferences_saved' : 'settings_opened')
-  setLastError('')
+  finishDiagnostic()
 
   return opened
 }
@@ -14447,6 +14827,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderManageVendorsAllowClick = false
     lastFundingChoicesProviderManageVendorsFound = false
     lastFundingChoicesProviderManageVendorsClicked = false
+    resetFundingChoicesProviderSaveBackDiagnostics()
     lastFundingChoicesProviderStateOwnershipDiagnostic = null
     fundingChoicesProviderStateOwnershipProbeSignature = ''
     fundingChoicesProviderStateOwnershipProbeRunning = false
