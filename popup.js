@@ -2638,6 +2638,53 @@ function formatFundingChoicesControls(summary) {
     ].join(', '))
   }
 
+  const providerSaveCandidates =
+    Array.isArray(summary.providerSaveCandidates)
+      ? summary.providerSaveCandidates
+          .filter((candidate) =>
+            candidate && typeof candidate === 'object'
+          )
+          .slice(0, 8)
+      : []
+
+  lines.push([
+    'providerSaveCandidates:',
+    `count:${Math.max(0, Number(summary.providerSaveCandidateCount) || 0)}`,
+    `strict:${Math.max(0, Number(summary.providerStrictSaveCandidateCount) || 0)}`,
+    `positiveBlocked:${Math.max(0, Number(summary.providerPositiveConsentBlockedCount) || 0)}`,
+  ].join(', '))
+
+  if (providerSaveCandidates.length === 0) {
+    lines.push('providerSaveCandidateDetails: none')
+  } else {
+    providerSaveCandidates.forEach((candidate, index) => {
+      const visibility =
+        candidate.visibility &&
+        typeof candidate.visibility === 'object'
+          ? candidate.visibility
+          : {}
+
+      lines.push([
+        `save${index + 1}. ${String(candidate.tag || 'unknown').slice(0, 16)}`,
+        `class:${String(candidate.className || 'none').slice(0, 70)}`,
+        `text:${String(candidate.text || 'none').slice(0, 90)}`,
+        `aria:${String(candidate.ariaLabel || 'none').slice(0, 70)}`,
+        `disabled:${Boolean(candidate.disabled)}`,
+        `visible:${Boolean(visibility.visible)}`,
+        `display:${String(visibility.display || 'none').slice(0, 16)}`,
+        `visibility:${String(visibility.visibility || 'none').slice(0, 16)}`,
+        `pointer:${String(visibility.pointerEvents || 'none').slice(0, 16)}`,
+        `rect:${Math.max(0, Number(visibility.rectWidth) || 0)}x${Math.max(0, Number(visibility.rectHeight) || 0)}`,
+        `saveText:${Boolean(candidate.saveTextMatch)}`,
+        `saveCandidate:${Boolean(candidate.saveCandidate)}`,
+        `positiveBlocked:${Boolean(candidate.blockedPositiveConsent)}`,
+        `blocked:${String(candidate.blockedReason || 'none').slice(0, 60)}`,
+        `panel:${Boolean(candidate.panelContains)}`,
+        `fcRoot:${Boolean(candidate.fcRootContains)}`,
+      ].join(' | '))
+    })
+  }
+
   if (
     summary.providerFirstActiveInputHTML ||
     summary.providerFirstActiveLabelHTML ||

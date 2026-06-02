@@ -8460,6 +8460,36 @@ function isFundingChoicesProviderStrictSaveAction(control, root) {
   return true
 }
 
+function getFundingChoicesProviderSaveCandidateBlockedReason(control, root) {
+  if (!control) return 'missing_control'
+  if (!root?.contains?.(control)) return 'outside_search_root'
+  if (!control.isConnected) return 'not_connected'
+  if (!isFundingChoicesProviderStrictSaveButton(control)) return 'not_button_like'
+  if (!isVisible(control)) return 'not_visible'
+  if (getCookieDebugDisabledState(control) === 'disabled') return 'disabled'
+  if (isInsideNonCookieModal(control)) return 'non_cookie_modal'
+  if (isSensitiveActionControl(control, root)) return 'sensitive_context'
+
+  const visibleText =
+    getFundingChoicesProviderStrictSaveVisibleText(control)
+  const actionSignal =
+    getActionText(control)
+
+  if (!textHasAny(visibleText, fundingChoicesProviderStrictSaveTexts)) {
+    return 'strict_save_text_not_found'
+  }
+
+  if (
+    hasUnsafeAcceptText(control) ||
+    textHasAny(actionSignal, fundingChoicesUnsafePositiveTexts) ||
+    textHasAny(actionSignal, fundingChoicesProviderStrictSaveBlockedTexts)
+  ) {
+    return 'positive_consent_text'
+  }
+
+  return ''
+}
+
 function getFundingChoicesProviderStrictSaveSearchRoots(root) {
   const providerPanel =
     getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
@@ -8513,6 +8543,162 @@ function findFundingChoicesProviderStrictSaveAction(root, startedAt, budgetMs) {
   }
 
   return null
+}
+
+function shouldDiagnoseFundingChoicesProviderSaveCandidates() {
+  return Boolean(
+    Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0 &&
+      Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0 &&
+      Math.max(0, Number(lastFundingChoicesProviderClickedCount) || 0) > 0 &&
+      lastFundingChoicesProviderToggleMethod === 'aria-pressed'
+  )
+}
+
+function getFundingChoicesProviderSaveCandidateVisibility(control) {
+  const rect =
+    getSafeClientRect(control)
+  const style =
+    safeGetComputedStyle(control)
+
+  return {
+    visible: Boolean(control && isVisible(control)),
+    connected: Boolean(control?.isConnected),
+    display:
+      String(style?.display || '').slice(0, 24),
+    visibility:
+      String(style?.visibility || '').slice(0, 24),
+    opacity:
+      String(style?.opacity || '').slice(0, 12),
+    pointerEvents:
+      String(style?.pointerEvents || '').slice(0, 24),
+    rectWidth:
+      Math.round(Math.max(0, Number(rect?.width) || 0)),
+    rectHeight:
+      Math.round(Math.max(0, Number(rect?.height) || 0)),
+    offsetParent:
+      Boolean(control?.offsetParent),
+  }
+}
+
+function isFundingChoicesProviderSaveDiagnosticControl(control) {
+  const tagName =
+    String(control?.tagName || '').toLowerCase()
+  const type =
+    normalizeMatchText(control?.getAttribute?.('type') || control?.type || '')
+  const role =
+    normalizeMatchText(control?.getAttribute?.('role') || '')
+
+  if (tagName === 'button' || tagName === 'a') return true
+
+  if (
+    tagName === 'input' &&
+    (
+      type === 'button' ||
+      type === 'submit'
+    )
+  ) {
+    return true
+  }
+
+  return role === 'button' && !isFundingChoicesToggleLike(control)
+}
+
+function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
+  if (!shouldDiagnoseFundingChoicesProviderSaveCandidates()) {
+    return {
+      providerSaveCandidateCount: 0,
+      providerStrictSaveCandidateCount: 0,
+      providerPositiveConsentBlockedCount: 0,
+      providerSaveCandidates: [],
+    }
+  }
+
+  const searchRoots =
+    getFundingChoicesProviderStrictSaveSearchRoots(root)
+  const providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  const fcRoot =
+    getFundingChoicesRoot(providerPanel || root) ||
+    getFundingChoicesRoot(root) ||
+    getVisibleFundingChoicesPanel()
+  const controls =
+    uniqueElements(
+      searchRoots.flatMap((searchRoot) =>
+        safeQuerySelectorAll(
+          searchRoot,
+          'button, a, [role="button"], input[type="button"], input[type="submit"]'
+        )
+      )
+    )
+      .filter((control) =>
+        control?.isConnected &&
+        isVisible(control) &&
+        isFundingChoicesProviderSaveDiagnosticControl(control)
+      )
+      .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+      .map((control) => {
+        const visibility =
+          getFundingChoicesProviderSaveCandidateVisibility(control)
+        const actionSignal =
+          getActionText(control)
+        const visibleText =
+          getFundingChoicesProviderStrictSaveVisibleText(control)
+        const blockedPositiveConsent =
+          Boolean(
+            hasUnsafeAcceptText(control) ||
+            textHasAny(actionSignal, fundingChoicesUnsafePositiveTexts) ||
+            textHasAny(actionSignal, fundingChoicesProviderStrictSaveBlockedTexts)
+          )
+        const rootForCandidate =
+          searchRoots.find((searchRoot) =>
+            searchRoot?.contains?.(control)
+          ) || root || document
+        const blockedReason =
+          getFundingChoicesProviderSaveCandidateBlockedReason(
+            control,
+            rootForCandidate
+          )
+
+        return {
+          tag:
+            String(control?.tagName || '').toLowerCase().slice(0, 24),
+          className:
+            getClassNameText(control).slice(0, 160),
+          text:
+            visibleText.slice(0, 140),
+          actionText:
+            actionSignal.slice(0, 180),
+          ariaLabel:
+            normalizeMatchText(control?.getAttribute?.('aria-label') || '')
+              .slice(0, 140),
+          disabled:
+            getCookieDebugDisabledState(control) === 'disabled',
+          visibility,
+          saveTextMatch:
+            textHasAny(visibleText, fundingChoicesProviderStrictSaveTexts),
+          saveCandidate:
+            !blockedReason,
+          blockedPositiveConsent,
+          blockedReason:
+            String(blockedReason || '').slice(0, 80),
+          panelContains:
+            Boolean(providerPanel?.contains?.(control)),
+          fcRootContains:
+            Boolean(fcRoot?.contains?.(control)),
+        }
+      })
+
+  return {
+    providerSaveCandidateCount: controls.length,
+    providerStrictSaveCandidateCount: controls.filter((control) =>
+      control.saveCandidate
+    ).length,
+    providerPositiveConsentBlockedCount: controls.filter((control) =>
+      control.blockedPositiveConsent
+    ).length,
+    providerSaveCandidates: controls,
+  }
 }
 
 function clickFundingChoicesProviderStrictSaveAction(root) {
@@ -12126,6 +12312,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       )
   const providerFirstActiveToggleDiagnostic =
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+  const providerSaveCandidateDiagnostics =
+    getFundingChoicesProviderSaveCandidateDiagnostics(root)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -12170,6 +12358,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount,
+    ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
     preferenceToggleActions,
     controls,
@@ -12250,6 +12439,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       .map(getFundingChoicesLightweightControlDiagnostic)
   const providerFirstActiveToggleDiagnostic =
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+  const providerSaveCandidateDiagnostics =
+    getFundingChoicesProviderSaveCandidateDiagnostics(root)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -12294,6 +12485,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerManageVendorsFound: lastFundingChoicesProviderManageVendorsFound,
     providerManageVendorsClicked: lastFundingChoicesProviderManageVendorsClicked,
     clickableOwnerCount: 0,
+    ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
     preferenceToggleActions:
       lastFundingChoicesPreferenceToggleActions
@@ -12978,30 +13170,56 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
 
   collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
 
-  const providerSaveResult =
+  const shouldDiagnoseProviderSave =
     providerPhaseHandled &&
     Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0 &&
     Math.max(0, Number(lastFundingChoicesProviderClickedCount) || 0) > 0 &&
     lastFundingChoicesProviderToggleMethod === 'aria-pressed'
-      ? clickFundingChoicesProviderStrictSaveAction(diagnosticRoot)
-      : {
-          clicked: false,
-          control: null,
-          reason: '',
-        }
-  const providerSaved =
-    Boolean(providerSaveResult.clicked)
+  const providerSaveCandidateCount =
+    Math.max(
+      0,
+      Number(lastFundingChoicesControlDiagnostics?.providerSaveCandidateCount) || 0
+    )
+  const providerStrictSaveCandidateCount =
+    Math.max(
+      0,
+      Number(lastFundingChoicesControlDiagnostics?.providerStrictSaveCandidateCount) || 0
+    )
+  const providerPositiveConsentBlockedCount =
+    Math.max(
+      0,
+      Number(lastFundingChoicesControlDiagnostics?.providerPositiveConsentBlockedCount) || 0
+    )
+
+  if (shouldDiagnoseProviderSave) {
+    lastSettingsSaveDetected =
+      providerStrictSaveCandidateCount > 0
+    lastSettingsSaveClicked = false
+    lastSettingsSaveVerification =
+      providerStrictSaveCandidateCount > 0
+        ? 'fc_provider_save_candidate_diagnostic_only'
+        : 'fc_provider_save_candidate_not_found'
+
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_aria_save',
+      status: 'skipped',
+      reason: 'diagnostic_only',
+      found: providerStrictSaveCandidateCount,
+      scanned: providerSaveCandidateCount,
+      blocked: providerPositiveConsentBlockedCount,
+    })
+  }
+
+  const providerSaved = false
   const matchedElement =
-    providerSaveResult.control || clickedControl
+    clickedControl
 
   recordCurrentSiteDiagnostic({
     status: providerPhaseHandled ? 'partial' : opened ? 'settingsOpened' : 'partial',
     reason: opened
-      ? providerSaved
-        ? 'fc_provider_aria_pressed_saved'
-        : providerPhaseHandled
-          ? 'fc_provider_aria_pressed_disabled'
-          : reason
+      ? providerPhaseHandled
+        ? 'fc_provider_aria_pressed_disabled'
+        : reason
       : 'fc_provider_preferences_visual_verification_failed',
     candidates: diagnosticRoot ? [diagnosticRoot] : [],
     matchedRejectElement: matchedElement,
@@ -13010,20 +13228,14 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
       ? ''
       : 'provider_preferences_visual_verification_failed',
     fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+    settingsSaveDetected: shouldDiagnoseProviderSave
+      ? providerStrictSaveCandidateCount > 0
+      : lastSettingsSaveDetected,
+    settingsSaveClicked: false,
+    settingsSaveVerification: shouldDiagnoseProviderSave
+      ? lastSettingsSaveVerification
+      : lastSettingsSaveVerification || '',
   })
-
-  if (providerSaved) {
-    recordCookieAuditAfterSuccessfulAction({
-      type: 'save',
-      container: diagnosticRoot,
-      element: providerSaveResult.control,
-    })
-    finalizeCookieActionSuccess({
-      type: 'save',
-      container: diagnosticRoot,
-      element: providerSaveResult.control,
-    })
-  }
 
   rejectFlowCompleted = true
   stopObserver()
