@@ -2638,26 +2638,32 @@ function formatFundingChoicesControls(summary) {
     ].join(', '))
   }
 
-  const providerSaveCandidates =
-    Array.isArray(summary.providerSaveCandidates)
-      ? summary.providerSaveCandidates
+  const fundingChoicesGlobalSaveControls =
+    Array.isArray(summary.fundingChoicesGlobalSaveControls)
+      ? summary.fundingChoicesGlobalSaveControls
           .filter((candidate) =>
             candidate && typeof candidate === 'object'
           )
-          .slice(0, 8)
-      : []
+          .slice(0, 16)
+      : Array.isArray(summary.providerSaveCandidates)
+        ? summary.providerSaveCandidates
+          .filter((candidate) =>
+            candidate && typeof candidate === 'object'
+          )
+          .slice(0, 16)
+        : []
 
   lines.push([
-    'providerSaveCandidates:',
-    `count:${Math.max(0, Number(summary.providerSaveCandidateCount) || 0)}`,
-    `strict:${Math.max(0, Number(summary.providerStrictSaveCandidateCount) || 0)}`,
-    `positiveBlocked:${Math.max(0, Number(summary.providerPositiveConsentBlockedCount) || 0)}`,
+    'fundingChoicesGlobalSaveControls:',
+    `count:${Math.max(0, Number(summary.fundingChoicesGlobalSaveControlCount) || Number(summary.providerSaveCandidateCount) || 0)}`,
+    `strict:${Math.max(0, Number(summary.fundingChoicesGlobalStrictSaveControlCount) || Number(summary.providerStrictSaveCandidateCount) || 0)}`,
+    `positiveBlocked:${Math.max(0, Number(summary.fundingChoicesGlobalPositiveConsentBlockedCount) || Number(summary.providerPositiveConsentBlockedCount) || 0)}`,
   ].join(', '))
 
-  if (providerSaveCandidates.length === 0) {
-    lines.push('providerSaveCandidateDetails: none')
+  if (fundingChoicesGlobalSaveControls.length === 0) {
+    lines.push('fundingChoicesGlobalSaveControlDetails: none')
   } else {
-    providerSaveCandidates.forEach((candidate, index) => {
+    fundingChoicesGlobalSaveControls.forEach((candidate, index) => {
       const visibility =
         candidate.visibility &&
         typeof candidate.visibility === 'object'
@@ -2665,7 +2671,8 @@ function formatFundingChoicesControls(summary) {
           : {}
 
       lines.push([
-        `save${index + 1}. ${String(candidate.tag || 'unknown').slice(0, 16)}`,
+        `fcSave${index + 1}. ${String(candidate.tag || 'unknown').slice(0, 16)}`,
+        `type:${String(candidate.candidateType || 'other').slice(0, 24)}`,
         `class:${String(candidate.className || 'none').slice(0, 70)}`,
         `text:${String(candidate.text || 'none').slice(0, 90)}`,
         `aria:${String(candidate.ariaLabel || 'none').slice(0, 70)}`,
@@ -2681,6 +2688,7 @@ function formatFundingChoicesControls(summary) {
         `blocked:${String(candidate.blockedReason || 'none').slice(0, 60)}`,
         `panel:${Boolean(candidate.panelContains)}`,
         `fcRoot:${Boolean(candidate.fcRootContains)}`,
+        `document:${Boolean(candidate.documentLevel)}`,
       ].join(' | '))
     })
   }

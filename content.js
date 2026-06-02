@@ -228,6 +228,7 @@ const MAX_BOTTOM_BANNER_DIAGNOSTICS = 5
 const MAX_BOTTOM_BANNER_CONTROL_TEXTS = 5
 const MAX_EXPERIMENTAL_BOTTOM_BANNER_PROBE_CANDIDATES = 5
 const MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS = 8
+const MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS = 16
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML = 600
 const MAX_FUNDING_CHOICES_PROVIDER_STATE_DIAGNOSTIC_HTML = 2000
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
@@ -4064,6 +4065,119 @@ function recordCurrentSiteDiagnostic({
               Boolean(fundingChoicesControlDiagnostics.providerManageVendorsClicked),
             clickableOwnerCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.clickableOwnerCount) || 0),
+            fundingChoicesGlobalSaveControlCount:
+              Math.max(
+                0,
+                Number(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControlCount) ||
+                  Number(fundingChoicesControlDiagnostics.providerSaveCandidateCount) ||
+                  0
+              ),
+            fundingChoicesGlobalStrictSaveControlCount:
+              Math.max(
+                0,
+                Number(fundingChoicesControlDiagnostics.fundingChoicesGlobalStrictSaveControlCount) ||
+                  Number(fundingChoicesControlDiagnostics.providerStrictSaveCandidateCount) ||
+                  0
+              ),
+            fundingChoicesGlobalPositiveConsentBlockedCount:
+              Math.max(
+                0,
+                Number(fundingChoicesControlDiagnostics.fundingChoicesGlobalPositiveConsentBlockedCount) ||
+                  Number(fundingChoicesControlDiagnostics.providerPositiveConsentBlockedCount) ||
+                  0
+              ),
+            fundingChoicesGlobalSaveControls:
+              (
+                Array.isArray(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls)
+                  ? fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls
+                  : Array.isArray(fundingChoicesControlDiagnostics.providerSaveCandidates)
+                    ? fundingChoicesControlDiagnostics.providerSaveCandidates
+                    : []
+              )
+                .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
+                .map((candidate) => ({
+                  tag:
+                    String(candidate?.tag || '').slice(0, 24),
+                  className:
+                    String(candidate?.className || '').slice(0, 160),
+                  text:
+                    String(candidate?.text || '').slice(0, 140),
+                  actionText:
+                    String(candidate?.actionText || '').slice(0, 180),
+                  ariaLabel:
+                    String(candidate?.ariaLabel || '').slice(0, 140),
+                  disabled:
+                    Boolean(candidate?.disabled),
+                  visibility:
+                    candidate?.visibility && typeof candidate.visibility === 'object'
+                      ? {
+                          visible:
+                            Boolean(candidate.visibility.visible),
+                          connected:
+                            Boolean(candidate.visibility.connected),
+                          display:
+                            String(candidate.visibility.display || '').slice(0, 24),
+                          visibility:
+                            String(candidate.visibility.visibility || '').slice(0, 24),
+                          opacity:
+                            String(candidate.visibility.opacity || '').slice(0, 12),
+                          pointerEvents:
+                            String(candidate.visibility.pointerEvents || '').slice(0, 24),
+                          rectWidth:
+                            Math.max(0, Number(candidate.visibility.rectWidth) || 0),
+                          rectHeight:
+                            Math.max(0, Number(candidate.visibility.rectHeight) || 0),
+                          offsetParent:
+                            Boolean(candidate.visibility.offsetParent),
+                        }
+                      : null,
+                  candidateType:
+                    String(candidate?.candidateType || 'other').slice(0, 24),
+                  saveTextMatch:
+                    Boolean(candidate?.saveTextMatch),
+                  saveCandidate:
+                    Boolean(candidate?.saveCandidate),
+                  blockedPositiveConsent:
+                    Boolean(candidate?.blockedPositiveConsent),
+                  blockedReason:
+                    String(candidate?.blockedReason || '').slice(0, 80),
+                  panelContains:
+                    Boolean(candidate?.panelContains),
+                  fcRootContains:
+                    Boolean(candidate?.fcRootContains),
+                  documentLevel:
+                    Boolean(candidate?.documentLevel),
+                })),
+            providerSaveCandidateCount:
+              Math.max(
+                0,
+                Number(fundingChoicesControlDiagnostics.providerSaveCandidateCount) ||
+                  Number(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControlCount) ||
+                  0
+              ),
+            providerStrictSaveCandidateCount:
+              Math.max(
+                0,
+                Number(fundingChoicesControlDiagnostics.providerStrictSaveCandidateCount) ||
+                  Number(fundingChoicesControlDiagnostics.fundingChoicesGlobalStrictSaveControlCount) ||
+                  0
+              ),
+            providerPositiveConsentBlockedCount:
+              Math.max(
+                0,
+                Number(fundingChoicesControlDiagnostics.providerPositiveConsentBlockedCount) ||
+                  Number(fundingChoicesControlDiagnostics.fundingChoicesGlobalPositiveConsentBlockedCount) ||
+                  0
+              ),
+            providerSaveCandidates:
+              (
+                Array.isArray(fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls)
+                  ? fundingChoicesControlDiagnostics.fundingChoicesGlobalSaveControls
+                  : Array.isArray(fundingChoicesControlDiagnostics.providerSaveCandidates)
+                    ? fundingChoicesControlDiagnostics.providerSaveCandidates
+                    : []
+              )
+                .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS),
             ...sanitizeFundingChoicesProviderFirstActiveToggleDiagnostic(
               fundingChoicesControlDiagnostics
             ),
@@ -8510,6 +8624,37 @@ function getFundingChoicesProviderStrictSaveSearchRoots(root) {
     )
 }
 
+function getVisibleFundingChoicesSaveDiagnosticRoots(root) {
+  const providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  const fcRoot =
+    getFundingChoicesRoot(providerPanel || root) ||
+    getFundingChoicesRoot(root) ||
+    getVisibleFundingChoicesPanel()
+  const visibleDialogs =
+    safeQuerySelectorAll(
+      document,
+      '.fc-consent-root, .fc-dialog, .fc-data-preferences-dialog'
+    )
+      .filter((candidate) =>
+        candidate?.isConnected &&
+        isVisible(candidate)
+      )
+
+  return uniqueElements([
+    providerPanel,
+    fcRoot,
+    root,
+    ...visibleDialogs,
+  ])
+    .filter((candidate) =>
+      candidate &&
+      candidate !== document &&
+      typeof candidate.querySelectorAll === 'function'
+    )
+}
+
 function findFundingChoicesProviderStrictSaveAction(root, startedAt, budgetMs) {
   const searchRoots =
     getFundingChoicesProviderStrictSaveSearchRoots(root)
@@ -8603,9 +8748,177 @@ function isFundingChoicesProviderSaveDiagnosticControl(control) {
   return role === 'button' && !isFundingChoicesToggleLike(control)
 }
 
+function getFundingChoicesGlobalSaveCandidateType(control) {
+  const visibleText =
+    getFundingChoicesProviderStrictSaveVisibleText(control)
+  const actionSignal =
+    getActionText(control)
+  const signal =
+    normalizeMatchText(`${visibleText} ${actionSignal}`)
+  const positiveConsent =
+    Boolean(
+      hasUnsafeAcceptText(control) ||
+      textHasAny(signal, fundingChoicesUnsafePositiveTexts) ||
+      textHasAny(signal, fundingChoicesProviderStrictSaveBlockedTexts)
+    )
+
+  if (
+    textHasAny(signal, negativeConsentRejectTexts) ||
+    textHasAny(signal, totalRejectTexts) ||
+    textHasAny(signal, rejectTexts)
+  ) {
+    return 'reject'
+  }
+
+  if (
+    textHasAny(signal, fundingChoicesProviderPreferenceTexts) ||
+    textHasAny(signal, [
+      'manage vendors',
+      'vendor preferences',
+      'provider preferences',
+      'preferencies de proveidors',
+      'preferencias de proveedores',
+      'proveidors',
+      'proveedores',
+    ])
+  ) {
+    return 'manage-vendors'
+  }
+
+  if (
+    textHasAny(visibleText, [
+      'confirmar opciones',
+      'confirmar les opcions',
+      'confirm choices',
+    ])
+  ) {
+    return 'confirm'
+  }
+
+  if (
+    textHasAny(visibleText, [
+      'guardar',
+      'guardar opciones',
+      'desar',
+      'save choices',
+    ])
+  ) {
+    return 'save'
+  }
+
+  if (
+    textHasAny(signal, [
+      'back',
+      'previous',
+      'volver',
+      'atras',
+      'anterior',
+      'enrere',
+      'tornar',
+    ])
+  ) {
+    return 'back'
+  }
+
+  if (
+    textHasAny(signal, [
+      'close',
+      'cerrar',
+      'tancar',
+      'dismiss',
+    ])
+  ) {
+    return 'close'
+  }
+
+  if (positiveConsent) {
+    return 'accept'
+  }
+
+  return 'other'
+}
+
+function hasFundingChoicesDocumentControlSignal(control) {
+  const signal =
+    normalizeMatchText([
+      getActionText(control),
+      control?.id,
+      getClassNameText(control),
+      control?.getAttribute?.('aria-controls'),
+      control?.getAttribute?.('data-testid'),
+      getDatasetText(control),
+    ].join(' '))
+
+  return (
+    textHasAny(signal, [
+      'funding choices',
+      'fundingchoices',
+      'fc consent',
+      'fc dialog',
+      'fc data preferences',
+      'fc action',
+      'fc button',
+      'fc manage vendors',
+      'fc confirm',
+      'fc save',
+    ]) ||
+    /^fc\s/.test(signal) ||
+    /\sfc\s/.test(signal)
+  )
+}
+
+function isFundingChoicesDocumentLevelSaveDiagnosticControl(control, roots) {
+  if (
+    !control?.isConnected ||
+    !isVisible(control) ||
+    !isFundingChoicesProviderSaveDiagnosticControl(control)
+  ) {
+    return false
+  }
+
+  if (roots.some((candidate) => candidate?.contains?.(control))) {
+    return true
+  }
+
+  return (
+    hasFundingChoicesDocumentControlSignal(control) ||
+    (
+      roots.length > 0 &&
+      getFundingChoicesGlobalSaveCandidateType(control) !== 'other'
+    )
+  )
+}
+
+function getFundingChoicesGlobalSaveCandidatePriority(candidate) {
+  const typePriority = {
+    save: 0,
+    confirm: 1,
+    reject: 2,
+    'manage-vendors': 3,
+    back: 4,
+    close: 5,
+    accept: 8,
+    other: 9,
+  }
+  let priority =
+    typePriority[candidate?.candidateType] ?? typePriority.other
+
+  if (candidate?.saveCandidate) priority -= 4
+  if (candidate?.panelContains) priority -= 2
+  if (candidate?.fcRootContains) priority -= 1
+  if (candidate?.documentLevel) priority += 1
+  if (candidate?.blockedPositiveConsent) priority += 4
+
+  return priority
+}
+
 function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
   if (!shouldDiagnoseFundingChoicesProviderSaveCandidates()) {
     return {
+      fundingChoicesGlobalSaveControlCount: 0,
+      fundingChoicesGlobalStrictSaveControlCount: 0,
+      fundingChoicesGlobalPositiveConsentBlockedCount: 0,
+      fundingChoicesGlobalSaveControls: [],
       providerSaveCandidateCount: 0,
       providerStrictSaveCandidateCount: 0,
       providerPositiveConsentBlockedCount: 0,
@@ -8614,7 +8927,7 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
   }
 
   const searchRoots =
-    getFundingChoicesProviderStrictSaveSearchRoots(root)
+    getVisibleFundingChoicesSaveDiagnosticRoots(root)
   const providerPanel =
     getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -8622,21 +8935,31 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
     getFundingChoicesRoot(providerPanel || root) ||
     getFundingChoicesRoot(root) ||
     getVisibleFundingChoicesPanel()
+  const documentControls =
+    safeQuerySelectorAll(
+      document,
+      'button, a, [role="button"], input[type="button"], input[type="submit"]'
+    )
+      .filter((control) =>
+        isFundingChoicesDocumentLevelSaveDiagnosticControl(control, searchRoots)
+      )
   const controls =
     uniqueElements(
-      searchRoots.flatMap((searchRoot) =>
-        safeQuerySelectorAll(
-          searchRoot,
-          'button, a, [role="button"], input[type="button"], input[type="submit"]'
-        )
-      )
+      [
+        ...searchRoots.flatMap((searchRoot) =>
+          safeQuerySelectorAll(
+            searchRoot,
+            'button, a, [role="button"], input[type="button"], input[type="submit"]'
+          )
+        ),
+        ...documentControls,
+      ]
     )
       .filter((control) =>
         control?.isConnected &&
         isVisible(control) &&
         isFundingChoicesProviderSaveDiagnosticControl(control)
       )
-      .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
       .map((control) => {
         const visibility =
           getFundingChoicesProviderSaveCandidateVisibility(control)
@@ -8650,10 +8973,12 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
             textHasAny(actionSignal, fundingChoicesUnsafePositiveTexts) ||
             textHasAny(actionSignal, fundingChoicesProviderStrictSaveBlockedTexts)
           )
-        const rootForCandidate =
+        const containingSearchRoot =
           searchRoots.find((searchRoot) =>
             searchRoot?.contains?.(control)
-          ) || root || document
+          )
+        const rootForCandidate =
+          containingSearchRoot || document
         const blockedReason =
           getFundingChoicesProviderSaveCandidateBlockedReason(
             control,
@@ -8675,6 +9000,8 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
           disabled:
             getCookieDebugDisabledState(control) === 'disabled',
           visibility,
+          candidateType:
+            getFundingChoicesGlobalSaveCandidateType(control),
           saveTextMatch:
             textHasAny(visibleText, fundingChoicesProviderStrictSaveTexts),
           saveCandidate:
@@ -8686,10 +9013,27 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
             Boolean(providerPanel?.contains?.(control)),
           fcRootContains:
             Boolean(fcRoot?.contains?.(control)),
+          documentLevel:
+            !searchRoots.some((searchRoot) =>
+              searchRoot?.contains?.(control)
+            ),
         }
       })
+      .sort((first, second) =>
+        getFundingChoicesGlobalSaveCandidatePriority(first) -
+        getFundingChoicesGlobalSaveCandidatePriority(second)
+      )
+      .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
 
   return {
+    fundingChoicesGlobalSaveControlCount: controls.length,
+    fundingChoicesGlobalStrictSaveControlCount: controls.filter((control) =>
+      control.saveCandidate
+    ).length,
+    fundingChoicesGlobalPositiveConsentBlockedCount: controls.filter((control) =>
+      control.blockedPositiveConsent
+    ).length,
+    fundingChoicesGlobalSaveControls: controls,
     providerSaveCandidateCount: controls.length,
     providerStrictSaveCandidateCount: controls.filter((control) =>
       control.saveCandidate
@@ -13178,17 +13522,23 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
   const providerSaveCandidateCount =
     Math.max(
       0,
-      Number(lastFundingChoicesControlDiagnostics?.providerSaveCandidateCount) || 0
+      Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalSaveControlCount) ||
+        Number(lastFundingChoicesControlDiagnostics?.providerSaveCandidateCount) ||
+        0
     )
   const providerStrictSaveCandidateCount =
     Math.max(
       0,
-      Number(lastFundingChoicesControlDiagnostics?.providerStrictSaveCandidateCount) || 0
+      Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalStrictSaveControlCount) ||
+        Number(lastFundingChoicesControlDiagnostics?.providerStrictSaveCandidateCount) ||
+        0
     )
   const providerPositiveConsentBlockedCount =
     Math.max(
       0,
-      Number(lastFundingChoicesControlDiagnostics?.providerPositiveConsentBlockedCount) || 0
+      Number(lastFundingChoicesControlDiagnostics?.fundingChoicesGlobalPositiveConsentBlockedCount) ||
+        Number(lastFundingChoicesControlDiagnostics?.providerPositiveConsentBlockedCount) ||
+        0
     )
 
   if (shouldDiagnoseProviderSave) {
@@ -13201,7 +13551,7 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         : 'fc_provider_save_candidate_not_found'
 
     appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_aria_save',
+      strategy: 'fc.global_save_controls',
       status: 'skipped',
       reason: 'diagnostic_only',
       found: providerStrictSaveCandidateCount,
