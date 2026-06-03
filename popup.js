@@ -2567,7 +2567,57 @@ function formatFundingChoicesControls(summary) {
           )
           .slice(0, 8)
       : []
+  const providerReopenCandidates =
+    Array.isArray(summary.providerReopenCandidates)
+      ? summary.providerReopenCandidates
+          .filter((candidate) =>
+            candidate && typeof candidate === 'object'
+          )
+          .slice(0, 5)
+      : []
+  const providerReopenCandidateCount =
+    Math.max(0, Number(summary.providerReopenCandidateCount) || 0)
+  const providerReopenCandidateVisibleCount =
+    Math.max(
+      0,
+      Number(summary.providerReopenCandidateVisibleCount) ||
+        providerReopenCandidateCount
+    )
+  const providerReopenCandidateTotalCount =
+    Math.max(0, Number(summary.providerReopenCandidateTotalCount) || 0)
   const lines = [
+    'providerReopenCandidateDiagnostics:',
+    [
+      `providerReopenCandidateCount: ${providerReopenCandidateCount}`,
+      `providerReopenCandidateVisibleCount: ${providerReopenCandidateVisibleCount}`,
+      `providerReopenCandidateTotalCount: ${providerReopenCandidateTotalCount}`,
+      `originalManageVendorsConnectedAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsConnectedAfterBack)}`,
+      `originalManageVendorsExistsAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsExistsAfterBack)}`,
+    ].join(', '),
+  ]
+
+  if (providerReopenCandidates.length > 0) {
+    lines.push('providerReopenCandidateDetails:')
+    providerReopenCandidates.forEach((candidate, index) => {
+      lines.push([
+        `${index + 1}. tag:${String(candidate.tag || 'unknown').slice(0, 24)}`,
+        `class:${String(candidate.className || 'none').slice(0, 80)}`,
+        `text:${String(candidate.text || 'none').slice(0, 70)}`,
+        `aria-label:${String(candidate.ariaLabel || 'none').slice(0, 70)}`,
+        `connected:${Boolean(candidate.connected)}`,
+        `disabled:${Boolean(candidate.disabled)}`,
+        `visible:${Boolean(candidate.visible)}`,
+        `display:${String(candidate.display || 'none').slice(0, 18)}`,
+        `visibility:${String(candidate.visibility || 'none').slice(0, 18)}`,
+        `pointerEvents:${String(candidate.pointerEvents || 'none').slice(0, 18)}`,
+        `rect:${Math.max(0, Number(candidate.rectWidth) || 0)}x${Math.max(0, Number(candidate.rectHeight) || 0)}`,
+      ].join(' | '))
+    })
+  } else {
+    lines.push('providerReopenCandidateDetails: none')
+  }
+
+  lines.push(
     [
       `controlCount: ${Math.max(0, Number(summary.controlCount) || 0)}`,
       `sliderCount: ${Math.max(0, Number(summary.sliderCount) || 0)}`,
@@ -2620,8 +2670,8 @@ function formatFundingChoicesControls(summary) {
       `providerPersistenceReason: ${String(summary.providerPersistenceReason || 'none').slice(0, 60)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
-    ].join(', '),
-  ]
+    ].join(', ')
+  )
 
   if (
     summary.providerManageVendorsElement &&
@@ -2644,53 +2694,6 @@ function formatFundingChoicesControls(summary) {
       `rect:${Math.max(0, Number(element.rectWidth) || 0)}x${Math.max(0, Number(element.rectHeight) || 0)}`,
       `text:${String(element.text || 'none').slice(0, 80)}`,
     ].join(', '))
-  }
-
-  const providerReopenCandidates =
-    Array.isArray(summary.providerReopenCandidates)
-      ? summary.providerReopenCandidates
-          .filter((candidate) =>
-            candidate && typeof candidate === 'object'
-          )
-          .slice(0, 5)
-      : []
-  const providerReopenCandidateCount =
-    Math.max(0, Number(summary.providerReopenCandidateCount) || 0)
-  const providerReopenCandidateVisibleCount =
-    Math.max(
-      0,
-      Number(summary.providerReopenCandidateVisibleCount) ||
-        providerReopenCandidateCount
-    )
-  const providerReopenCandidateTotalCount =
-    Math.max(0, Number(summary.providerReopenCandidateTotalCount) || 0)
-
-  lines.push('providerReopenCandidateDiagnostics:')
-  lines.push([
-    `providerReopenCandidateCount: ${providerReopenCandidateCount}`,
-    `providerReopenCandidateVisibleCount: ${providerReopenCandidateVisibleCount}`,
-    `providerReopenCandidateTotalCount: ${providerReopenCandidateTotalCount}`,
-    `originalManageVendorsConnectedAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsConnectedAfterBack)}`,
-    `originalManageVendorsExistsAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsExistsAfterBack)}`,
-  ].join(', '))
-
-  if (providerReopenCandidates.length > 0) {
-    lines.push('providerReopenCandidateDetails:')
-    providerReopenCandidates.forEach((candidate, index) => {
-      lines.push([
-        `${index + 1}. tag:${String(candidate.tag || 'unknown').slice(0, 24)}`,
-        `class:${String(candidate.className || 'none').slice(0, 80)}`,
-        `text:${String(candidate.text || 'none').slice(0, 70)}`,
-        `aria-label:${String(candidate.ariaLabel || 'none').slice(0, 70)}`,
-        `connected:${Boolean(candidate.connected)}`,
-        `disabled:${Boolean(candidate.disabled)}`,
-        `visible:${Boolean(candidate.visible)}`,
-        `display:${String(candidate.display || 'none').slice(0, 18)}`,
-        `visibility:${String(candidate.visibility || 'none').slice(0, 18)}`,
-        `pointerEvents:${String(candidate.pointerEvents || 'none').slice(0, 18)}`,
-        `rect:${Math.max(0, Number(candidate.rectWidth) || 0)}x${Math.max(0, Number(candidate.rectHeight) || 0)}`,
-      ].join(' | '))
-    })
   }
 
   const fundingChoicesGlobalSaveControls =
