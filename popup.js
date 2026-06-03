@@ -2585,6 +2585,14 @@ function formatFundingChoicesControls(summary) {
     )
   const providerReopenCandidateTotalCount =
     Math.max(0, Number(summary.providerReopenCandidateTotalCount) || 0)
+  const finalizationControls =
+    Array.isArray(summary.fundingChoicesFinalizationControls)
+      ? summary.fundingChoicesFinalizationControls
+          .filter((control) =>
+            control && typeof control === 'object'
+          )
+          .slice(0, 10)
+      : []
   const lines = [
     'providerReopenCandidateDiagnostics:',
     [
@@ -2620,6 +2628,42 @@ function formatFundingChoicesControls(summary) {
     })
   } else {
     lines.push('providerReopenCandidateDetails: none')
+  }
+
+  lines.push('fundingChoicesFinalizationPath:')
+  lines.push([
+    `backFound:${Boolean(summary.fundingChoicesFinalizationBackFound)}`,
+    `backClicked:${Boolean(summary.fundingChoicesFinalizationBackClicked)}`,
+    `controlCount:${Math.max(0, Number(summary.fundingChoicesFinalizationControlCount) || 0)}`,
+    `safeCandidates:${Math.max(0, Number(summary.fundingChoicesFinalizationSafeCandidateCount) || 0)}`,
+    `positiveBlocked:${Math.max(0, Number(summary.fundingChoicesFinalizationPositiveBlockedCount) || 0)}`,
+  ].join(', '))
+
+  if (finalizationControls.length > 0) {
+    lines.push('fundingChoicesFinalizationControls:')
+    finalizationControls.forEach((control, index) => {
+      lines.push([
+        `${index + 1}. stage:${String(control.stage || 'unknown').slice(0, 32)}`,
+        `type:${String(control.type || 'other').slice(0, 32)}`,
+        `tag:${String(control.tag || 'unknown').slice(0, 16)}`,
+        `class:${String(control.className || 'none').slice(0, 70)}`,
+        `text:${String(control.text || 'none').slice(0, 90)}`,
+        `aria:${String(control.ariaLabel || 'none').slice(0, 70)}`,
+        `disabled:${Boolean(control.disabled)}`,
+        `visible:${Boolean(control.visible)}`,
+        `display:${String(control.display || 'none').slice(0, 16)}`,
+        `visibility:${String(control.visibility || 'none').slice(0, 16)}`,
+        `pointer:${String(control.pointerEvents || 'none').slice(0, 16)}`,
+        `rect:${Math.max(0, Number(control.rectWidth) || 0)}x${Math.max(0, Number(control.rectHeight) || 0)}`,
+        `footer:${Boolean(control.footer)}`,
+        `sticky:${Boolean(control.stickyFooter)}`,
+        `outsideDialog:${Boolean(control.outsideVisibleDialog)}`,
+        `fcRoot:${Boolean(control.fcRootContains)}`,
+        `positiveBlocked:${Boolean(control.blockedPositiveConsent)}`,
+      ].join(' | '))
+    })
+  } else {
+    lines.push('fundingChoicesFinalizationControls: none')
   }
 
   lines.push(

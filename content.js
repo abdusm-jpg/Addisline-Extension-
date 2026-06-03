@@ -126,6 +126,12 @@ let lastFundingChoicesProviderPersistenceReopenSuccess = false
 let lastFundingChoicesProviderPersistenceReason = ''
 let lastFundingChoicesProviderToggleCountAfterReopen = 0
 let lastFundingChoicesActiveProviderToggleCountAfterReopen = 0
+let lastFundingChoicesFinalizationBackFound = false
+let lastFundingChoicesFinalizationBackClicked = false
+let lastFundingChoicesFinalizationControlCount = 0
+let lastFundingChoicesFinalizationSafeCandidateCount = 0
+let lastFundingChoicesFinalizationPositiveBlockedCount = 0
+let lastFundingChoicesFinalizationControls = []
 let lastFundingChoicesProviderReopenCandidateCount = 0
 let lastFundingChoicesProviderReopenCandidateVisibleCount = 0
 let lastFundingChoicesProviderReopenCandidateTotalCount = 0
@@ -252,6 +258,7 @@ const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML = 600
 const MAX_FUNDING_CHOICES_PROVIDER_STATE_DIAGNOSTIC_HTML = 2000
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
 const FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS = 120
+const MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS = 10
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
 const MAX_SAME_ORIGIN_CMP_IFRAMES = 2
@@ -4273,6 +4280,61 @@ function recordCurrentSiteDiagnostic({
                   )
                     .slice(0, MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS)
                 : [],
+            fundingChoicesFinalizationBackFound:
+              Boolean(fundingChoicesControlDiagnostics.fundingChoicesFinalizationBackFound),
+            fundingChoicesFinalizationBackClicked:
+              Boolean(fundingChoicesControlDiagnostics.fundingChoicesFinalizationBackClicked),
+            fundingChoicesFinalizationControlCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.fundingChoicesFinalizationControlCount) || 0),
+            fundingChoicesFinalizationSafeCandidateCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.fundingChoicesFinalizationSafeCandidateCount) || 0),
+            fundingChoicesFinalizationPositiveBlockedCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.fundingChoicesFinalizationPositiveBlockedCount) || 0),
+            fundingChoicesFinalizationControls:
+              (Array.isArray(fundingChoicesControlDiagnostics.fundingChoicesFinalizationControls)
+                ? fundingChoicesControlDiagnostics.fundingChoicesFinalizationControls
+                : [])
+                .slice(0, MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS)
+                .map((control) => ({
+                  stage:
+                    String(control?.stage || '').slice(0, 40),
+                  type:
+                    String(control?.type || '').slice(0, 40),
+                  tag:
+                    String(control?.tag || '').slice(0, 24),
+                  className:
+                    String(control?.className || '').slice(0, 120),
+                  text:
+                    String(control?.text || '').slice(0, 140),
+                  ariaLabel:
+                    String(control?.ariaLabel || '').slice(0, 120),
+                  disabled:
+                    Boolean(control?.disabled),
+                  visible:
+                    Boolean(control?.visible),
+                  display:
+                    String(control?.display || '').slice(0, 24),
+                  visibility:
+                    String(control?.visibility || '').slice(0, 24),
+                  pointerEvents:
+                    String(control?.pointerEvents || '').slice(0, 24),
+                  rectWidth:
+                    Math.max(0, Number(control?.rectWidth) || 0),
+                  rectHeight:
+                    Math.max(0, Number(control?.rectHeight) || 0),
+                  footer:
+                    Boolean(control?.footer),
+                  stickyFooter:
+                    Boolean(control?.stickyFooter),
+                  outsideVisibleDialog:
+                    Boolean(control?.outsideVisibleDialog),
+                  fcRootContains:
+                    Boolean(control?.fcRootContains),
+                  documentLevel:
+                    Boolean(control?.documentLevel),
+                  blockedPositiveConsent:
+                    Boolean(control?.blockedPositiveConsent),
+                })),
             ...sanitizeFundingChoicesProviderFirstActiveToggleDiagnostic(
               fundingChoicesControlDiagnostics
             ),
@@ -9207,6 +9269,12 @@ function resetFundingChoicesProviderSaveBackDiagnostics() {
   lastFundingChoicesProviderPersistenceReason = ''
   lastFundingChoicesProviderToggleCountAfterReopen = 0
   lastFundingChoicesActiveProviderToggleCountAfterReopen = 0
+  lastFundingChoicesFinalizationBackFound = false
+  lastFundingChoicesFinalizationBackClicked = false
+  lastFundingChoicesFinalizationControlCount = 0
+  lastFundingChoicesFinalizationSafeCandidateCount = 0
+  lastFundingChoicesFinalizationPositiveBlockedCount = 0
+  lastFundingChoicesFinalizationControls = []
   lastFundingChoicesProviderReopenCandidateCount = 0
   lastFundingChoicesProviderReopenCandidateVisibleCount = 0
   lastFundingChoicesProviderReopenCandidateTotalCount = 0
@@ -9706,6 +9774,415 @@ function verifyFundingChoicesProviderPersistenceAfterReopen(root) {
   })
 
   return lastFundingChoicesProviderPersistenceVerified
+}
+
+function resetFundingChoicesFinalizationPathDiagnostics() {
+  lastFundingChoicesFinalizationBackFound = false
+  lastFundingChoicesFinalizationBackClicked = false
+  lastFundingChoicesFinalizationControlCount = 0
+  lastFundingChoicesFinalizationSafeCandidateCount = 0
+  lastFundingChoicesFinalizationPositiveBlockedCount = 0
+  lastFundingChoicesFinalizationControls = []
+}
+
+function getFundingChoicesFinalizationControlType(control) {
+  const visibleText =
+    getFundingChoicesProviderStrictSaveVisibleText(control)
+  const signal =
+    normalizeMatchText([
+      visibleText,
+      getActionText(control),
+      control?.id,
+      control?.getAttribute?.('aria-label'),
+      control?.getAttribute?.('title'),
+      getClassNameText(control),
+      getDatasetText(control),
+    ].join(' '))
+
+  if (
+    isFundingChoicesHelpTipControl(control) ||
+    textHasAny(signal, [
+      'faq',
+      'help',
+      'ajuda',
+      'ayuda',
+      'preguntas frecuentes',
+      'frequently asked questions',
+      'fc-help-tip',
+    ])
+  ) {
+    return 'faq/help'
+  }
+
+  if (
+    hasUnsafeAcceptText(control) ||
+    textHasAny(signal, fundingChoicesUnsafePositiveTexts) ||
+    textHasAny(signal, fundingChoicesProviderStrictSaveBlockedTexts)
+  ) {
+    return 'accept/consent positive'
+  }
+
+  if (
+    textHasAny(signal, negativeConsentRejectTexts) ||
+    textHasAny(signal, totalRejectTexts) ||
+    textHasAny(signal, rejectTexts) ||
+    textHasAny(signal, [
+      'no consent',
+      'sense consentiment',
+      'sin consentimiento',
+      'continuar sin consentir',
+      'continuar sense consentir',
+    ])
+  ) {
+    return 'reject/no-consent'
+  }
+
+  if (
+    textHasAny(visibleText, [
+      ...fundingChoicesProviderStrictSaveTexts,
+      'confirmar opcions',
+      'confirmar mis opciones',
+      'confirmar les meves opcions',
+      'confirma les opcions',
+      'guardar preferencias',
+      'guardar cambios',
+    ])
+  ) {
+    return 'confirm/save'
+  }
+
+  if (
+    textHasAny(signal, [
+      'back',
+      'previous',
+      'volver',
+      'atras',
+      'anterior',
+      'enrere',
+      'tornar',
+    ])
+  ) {
+    return 'back'
+  }
+
+  if (
+    textHasAny(signal, [
+      'close',
+      'cerrar',
+      'tancar',
+      'dismiss',
+      'x close',
+      'fc-close',
+      'fc-dialog-close',
+    ])
+  ) {
+    return 'close'
+  }
+
+  const candidateType =
+    getFundingChoicesGlobalSaveCandidateType(control)
+
+  if (candidateType === 'save' || candidateType === 'confirm') {
+    return 'confirm/save'
+  }
+  if (candidateType === 'reject') {
+    return 'reject/no-consent'
+  }
+  if (candidateType === 'accept') {
+    return 'accept/consent positive'
+  }
+
+  return candidateType || 'other'
+}
+
+function isFundingChoicesFinalizationDiagnosticControl(control, roots) {
+  if (
+    !control?.isConnected ||
+    !isVisible(control) ||
+    isFundingChoicesToggleLike(control)
+  ) {
+    return false
+  }
+
+  const tagName =
+    String(control.tagName || '').toLowerCase()
+  const type =
+    normalizeMatchText(control.getAttribute?.('type') || control.type || '')
+  const role =
+    normalizeMatchText(control.getAttribute?.('role') || '')
+  const buttonLike =
+    tagName === 'button' ||
+    tagName === 'a' ||
+    role === 'button' ||
+    (
+      tagName === 'input' &&
+      (
+        type === 'button' ||
+        type === 'submit'
+      )
+    )
+
+  if (!buttonLike) {
+    return false
+  }
+
+  return (
+    roots.some((root) =>
+      root &&
+        root !== document &&
+        root.contains?.(control)
+    ) ||
+    Boolean(safeClosest(control, '.fc-consent-root, .fc-dialog, .fc-data-preferences-dialog')) ||
+    hasFundingChoicesDocumentControlSignal(control)
+  )
+}
+
+function hasFundingChoicesStickyFooterAncestor(control) {
+  let current =
+    control
+  let depth = 0
+
+  while (current && depth < 5) {
+    const classText =
+      getClassNameText(current)
+    const style =
+      safeGetComputedStyle(current)
+
+    if (
+      textHasAny(classText, ['sticky', 'footer']) ||
+      style?.position === 'sticky' ||
+      style?.position === 'fixed'
+    ) {
+      return true
+    }
+
+    current = current.parentElement
+    depth += 1
+  }
+
+  return false
+}
+
+function getFundingChoicesFinalizationControlDiagnostic(control, stage, roots) {
+  const visibility =
+    getFundingChoicesProviderSaveCandidateVisibility(control)
+  const fcRoot =
+    roots.find((root) =>
+      root && safeMatches(root, '.fc-consent-root, .fc-data-preferences-dialog')
+    ) ||
+    getFundingChoicesRoot(control) ||
+    getVisibleFundingChoicesPanel()
+  const visibleDialog =
+    getVisibleFundingChoicesPanel()
+  const text =
+    getFundingChoicesProviderStrictSaveVisibleText(control)
+  const actionText =
+    normalizeMatchText(getActionText(control)).slice(0, 180)
+  const controlType =
+    getFundingChoicesFinalizationControlType(control)
+  const footer =
+    Boolean(safeClosest(control, 'footer, [class*="footer" i], .fc-footer, .fc-dialog-footer, .fc-actions'))
+
+  return {
+    stage,
+    type: controlType,
+    tag:
+      String(control?.tagName || '').toLowerCase().slice(0, 24),
+    className:
+      getClassNameText(control).slice(0, 160),
+    text:
+      text.slice(0, 140),
+    actionText,
+    ariaLabel:
+      normalizeMatchText(control?.getAttribute?.('aria-label') || '')
+        .slice(0, 140),
+    disabled:
+      getCookieDebugDisabledState(control) === 'disabled',
+    visible: visibility.visible,
+    display: visibility.display,
+    visibility: visibility.visibility,
+    pointerEvents: visibility.pointerEvents,
+    rectWidth: visibility.rectWidth,
+    rectHeight: visibility.rectHeight,
+    footer,
+    stickyFooter:
+      footer || hasFundingChoicesStickyFooterAncestor(control),
+    outsideVisibleDialog:
+      Boolean(visibleDialog && !visibleDialog.contains(control)),
+    fcRootContains:
+      Boolean(fcRoot?.contains?.(control)),
+    documentLevel:
+      !roots.some((root) =>
+        root &&
+          root !== document &&
+          root.contains?.(control)
+      ),
+    blockedPositiveConsent:
+      controlType === 'accept/consent positive',
+  }
+}
+
+function getFundingChoicesFinalizationDiagnosticRoots(root) {
+  const fcRoot =
+    getFundingChoicesRoot(root) ||
+    getVisibleFundingChoicesPanel()
+  const visibleDialogs =
+    safeQuerySelectorAll(
+      document,
+      '.fc-consent-root, .fc-dialog, .fc-data-preferences-dialog'
+    )
+      .filter((candidate) =>
+        candidate?.isConnected &&
+          isVisible(candidate)
+      )
+
+  return uniqueElements([
+    root,
+    fcRoot,
+    getVisibleFundingChoicesPanel(),
+    ...visibleDialogs,
+    document,
+  ])
+    .filter((candidate) =>
+      candidate &&
+        typeof candidate.querySelectorAll === 'function'
+    )
+}
+
+function appendFundingChoicesFinalizationControls(stage, root) {
+  const roots =
+    getFundingChoicesFinalizationDiagnosticRoots(root)
+  const selector =
+    'button, a, [role="button"], input[type="button"], input[type="submit"]'
+  const controls = []
+
+  for (const searchRoot of roots) {
+    if (controls.length >= MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS) break
+
+    for (const control of safeQuerySelectorAll(searchRoot, selector)) {
+      if (controls.length >= MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS) break
+      if (
+        controls.includes(control) ||
+        !isFundingChoicesFinalizationDiagnosticControl(control, roots)
+      ) {
+        continue
+      }
+
+      controls.push(control)
+    }
+  }
+
+  const diagnostics =
+    controls.map((control) =>
+      getFundingChoicesFinalizationControlDiagnostic(control, stage, roots)
+    )
+
+  lastFundingChoicesFinalizationControls =
+    [
+      ...lastFundingChoicesFinalizationControls,
+      ...diagnostics,
+    ].slice(0, MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS)
+  lastFundingChoicesFinalizationControlCount =
+    lastFundingChoicesFinalizationControls.length
+  lastFundingChoicesFinalizationSafeCandidateCount =
+    lastFundingChoicesFinalizationControls.filter((control) =>
+      control.type === 'confirm/save' ||
+        control.type === 'reject/no-consent' ||
+        control.type === 'close'
+    ).length
+  lastFundingChoicesFinalizationPositiveBlockedCount =
+    lastFundingChoicesFinalizationControls.filter((control) =>
+      control.blockedPositiveConsent
+    ).length
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.finalization_controls',
+    status: diagnostics.length > 0 ? 'ran' : 'not_found',
+    reason: stage,
+    found: diagnostics.length,
+    scanned: controls.length,
+  })
+
+  return diagnostics
+}
+
+function applyFundingChoicesFinalizationDiagnostics(diagnostics) {
+  if (!diagnostics || typeof diagnostics !== 'object') {
+    return
+  }
+
+  diagnostics.fundingChoicesFinalizationBackFound =
+    lastFundingChoicesFinalizationBackFound
+  diagnostics.fundingChoicesFinalizationBackClicked =
+    lastFundingChoicesFinalizationBackClicked
+  diagnostics.fundingChoicesFinalizationControlCount =
+    lastFundingChoicesFinalizationControlCount
+  diagnostics.fundingChoicesFinalizationSafeCandidateCount =
+    lastFundingChoicesFinalizationSafeCandidateCount
+  diagnostics.fundingChoicesFinalizationPositiveBlockedCount =
+    lastFundingChoicesFinalizationPositiveBlockedCount
+  diagnostics.fundingChoicesFinalizationControls =
+    lastFundingChoicesFinalizationControls
+      .slice(0, MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS)
+}
+
+function startFundingChoicesFinalizationPathDiagnostics(root) {
+  resetFundingChoicesFinalizationPathDiagnostics()
+  appendFundingChoicesFinalizationControls('after_first_back', root)
+  applyFundingChoicesFinalizationDiagnostics(lastFundingChoicesControlDiagnostics)
+}
+
+function continueFundingChoicesFinalizationPathAfterReopen(root) {
+  appendFundingChoicesFinalizationControls('provider_reopened', root)
+
+  const { control, scanned } =
+    findFundingChoicesProviderSaveBackButton(root)
+  lastFundingChoicesFinalizationBackFound =
+    Boolean(control)
+
+  if (!control) {
+    applyFundingChoicesFinalizationDiagnostics(lastFundingChoicesControlDiagnostics)
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.finalization_second_back',
+      status: 'not_found',
+      reason: 'provider_back_button_not_found',
+      found: 0,
+      scanned,
+    })
+
+    return {
+      backClicked: false,
+    }
+  }
+
+  const clicked =
+    clickElementSafely(control, {
+      includePointerEvents: true,
+      allowProcessedRetry: true,
+    })
+
+  lastFundingChoicesFinalizationBackClicked =
+    Boolean(clicked)
+  applyFundingChoicesFinalizationDiagnostics(lastFundingChoicesControlDiagnostics)
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.finalization_second_back',
+    status: clicked ? 'clicked' : 'skipped',
+    reason: clicked ? '' : 'provider_back_click_failed',
+    found: clicked ? 1 : 0,
+    scanned,
+  })
+
+  return {
+    backClicked: clicked,
+  }
+}
+
+function finishFundingChoicesFinalizationPathAfterSecondBack(root) {
+  const finalRoot =
+    getFundingChoicesPostProviderBackDiagnosticRoot(root)
+
+  appendFundingChoicesFinalizationControls('after_second_back', finalRoot)
+  applyFundingChoicesFinalizationDiagnostics(lastFundingChoicesControlDiagnostics)
 }
 
 function clickFundingChoicesProviderStrictSaveAction(root) {
@@ -12596,6 +13073,8 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
     }
 
     if (shouldDiagnoseProviderSave && backDiagnosticResult.clicked) {
+      startFundingChoicesFinalizationPathDiagnostics(finalDiagnosticRoot)
+
       const reopenResult =
         performFundingChoicesProviderPersistenceReopen(finalDiagnosticRoot)
 
@@ -12612,6 +13091,21 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
           applyFundingChoicesProviderPersistenceDiagnostics(
             lastFundingChoicesControlDiagnostics
           )
+          const finalizationResult =
+            continueFundingChoicesFinalizationPathAfterReopen(
+              reopenedPanel || finalDiagnosticRoot
+            )
+
+          if (finalizationResult.backClicked) {
+            setTimeout(() => {
+              finishFundingChoicesFinalizationPathAfterSecondBack(
+                finalDiagnosticRoot
+              )
+              recordFinalDiagnostic()
+            }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
+            return
+          }
+
           recordFinalDiagnostic()
         }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
         return
@@ -13516,6 +14010,14 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack,
     providerReopenOriginalManageVendorsConnectedAfterBack:
       lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack,
+    fundingChoicesFinalizationBackFound: lastFundingChoicesFinalizationBackFound,
+    fundingChoicesFinalizationBackClicked: lastFundingChoicesFinalizationBackClicked,
+    fundingChoicesFinalizationControlCount: lastFundingChoicesFinalizationControlCount,
+    fundingChoicesFinalizationSafeCandidateCount: lastFundingChoicesFinalizationSafeCandidateCount,
+    fundingChoicesFinalizationPositiveBlockedCount: lastFundingChoicesFinalizationPositiveBlockedCount,
+    fundingChoicesFinalizationControls:
+      lastFundingChoicesFinalizationControls
+        .slice(0, MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS),
     clickableOwnerCount,
     ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
@@ -13666,6 +14168,14 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack,
     providerReopenOriginalManageVendorsConnectedAfterBack:
       lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack,
+    fundingChoicesFinalizationBackFound: lastFundingChoicesFinalizationBackFound,
+    fundingChoicesFinalizationBackClicked: lastFundingChoicesFinalizationBackClicked,
+    fundingChoicesFinalizationControlCount: lastFundingChoicesFinalizationControlCount,
+    fundingChoicesFinalizationSafeCandidateCount: lastFundingChoicesFinalizationSafeCandidateCount,
+    fundingChoicesFinalizationPositiveBlockedCount: lastFundingChoicesFinalizationPositiveBlockedCount,
+    fundingChoicesFinalizationControls:
+      lastFundingChoicesFinalizationControls
+        .slice(0, MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS),
     clickableOwnerCount: 0,
     ...providerSaveCandidateDiagnostics,
     ...(providerFirstActiveToggleDiagnostic || {}),
@@ -14459,6 +14969,8 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     }
 
     if (shouldDiagnoseProviderSave && backDiagnosticResult.clicked) {
+      startFundingChoicesFinalizationPathDiagnostics(finalDiagnosticRoot)
+
       const reopenResult =
         performFundingChoicesProviderPersistenceReopen(
           finalDiagnosticRoot,
@@ -14478,6 +14990,21 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
           applyFundingChoicesProviderPersistenceDiagnostics(
             lastFundingChoicesControlDiagnostics
           )
+          const finalizationResult =
+            continueFundingChoicesFinalizationPathAfterReopen(
+              reopenedPanel || finalDiagnosticRoot
+            )
+
+          if (finalizationResult.backClicked) {
+            setTimeout(() => {
+              finishFundingChoicesFinalizationPathAfterSecondBack(
+                finalDiagnosticRoot
+              )
+              recordFinalDiagnostic()
+            }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
+            return
+          }
+
           recordFinalDiagnostic()
         }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
         return
