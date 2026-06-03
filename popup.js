@@ -989,6 +989,12 @@ function buildDiagnosticCopyReport() {
       ),
     ],
     [
+      'Funding Choices global state',
+      formatFundingChoicesGlobalStateCopySection(
+        latestCurrentSiteDiagnostic
+      ),
+    ],
+    [
       'Funding Choices controls',
       getBoundedElementText(
         currentSiteDiagnosticFundingChoices
@@ -1097,13 +1103,25 @@ async function waitForProviderStateOwnershipProbeForCopy(timeoutMs = 2600) {
       stored.currentSiteDiagnostic
         ?.fundingChoicesControlDiagnostics
         ?.providerStateOwnership
+    const storageProbe =
+      stored.currentSiteDiagnostic
+        ?.fundingChoicesControlDiagnostics
+        ?.providerStorageWrites
 
     if (
-      !probe ||
-      typeof probe !== 'object' ||
-      !probe.running ||
-      probe.ariaProbeCompleted ||
-      probe.completed
+      (
+        !probe ||
+        typeof probe !== 'object' ||
+        !probe.running ||
+        probe.ariaProbeCompleted ||
+        probe.completed
+      ) &&
+      (
+        !storageProbe ||
+        typeof storageProbe !== 'object' ||
+        !storageProbe.running ||
+        storageProbe.completed
+      )
     ) {
       return
     }
@@ -2422,6 +2440,270 @@ function formatProviderAttributeMutationProbe(label, probe) {
   ].join('\n')
 }
 
+function formatProviderDatasetValues(datasetValues) {
+  if (!datasetValues || typeof datasetValues !== 'object') {
+    return 'none'
+  }
+
+  const entries =
+    Object.entries(datasetValues)
+      .slice(0, 8)
+
+  if (entries.length === 0) {
+    return 'none'
+  }
+
+  return entries
+    .map(([key, value]) =>
+      `${String(key || '').slice(0, 50)}:${String(value || '').slice(0, 80)}`
+    )
+    .join('|')
+}
+
+function formatProviderKeyList(values) {
+  const keys =
+    Array.isArray(values)
+      ? values
+          .filter(Boolean)
+          .slice(0, 8)
+      : []
+
+  return keys.length > 0
+    ? keys.map((value) => String(value || '').slice(0, 80)).join('|')
+    : 'none'
+}
+
+function formatProviderOwnerElement(label, owner) {
+  if (!owner || typeof owner !== 'object') {
+    return `${label}: none`
+  }
+
+  return [
+    `${label}:`,
+    `tag:${String(owner.tagName || 'none').slice(0, 30)}`,
+    `id:${String(owner.id || 'none').slice(0, 70)}`,
+    `role:${String(owner.role || 'none').slice(0, 30)}`,
+    `class:${String(owner.class || 'none').slice(0, 80)}`,
+    `reactFiber:${formatProviderKeyList(owner.reactFiberKeys)}`,
+    `reactProps:${formatProviderKeyList(owner.reactPropsKeys)}`,
+    `angular:${formatProviderKeyList(owner.angularKeys)}`,
+    `ownProps:${formatProviderKeyList(owner.ownPropertyNames)}`,
+    `dataset:${formatProviderDatasetValues(owner.datasetValues)}`,
+  ].join(', ')
+}
+
+function formatProviderOwnerDiagnostics(ownerDiagnostics) {
+  if (!ownerDiagnostics || typeof ownerDiagnostics !== 'object') {
+    return 'providerOwnerDiagnostics: none'
+  }
+
+  return [
+    'providerOwnerDiagnostics:',
+    formatProviderOwnerElement('owner.input', ownerDiagnostics.input),
+    formatProviderOwnerElement('owner.label', ownerDiagnostics.label),
+    formatProviderOwnerElement('owner.slider', ownerDiagnostics.slider),
+    formatProviderOwnerElement('owner.row', ownerDiagnostics.row),
+    formatProviderOwnerElement(
+      'owner.componentRoot',
+      ownerDiagnostics.componentRoot
+    ),
+  ].join('\n')
+}
+
+function formatProviderStorageSnapshot(label, snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return `${label}: none`
+  }
+
+  return [
+    `${label}:`,
+    `available:${Boolean(snapshot.available)}`,
+    `count:${Math.max(0, Number(snapshot.count) || 0)}`,
+    `truncated:${Boolean(snapshot.truncated)}`,
+    `error:${String(snapshot.error || 'none').slice(0, 80)}`,
+  ].join(', ')
+}
+
+function formatProviderStorageWrites(label, writes) {
+  const entries =
+    Array.isArray(writes)
+      ? writes
+          .filter((entry) => entry && typeof entry === 'object')
+          .slice(0, 8)
+      : []
+
+  if (entries.length === 0) {
+    return `${label}: none`
+  }
+
+  return [
+    `${label}:`,
+    ...entries.map((entry, index) =>
+      [
+        `${index + 1}. ${String(entry.type || 'changed').slice(0, 20)}`,
+        `key:${String(entry.key || 'none').slice(0, 90)}`,
+        `before:${String(entry.before || '').slice(0, 60)}`,
+        `after:${String(entry.after || '').slice(0, 60)}`,
+      ].join(' | ')
+    ),
+  ].join('\n')
+}
+
+function formatProviderStorageDiagnostics(storageDiagnostic) {
+  if (!storageDiagnostic || typeof storageDiagnostic !== 'object') {
+    return 'providerStorageWrites: none'
+  }
+
+  return [
+    [
+      'providerStorageWrites:',
+      `method:${String(storageDiagnostic.method || 'none').slice(0, 60)}`,
+      `running:${Boolean(storageDiagnostic.running)}`,
+      `completed:${Boolean(storageDiagnostic.completed)}`,
+      `error:${String(storageDiagnostic.error || 'none').slice(0, 80)}`,
+    ].join(', '),
+    formatProviderStorageSnapshot(
+      'localStorageBefore',
+      storageDiagnostic.localStorageBefore
+    ),
+    formatProviderStorageSnapshot(
+      'localStorageAfter',
+      storageDiagnostic.localStorageAfter
+    ),
+    formatProviderStorageWrites(
+      'localStorageWrites',
+      storageDiagnostic.localStorageWrites
+    ),
+    formatProviderStorageSnapshot(
+      'sessionStorageBefore',
+      storageDiagnostic.sessionStorageBefore
+    ),
+    formatProviderStorageSnapshot(
+      'sessionStorageAfter',
+      storageDiagnostic.sessionStorageAfter
+    ),
+    formatProviderStorageWrites(
+      'sessionStorageWrites',
+      storageDiagnostic.sessionStorageWrites
+    ),
+  ].join('\n')
+}
+
+function formatFundingChoicesGlobalObject(globalObject) {
+  if (!globalObject || typeof globalObject !== 'object') {
+    return 'globalObject: none'
+  }
+
+  return [
+    `${String(globalObject.scope || 'window').slice(0, 30)}.${String(globalObject.name || 'unknown').slice(0, 80)}:`,
+    `exists:${Boolean(globalObject.exists)}`,
+    `type:${String(globalObject.type || 'undefined').slice(0, 30)}`,
+    `keys:${formatProviderKeyList(globalObject.enumerableKeys)}`,
+    `value:${String(globalObject.valuePreview || 'none').slice(0, 80)}`,
+    `error:${String(globalObject.error || globalObject.keyReadError || 'none').slice(0, 80)}`,
+  ].join(', ')
+}
+
+function formatFundingChoicesMessageHints(hints) {
+  const entries =
+    Array.isArray(hints)
+      ? hints
+          .filter((hint) => hint && typeof hint === 'object')
+          .slice(0, 8)
+      : []
+
+  if (entries.length === 0) {
+    return 'messageListenerHints: none'
+  }
+
+  return [
+    'messageListenerHints:',
+    ...entries.map((hint, index) =>
+      [
+        `${index + 1}. type:${String(hint.type || 'unknown').slice(0, 30)}`,
+        `consent:${Boolean(hint.consentRelated)}`,
+        `detail:${String(hint.detail || 'none').slice(0, 140)}`,
+      ].join(' | ')
+    ),
+  ].join('\n')
+}
+
+function formatFundingChoicesVendor11Mapping(mapping) {
+  if (!mapping || typeof mapping !== 'object') {
+    return 'providerVendor11Mapping: none'
+  }
+
+  const tcData =
+    mapping.globalTcData && typeof mapping.globalTcData === 'object'
+      ? mapping.globalTcData
+      : null
+
+  return [
+    [
+      'providerVendor11Mapping:',
+      `found:${Boolean(mapping.found)}`,
+      `aria:${String(mapping.ariaLabel || 'none').slice(0, 100)}`,
+      `row:${String(mapping.rowText || 'none').slice(0, 140)}`,
+    ].join(', '),
+    formatProviderDiagnosticAllAttributes('vendor11InputAttrs', mapping.inputAttrs),
+    formatProviderDiagnosticAllAttributes('vendor11RowAttrs', mapping.rowAttrs),
+    tcData
+      ? [
+          'vendor11TcData:',
+          `vendorConsents:${String(tcData.vendorConsents || 'none').slice(0, 40)}`,
+          `vendorLI:${String(tcData.vendorLegitimateInterests || 'none').slice(0, 40)}`,
+          `purposeConsentKeys:${formatProviderKeyList(tcData.purposeConsentKeys)}`,
+          `purposeLIKeys:${formatProviderKeyList(tcData.purposeLegitimateInterestKeys)}`,
+          `error:${String(tcData.error || 'none').slice(0, 80)}`,
+        ].join(', ')
+      : 'vendor11TcData: none',
+  ].join('\n')
+}
+
+function formatFundingChoicesGlobalStateCopySection(diagnostic) {
+  const summary =
+    diagnostic?.fundingChoicesControlDiagnostics
+  const globalState =
+    summary?.fundingChoicesGlobalState &&
+    typeof summary.fundingChoicesGlobalState === 'object'
+      ? summary.fundingChoicesGlobalState
+      : null
+
+  if (!globalState) {
+    return 'fundingChoicesGlobalState: none'
+  }
+
+  const globalObjects =
+    Array.isArray(globalState.globalObjects)
+      ? globalState.globalObjects
+          .filter((entry) => entry && typeof entry === 'object')
+          .slice(0, 12)
+      : []
+
+  return [
+    [
+      'fundingChoicesGlobalState:',
+      `__tcfapi:${Boolean(globalState.tcfapiExists)}`,
+      `__cmp:${Boolean(globalState.cmpExists)}`,
+      `googlefc:${Boolean(globalState.googlefcExists)}`,
+      `messageConsentHints:${Boolean(globalState.messageListenerConsentRelated)}`,
+      `names:${formatProviderKeyList(globalState.globalObjectNames)}`,
+    ].join(', '),
+    globalObjects.length > 0
+      ? [
+          'globalObjects:',
+          ...globalObjects.map(formatFundingChoicesGlobalObject),
+        ].join('\n')
+      : 'globalObjects: none',
+    formatFundingChoicesMessageHints(
+      globalState.messageListenerConsentHints
+    ),
+    formatFundingChoicesVendor11Mapping(
+      globalState.providerVendor11Mapping
+    ),
+  ].join('\n')
+}
+
 function formatProviderStateOwnershipCopySection(diagnostic) {
   const summary =
     diagnostic?.fundingChoicesControlDiagnostics
@@ -2454,6 +2736,10 @@ function formatProviderStateOwnershipCopySection(diagnostic) {
       `ariaCheckedRestoredAfter500ms:${Boolean(stateOwnership.ariaCheckedRestoredAfter500ms)}`,
       `error:${String(stateOwnership.error || 'none').slice(0, 120)}`,
     ].join(', '),
+    formatProviderOwnerDiagnostics(
+      stateOwnership.ownerDiagnostics ||
+        summary.providerFirstActiveOwnerDiagnostics
+    ),
     formatProviderStateSnapshot('original', stateOwnership.original),
     formatProviderStateSnapshot('immediate', stateOwnership.immediate),
     formatProviderStateSnapshot('requestAnimationFrame', stateOwnership.raf),
@@ -2479,6 +2765,7 @@ function formatProviderStateOwnershipCopySection(diagnostic) {
       'ariaCheckedSetFalse',
       stateOwnership.ariaCheckedSetFalse
     ),
+    formatProviderStorageDiagnostics(summary.providerStorageWrites),
     'outerHTML: omitted',
   ].join('\n')
 }
@@ -2594,6 +2881,9 @@ function formatFundingChoicesControls(summary) {
           .slice(0, 10)
       : []
   const lines = [
+    formatFundingChoicesGlobalStateCopySection({
+      fundingChoicesControlDiagnostics: summary,
+    }),
     'providerReopenCandidateDiagnostics:',
     [
       `providerReopenCandidateCount: ${providerReopenCandidateCount}`,
@@ -2604,6 +2894,12 @@ function formatFundingChoicesControls(summary) {
       `providerToggleCountAfterReopen: ${Math.max(0, Number(summary.providerToggleCountAfterReopen) || 0)}`,
       `activeProviderToggleCountAfterReopen: ${Math.max(0, Number(summary.activeProviderToggleCountAfterReopen) || 0)}`,
       `providerPersistenceVerified: ${Boolean(summary.providerPersistenceVerified)}`,
+      `providerReloadVerificationStarted: ${Boolean(summary.providerReloadVerificationStarted)}`,
+      `providerReloadCloseClicked: ${Boolean(summary.providerReloadCloseClicked)}`,
+      `providerToggleCountAfterReload: ${Math.max(0, Number(summary.providerToggleCountAfterReload) || 0)}`,
+      `activeProviderToggleCountAfterReload: ${Math.max(0, Number(summary.activeProviderToggleCountAfterReload) || 0)}`,
+      `providerPersistenceAcrossReload: ${Boolean(summary.providerPersistenceAcrossReload)}`,
+      `reloadVerificationReason: ${String(summary.reloadVerificationReason || 'none').slice(0, 80)}`,
       `originalManageVendorsConnectedAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsConnectedAfterBack)}`,
       `originalManageVendorsExistsAfterBack: ${Boolean(summary.providerReopenOriginalManageVendorsExistsAfterBack)}`,
     ].join(', '),
@@ -2720,6 +3016,13 @@ function formatFundingChoicesControls(summary) {
       `providerPersistenceReason: ${String(summary.providerPersistenceReason || 'none').slice(0, 60)}`,
       `providerToggleCountAfterReopen: ${Math.max(0, Number(summary.providerToggleCountAfterReopen) || 0)}`,
       `activeProviderToggleCountAfterReopen: ${Math.max(0, Number(summary.activeProviderToggleCountAfterReopen) || 0)}`,
+      `providerReloadVerificationStarted: ${Boolean(summary.providerReloadVerificationStarted)}`,
+      `providerReloadCloseFound: ${Boolean(summary.providerReloadCloseFound)}`,
+      `providerReloadCloseClicked: ${Boolean(summary.providerReloadCloseClicked)}`,
+      `providerToggleCountAfterReload: ${Math.max(0, Number(summary.providerToggleCountAfterReload) || 0)}`,
+      `activeProviderToggleCountAfterReload: ${Math.max(0, Number(summary.activeProviderToggleCountAfterReload) || 0)}`,
+      `providerPersistenceAcrossReload: ${Boolean(summary.providerPersistenceAcrossReload)}`,
+      `reloadVerificationReason: ${String(summary.reloadVerificationReason || 'none').slice(0, 80)}`,
       `clickableOwnerCount: ${Math.max(0, Number(summary.clickableOwnerCount) || 0)}`,
       `collectedAt: ${String(summary.collectedAt || 'unknown').slice(0, 40)}`,
     ].join(', ')
@@ -2884,6 +3187,21 @@ function formatFundingChoicesControls(summary) {
         'sliderAttrs',
         summary.providerFirstActiveSliderAttrs
       )
+    )
+    lines.push(
+      formatProviderDiagnosticAllAttributes(
+        'componentRootAttrs',
+        summary.providerFirstActiveComponentRootAttrs
+      )
+    )
+    lines.push(
+      formatProviderOwnerDiagnostics(
+        summary.providerFirstActiveOwnerDiagnostics ||
+          stateOwnership?.ownerDiagnostics
+      )
+    )
+    lines.push(
+      formatProviderStorageDiagnostics(summary.providerStorageWrites)
     )
 
     if (stateOwnership) {

@@ -18,6 +18,7 @@ const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
 const ENABLE_VERBOSE_DIAGNOSTICS = false
 const ENABLE_FC_PROVIDER_AUTOMATION = false
+const FUNDING_CHOICES_PROVIDER_OWNER_DIAGNOSTIC_ONLY = true
 const REJECT_FLOW_DEBUG = false
 
 let protectionEnabled = false
@@ -126,6 +127,13 @@ let lastFundingChoicesProviderPersistenceReopenSuccess = false
 let lastFundingChoicesProviderPersistenceReason = ''
 let lastFundingChoicesProviderToggleCountAfterReopen = 0
 let lastFundingChoicesActiveProviderToggleCountAfterReopen = 0
+let lastFundingChoicesProviderReloadVerificationStarted = false
+let lastFundingChoicesProviderReloadCloseFound = false
+let lastFundingChoicesProviderReloadCloseClicked = false
+let lastFundingChoicesProviderToggleCountAfterReload = 0
+let lastFundingChoicesActiveProviderToggleCountAfterReload = 0
+let lastFundingChoicesProviderPersistenceAcrossReload = false
+let lastFundingChoicesReloadVerificationReason = ''
 let lastFundingChoicesFinalizationBackFound = false
 let lastFundingChoicesFinalizationBackClicked = false
 let lastFundingChoicesFinalizationControlCount = 0
@@ -141,6 +149,12 @@ let lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack = fa
 let lastFundingChoicesProviderStateOwnershipDiagnostic = null
 let fundingChoicesProviderStateOwnershipProbeSignature = ''
 let fundingChoicesProviderStateOwnershipProbeRunning = false
+let lastFundingChoicesProviderStorageDiagnostic = null
+let fundingChoicesProviderStorageProbeSignature = ''
+let fundingChoicesProviderStorageProbeRunning = false
+let lastFundingChoicesGlobalStateDiagnostic = null
+let fundingChoicesReloadVerificationActive = false
+let fundingChoicesReloadVerificationScheduled = false
 let fundingChoicesProviderPhase1Attempted = false
 let fundingChoicesProviderPhase1Running = false
 let lightweightSettingsOpenAttempted = false
@@ -257,7 +271,17 @@ const MAX_FUNDING_CHOICES_SAVE_CONTROL_DIAGNOSTICS = 5
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_HTML = 600
 const MAX_FUNDING_CHOICES_PROVIDER_STATE_DIAGNOSTIC_HTML = 2000
 const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
+const MAX_FUNDING_CHOICES_PROVIDER_OWNER_KEYS = 30
+const MAX_FUNDING_CHOICES_PROVIDER_STORAGE_KEYS = 60
+const MAX_FUNDING_CHOICES_PROVIDER_STORAGE_WRITES = 8
+const MAX_FUNDING_CHOICES_GLOBAL_OBJECT_KEYS = 20
+const MAX_FUNDING_CHOICES_GLOBAL_OBJECTS = 20
+const MAX_FUNDING_CHOICES_MESSAGE_LISTENER_HINTS = 8
 const FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS = 120
+const FUNDING_CHOICES_RELOAD_VERIFICATION_KEY = 'fundingChoicesReloadVerification'
+const FUNDING_CHOICES_RELOAD_VERIFICATION_TTL_MS = 45000
+const FUNDING_CHOICES_RELOAD_VERIFY_DELAY_MS = 900
+const FUNDING_CHOICES_RELOAD_REOPEN_DELAY_MS = 350
 const MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS = 10
 const MAX_PRIORITIZED_CMP_ROOTS = 4
 const MAX_PRIORITIZED_CMP_ROOT_SCAN = 80
@@ -1608,6 +1632,54 @@ function safeStorageSet(values) {
     })
   } catch {
     // Extension context invalidated.
+  }
+}
+
+function safeStorageSetWithCallback(values, callback) {
+  if (!hasExtensionContext()) {
+    if (typeof callback === 'function') callback(false)
+    return
+  }
+
+  try {
+    chrome.storage.local.set(values, () => {
+      try {
+        if (chrome.runtime.lastError) {
+          if (typeof callback === 'function') callback(false)
+          return
+        }
+
+        if (typeof callback === 'function') callback(true)
+      } catch {
+        if (typeof callback === 'function') callback(false)
+      }
+    })
+  } catch {
+    if (typeof callback === 'function') callback(false)
+  }
+}
+
+function safeStorageRemoveWithCallback(keys, callback) {
+  if (!hasExtensionContext()) {
+    if (typeof callback === 'function') callback(false)
+    return
+  }
+
+  try {
+    chrome.storage.local.remove(keys, () => {
+      try {
+        if (chrome.runtime.lastError) {
+          if (typeof callback === 'function') callback(false)
+          return
+        }
+
+        if (typeof callback === 'function') callback(true)
+      } catch {
+        if (typeof callback === 'function') callback(false)
+      }
+    })
+  } catch {
+    if (typeof callback === 'function') callback(false)
   }
 }
 
@@ -4118,6 +4190,25 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerToggleCountAfterReopen) || 0),
             activeProviderToggleCountAfterReopen:
               Math.max(0, Number(fundingChoicesControlDiagnostics.activeProviderToggleCountAfterReopen) || 0),
+            providerReloadVerificationStarted:
+              Boolean(fundingChoicesControlDiagnostics.providerReloadVerificationStarted),
+            providerReloadCloseFound:
+              Boolean(fundingChoicesControlDiagnostics.providerReloadCloseFound),
+            providerReloadCloseClicked:
+              Boolean(fundingChoicesControlDiagnostics.providerReloadCloseClicked),
+            providerToggleCountAfterReload:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerToggleCountAfterReload) || 0),
+            activeProviderToggleCountAfterReload:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.activeProviderToggleCountAfterReload) || 0),
+            providerPersistenceAcrossReload:
+              Boolean(fundingChoicesControlDiagnostics.providerPersistenceAcrossReload),
+            reloadVerificationReason:
+              String(fundingChoicesControlDiagnostics.reloadVerificationReason || '').slice(0, 100),
+            fundingChoicesGlobalState:
+              sanitizeFundingChoicesGlobalStateDiagnostic(
+                fundingChoicesControlDiagnostics.fundingChoicesGlobalState ||
+                  lastFundingChoicesGlobalStateDiagnostic
+              ),
             providerReopenCandidateCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerReopenCandidateCount) || 0),
             providerReopenCandidateVisibleCount:
@@ -9269,6 +9360,20 @@ function resetFundingChoicesProviderSaveBackDiagnostics() {
   lastFundingChoicesProviderPersistenceReason = ''
   lastFundingChoicesProviderToggleCountAfterReopen = 0
   lastFundingChoicesActiveProviderToggleCountAfterReopen = 0
+  lastFundingChoicesProviderReloadVerificationStarted = false
+  lastFundingChoicesProviderReloadCloseFound = false
+  lastFundingChoicesProviderReloadCloseClicked = false
+  lastFundingChoicesProviderToggleCountAfterReload = 0
+  lastFundingChoicesActiveProviderToggleCountAfterReload = 0
+  lastFundingChoicesProviderPersistenceAcrossReload = false
+  lastFundingChoicesReloadVerificationReason = ''
+  lastFundingChoicesProviderStateOwnershipDiagnostic = null
+  fundingChoicesProviderStateOwnershipProbeSignature = ''
+  fundingChoicesProviderStateOwnershipProbeRunning = false
+  lastFundingChoicesProviderStorageDiagnostic = null
+  fundingChoicesProviderStorageProbeSignature = ''
+  fundingChoicesProviderStorageProbeRunning = false
+  lastFundingChoicesGlobalStateDiagnostic = null
   lastFundingChoicesFinalizationBackFound = false
   lastFundingChoicesFinalizationBackClicked = false
   lastFundingChoicesFinalizationControlCount = 0
@@ -9526,6 +9631,27 @@ function applyFundingChoicesProviderPersistenceDiagnostics(diagnostics) {
     lastFundingChoicesProviderReopenOriginalManageVendorsExistsAfterBack
   diagnostics.providerReopenOriginalManageVendorsConnectedAfterBack =
     lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack
+}
+
+function applyFundingChoicesReloadVerificationDiagnostics(diagnostics) {
+  if (!diagnostics || typeof diagnostics !== 'object') {
+    return
+  }
+
+  diagnostics.providerReloadVerificationStarted =
+    lastFundingChoicesProviderReloadVerificationStarted
+  diagnostics.providerReloadCloseFound =
+    lastFundingChoicesProviderReloadCloseFound
+  diagnostics.providerReloadCloseClicked =
+    lastFundingChoicesProviderReloadCloseClicked
+  diagnostics.providerToggleCountAfterReload =
+    lastFundingChoicesProviderToggleCountAfterReload
+  diagnostics.activeProviderToggleCountAfterReload =
+    lastFundingChoicesActiveProviderToggleCountAfterReload
+  diagnostics.providerPersistenceAcrossReload =
+    lastFundingChoicesProviderPersistenceAcrossReload
+  diagnostics.reloadVerificationReason =
+    lastFundingChoicesReloadVerificationReason
 }
 
 function getFundingChoicesProviderReopenCandidateDiagnostic(element) {
@@ -10183,6 +10309,490 @@ function finishFundingChoicesFinalizationPathAfterSecondBack(root) {
 
   appendFundingChoicesFinalizationControls('after_second_back', finalRoot)
   applyFundingChoicesFinalizationDiagnostics(lastFundingChoicesControlDiagnostics)
+}
+
+function isFundingChoicesReloadVerificationPending(pending) {
+  if (!pending || typeof pending !== 'object') {
+    return false
+  }
+
+  const pendingDomain =
+    normalizeDomain(pending.domain || '')
+  const currentDomain =
+    getCurrentDomain()
+  const createdAt =
+    Number(pending.createdAt) || 0
+
+  return Boolean(
+    pending.active === true &&
+      pending.step === 'pending_after_reload' &&
+      pendingDomain &&
+      pendingDomain === currentDomain &&
+      createdAt > 0 &&
+      Date.now() - createdAt <= FUNDING_CHOICES_RELOAD_VERIFICATION_TTL_MS
+  )
+}
+
+function clearFundingChoicesReloadVerificationPending() {
+  safeStorageRemoveWithCallback(
+    FUNDING_CHOICES_RELOAD_VERIFICATION_KEY,
+    () => {}
+  )
+}
+
+function getFundingChoicesReloadSafeCloseSignal(control) {
+  return normalizeMatchText([
+    getActionText(control),
+    control?.getAttribute?.('aria-label'),
+    control?.getAttribute?.('title'),
+    control?.getAttribute?.('value'),
+    control?.value,
+    control?.id,
+    getClassNameText(control),
+  ].join(' '))
+}
+
+function isFundingChoicesReloadSafeCloseControl(control, root) {
+  if (
+    !control ||
+    !control.isConnected ||
+    !root?.contains?.(control) ||
+    !isVisible(control) ||
+    getCookieDebugDisabledState(control) === 'disabled' ||
+    hasUnsafeAcceptText(control)
+  ) {
+    return false
+  }
+
+  const signal =
+    getFundingChoicesReloadSafeCloseSignal(control)
+
+  if (
+    textHasAny(signal, fundingChoicesProviderStrictSaveBlockedTexts) ||
+    textHasAny(signal, fundingChoicesUnsafePositiveTexts) ||
+    textHasAny(signal, ['consent'])
+  ) {
+    return false
+  }
+
+  return (
+    textHasAny(signal, [
+      'close',
+      'cerrar',
+      'tancar',
+      'dismiss',
+      'fc close',
+      'fc-close',
+      'dialog close',
+      'dialog-close',
+      'modal close',
+      'modal-close',
+      'close button',
+      'close-button',
+    ]) ||
+    signal === 'x' ||
+    signal === '×'
+  )
+}
+
+function findFundingChoicesReloadSafeCloseControl(root) {
+  const fcRoot =
+    getVisibleFundingChoicesPanel() ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document
+  const controls =
+    getDirectClickableControls(fcRoot, {
+      startedAt: Date.now(),
+      budgetMs: FUNDING_CHOICES_HELPER_BUDGET_MS,
+    })
+
+  return controls.find((control) =>
+    isFundingChoicesReloadSafeCloseControl(control, fcRoot)
+  ) || null
+}
+
+function closeFundingChoicesDialogForReload(root) {
+  const control =
+    findFundingChoicesReloadSafeCloseControl(root)
+
+  lastFundingChoicesProviderReloadCloseFound =
+    Boolean(control)
+
+  if (!control) {
+    lastFundingChoicesProviderReloadCloseClicked = false
+    return {
+      found: false,
+      clicked: false,
+    }
+  }
+
+  const clicked =
+    clickElementSafely(control, {
+      includePointerEvents: true,
+      allowProcessedRetry: true,
+    })
+
+  lastFundingChoicesProviderReloadCloseClicked =
+    Boolean(clicked)
+
+  return {
+    found: true,
+    clicked,
+  }
+}
+
+function maybeStartFundingChoicesReloadPersistenceVerification(root) {
+  if (
+    fundingChoicesReloadVerificationScheduled ||
+    !lastFundingChoicesProviderPersistenceVerified ||
+    Math.max(0, Number(lastFundingChoicesProviderToggleCountAfterReopen) || 0) <= 0 ||
+    Math.max(0, Number(lastFundingChoicesActiveProviderToggleCountAfterReopen) || 0) !== 0
+  ) {
+    return false
+  }
+
+  fundingChoicesReloadVerificationScheduled = true
+  lastFundingChoicesProviderReloadVerificationStarted = true
+
+  const closeResult =
+    closeFundingChoicesDialogForReload(root)
+
+  lastFundingChoicesReloadVerificationReason =
+    closeResult.clicked
+      ? 'reload_pending_after_safe_close'
+      : closeResult.found
+        ? 'reload_pending_close_click_failed'
+        : 'reload_pending_no_safe_close'
+
+  applyFundingChoicesReloadVerificationDiagnostics(
+    lastFundingChoicesControlDiagnostics
+  )
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_reload_persistence',
+    status: 'pending',
+    reason: lastFundingChoicesReloadVerificationReason,
+    found: closeResult.clicked ? 1 : 0,
+    scanned: closeResult.found ? 1 : 0,
+  })
+
+  const diagnosticRoot =
+    getVisibleFundingChoicesPanel() ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document.documentElement
+  const pending = {
+    active: true,
+    step: 'pending_after_reload',
+    domain: getCurrentDomain(),
+    href: String(window.location.href || '').slice(0, 1000),
+    createdAt: Date.now(),
+    providerToggleCountAfterReopen:
+      lastFundingChoicesProviderToggleCountAfterReopen,
+    activeProviderToggleCountAfterReopen:
+      lastFundingChoicesActiveProviderToggleCountAfterReopen,
+  }
+
+  safeStorageSetWithCallback(
+    {
+      [FUNDING_CHOICES_RELOAD_VERIFICATION_KEY]: pending,
+    },
+    (stored) => {
+      if (!stored) {
+        lastFundingChoicesReloadVerificationReason =
+          'reload_pending_storage_failed'
+        applyFundingChoicesReloadVerificationDiagnostics(
+          lastFundingChoicesControlDiagnostics
+        )
+        recordCurrentSiteDiagnostic({
+          status: 'skipped',
+          reason: 'fc_provider_reload_verification_storage_failed',
+          candidates: diagnosticRoot ? [diagnosticRoot] : [],
+          blockedReason: '',
+          fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+          settingsSaveDetected: lastSettingsSaveDetected,
+          settingsSaveClicked: false,
+          settingsSaveVerification: lastSettingsSaveVerification || '',
+        })
+        return
+      }
+
+      recordCurrentSiteDiagnostic({
+        status: 'partial',
+        reason: 'fc_provider_reload_verification_pending',
+        candidates: diagnosticRoot ? [diagnosticRoot] : [],
+        blockedReason: '',
+        fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+        settingsSaveDetected: lastSettingsSaveDetected,
+        settingsSaveClicked: false,
+        settingsSaveVerification: 'fc_provider_reload_verification_pending',
+      })
+
+      rejectFlowCompleted = true
+      stopObserver()
+      setLastAction('settings_opened')
+      setLastError('')
+
+      scheduleAutomationTimeout(() => {
+        try {
+          window.location.reload()
+        } catch (error) {
+          logRuntimeError('funding_choices_reload_verification_reload', error)
+        }
+      }, 50)
+    }
+  )
+
+  return true
+}
+
+function finishFundingChoicesReloadVerification(root, reason) {
+  const providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(document)
+  const diagnosticRoot =
+    providerPanel ||
+    getVisibleFundingChoicesPanel() ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document.documentElement
+
+  if (providerPanel) {
+    refreshFundingChoicesProviderPanelDiagnostics(providerPanel)
+    lastFundingChoicesProviderToggleCountAfterReload =
+      lastFundingChoicesProviderToggleCount
+    lastFundingChoicesActiveProviderToggleCountAfterReload =
+      lastFundingChoicesActiveProviderToggleCount
+    lastFundingChoicesProviderPersistenceAcrossReload =
+      lastFundingChoicesProviderToggleCountAfterReload > 0 &&
+      lastFundingChoicesActiveProviderToggleCountAfterReload === 0
+    lastFundingChoicesReloadVerificationReason =
+      lastFundingChoicesProviderPersistenceAcrossReload
+        ? 'provider_persistence_across_reload_verified'
+        : lastFundingChoicesProviderToggleCountAfterReload > 0
+          ? 'provider_toggles_active_after_reload'
+          : 'provider_toggles_not_found_after_reload'
+  } else {
+    lastFundingChoicesProviderToggleCountAfterReload = 0
+    lastFundingChoicesActiveProviderToggleCountAfterReload = 0
+    lastFundingChoicesProviderPersistenceAcrossReload = false
+    lastFundingChoicesReloadVerificationReason =
+      reason || 'provider_panel_not_visible_after_reload'
+  }
+
+  collectFundingChoicesLightweightControlDiagnostics(diagnosticRoot)
+  applyFundingChoicesReloadVerificationDiagnostics(
+    lastFundingChoicesControlDiagnostics
+  )
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_reload_persistence_verify',
+    status: lastFundingChoicesProviderPersistenceAcrossReload
+      ? 'verified'
+      : 'failed',
+    reason: lastFundingChoicesReloadVerificationReason,
+    found: lastFundingChoicesActiveProviderToggleCountAfterReload,
+    scanned: lastFundingChoicesProviderToggleCountAfterReload,
+  })
+
+  recordCurrentSiteDiagnostic({
+    status: lastFundingChoicesProviderPersistenceAcrossReload
+      ? 'partial'
+      : 'skipped',
+    reason: 'fc_provider_reload_verification_complete',
+    candidates: diagnosticRoot ? [diagnosticRoot] : [],
+    blockedReason: '',
+    fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
+    settingsSaveDetected: false,
+    settingsSaveClicked: false,
+    settingsSaveVerification: 'fc_provider_reload_verification_recount_only',
+  })
+
+  clearFundingChoicesReloadVerificationPending()
+  rejectFlowCompleted = true
+  stopObserver()
+  setLastAction('settings_opened')
+  setLastError('')
+}
+
+function reopenFundingChoicesProvidersForReloadVerification(root) {
+  const startedAt =
+    Date.now()
+  const fcRoot =
+    getVisibleFundingChoicesPanel() ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document
+  const manageVendorsButton =
+    findFundingChoicesManageVendorsButton(fcRoot, startedAt, {
+      mode: 'reload_verification',
+      allowClick: true,
+    })
+
+  if (!manageVendorsButton) {
+    finishFundingChoicesReloadVerification(
+      fcRoot,
+      'manage_vendors_not_found_after_reload'
+    )
+    return
+  }
+
+  const clicked =
+    clickFundingChoicesManageVendorsButton(manageVendorsButton)
+
+  if (!clicked) {
+    finishFundingChoicesReloadVerification(
+      fcRoot,
+      'manage_vendors_click_failed_after_reload'
+    )
+    return
+  }
+
+  scheduleAutomationTimeout(() => {
+    finishFundingChoicesReloadVerification(
+      getVerifiedVisibleFundingChoicesProviderPreferencesPanel(document) ||
+        fcRoot,
+      'provider_panel_not_visible_after_manage_vendors_reload'
+    )
+  }, FUNDING_CHOICES_RELOAD_REOPEN_DELAY_MS)
+}
+
+function runFundingChoicesReloadVerification() {
+  lastFundingChoicesProviderReloadVerificationStarted = true
+  lastFundingChoicesReloadVerificationReason =
+    'reload_verification_started'
+
+  const fcRoot =
+    getVisibleFundingChoicesPanel() ||
+    getFundingChoicesRoot(document)
+
+  if (!fcRoot) {
+    finishFundingChoicesReloadVerification(
+      document.documentElement,
+      'funding_choices_not_found_after_reload'
+    )
+    return
+  }
+
+  const providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(fcRoot)
+
+  if (providerPanel) {
+    finishFundingChoicesReloadVerification(providerPanel, '')
+    return
+  }
+
+  const startedAt =
+    Date.now()
+  const manageVendorsButton =
+    findFundingChoicesManageVendorsButton(fcRoot, startedAt, {
+      mode: 'reload_verification',
+      allowClick: true,
+    })
+
+  if (manageVendorsButton) {
+    const clicked =
+      clickFundingChoicesManageVendorsButton(manageVendorsButton)
+
+    if (!clicked) {
+      finishFundingChoicesReloadVerification(
+        fcRoot,
+        'manage_vendors_click_failed_after_reload'
+      )
+      return
+    }
+
+    scheduleAutomationTimeout(() => {
+      finishFundingChoicesReloadVerification(
+        getVerifiedVisibleFundingChoicesProviderPreferencesPanel(document) ||
+          fcRoot,
+        'provider_panel_not_visible_after_manage_vendors_reload'
+      )
+    }, FUNDING_CHOICES_RELOAD_REOPEN_DELAY_MS)
+    return
+  }
+
+  const manageOptionsButton =
+    findFundingChoicesControl(
+      fcRoot,
+      fundingChoicesManageOptionTexts,
+      startedAt,
+      FUNDING_CHOICES_HELPER_BUDGET_MS
+    )
+
+  if (!manageOptionsButton) {
+    finishFundingChoicesReloadVerification(
+      fcRoot,
+      'manage_options_not_found_after_reload'
+    )
+    return
+  }
+
+  const settingsClicked =
+    clickCMPSpecificControl(manageOptionsButton)
+
+  if (!settingsClicked) {
+    finishFundingChoicesReloadVerification(
+      fcRoot,
+      'manage_options_click_failed_after_reload'
+    )
+    return
+  }
+
+  scheduleAutomationTimeout(() => {
+    reopenFundingChoicesProvidersForReloadVerification(
+      getVisibleFundingChoicesPanel() ||
+        getFundingChoicesRoot(document) ||
+        fcRoot
+    )
+  }, FUNDING_CHOICES_RELOAD_REOPEN_DELAY_MS)
+}
+
+function scheduleFundingChoicesReloadVerificationAfterLoad(pending) {
+  if (!pending) {
+    return false
+  }
+
+  if (!isFundingChoicesReloadVerificationPending(pending)) {
+    clearFundingChoicesReloadVerificationPending()
+    return false
+  }
+
+  fundingChoicesReloadVerificationActive = true
+  lastFundingChoicesProviderReloadVerificationStarted = true
+  rejectFlowCompleted = true
+  stopObserver()
+
+  const scheduleRun = () => {
+    scheduleAutomationTimeout(
+      runFundingChoicesReloadVerification,
+      FUNDING_CHOICES_RELOAD_VERIFY_DELAY_MS
+    )
+  }
+
+  if (
+    document.readyState === 'interactive' ||
+    document.readyState === 'complete'
+  ) {
+    scheduleRun()
+  } else {
+    const handleReady = () => {
+      if (
+        document.readyState !== 'interactive' &&
+        document.readyState !== 'complete'
+      ) {
+        return
+      }
+
+      document.removeEventListener('readystatechange', handleReady)
+      scheduleRun()
+    }
+
+    document.addEventListener('readystatechange', handleReady)
+  }
+
+  return true
 }
 
 function clickFundingChoicesProviderStrictSaveAction(root) {
@@ -12285,6 +12895,705 @@ function storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic) {
   })
 }
 
+function getFundingChoicesProviderOwnPropertyNames(element) {
+  if (!element) return []
+
+  try {
+    return Object.getOwnPropertyNames(element)
+      .map((name) => String(name || ''))
+      .filter(Boolean)
+      .slice(0, MAX_FUNDING_CHOICES_PROVIDER_OWNER_KEYS)
+  } catch {
+    return []
+  }
+}
+
+function getFundingChoicesProviderDatasetValues(element) {
+  if (!element?.dataset) return {}
+
+  try {
+    return Object.fromEntries(
+      Object.entries(element.dataset)
+        .slice(0, 16)
+        .map(([key, value]) => [
+          String(key || '').slice(0, 80),
+          String(value || '').slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+        ])
+    )
+  } catch {
+    return {}
+  }
+}
+
+function getFundingChoicesProviderFrameworkKeys(element) {
+  const ownPropertyNames =
+    getFundingChoicesProviderOwnPropertyNames(element)
+
+  return {
+    reactFiberKeys:
+      ownPropertyNames
+        .filter((name) => name.startsWith('__reactFiber$'))
+        .slice(0, 4),
+    reactPropsKeys:
+      ownPropertyNames
+        .filter((name) => name.startsWith('__reactProps$'))
+        .slice(0, 4),
+    angularKeys:
+      ownPropertyNames
+        .filter((name) => name === '__ngContext' || name.startsWith('__ngContext'))
+        .slice(0, 4),
+    ownPropertyNames,
+  }
+}
+
+function getFundingChoicesProviderOwnerElementDiagnostic(element) {
+  if (!element) return null
+
+  const frameworkKeys =
+    getFundingChoicesProviderFrameworkKeys(element)
+
+  return {
+    tagName:
+      String(element.tagName || '').slice(0, 40),
+    id:
+      String(element.id || element.getAttribute?.('id') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    class:
+      getFundingChoicesProviderDiagnosticClass(element),
+    role:
+      String(element.getAttribute?.('role') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    datasetValues:
+      getFundingChoicesProviderDatasetValues(element),
+    attributes:
+      getFundingChoicesProviderDiagnosticAllAttributes(element),
+    ...frameworkKeys,
+  }
+}
+
+function getFundingChoicesProviderClosestComponentRoot(input, row, providerPanel) {
+  let current =
+    row?.parentElement ||
+    input?.parentElement ||
+    null
+
+  while (current && current !== document.documentElement) {
+    const frameworkKeys =
+      getFundingChoicesProviderFrameworkKeys(current)
+    const hasFrameworkKeys =
+      frameworkKeys.reactFiberKeys.length > 0 ||
+      frameworkKeys.reactPropsKeys.length > 0 ||
+      frameworkKeys.angularKeys.length > 0
+
+    if (
+      hasFrameworkKeys ||
+      (
+        current !== row &&
+        safeMatches(
+          current,
+          '[data-testid], [data-component], [data-vendor-id], [class*="fc-" i], .fc-data-preferences-dialog, .fc-consent-root'
+        )
+      )
+    ) {
+      return current
+    }
+
+    if (current === providerPanel) {
+      break
+    }
+
+    current = current.parentElement
+  }
+
+  return providerPanel || null
+}
+
+function getFundingChoicesProviderOwnerDiagnostics({
+  input,
+  label,
+  slider,
+  row,
+  componentRoot,
+}) {
+  return {
+    input:
+      getFundingChoicesProviderOwnerElementDiagnostic(input),
+    label:
+      getFundingChoicesProviderOwnerElementDiagnostic(label),
+    slider:
+      getFundingChoicesProviderOwnerElementDiagnostic(slider),
+    row:
+      getFundingChoicesProviderOwnerElementDiagnostic(row),
+    componentRoot:
+      getFundingChoicesProviderOwnerElementDiagnostic(componentRoot),
+  }
+}
+
+function getFundingChoicesProviderStorageSnapshot(kind) {
+  try {
+    const storage =
+      kind === 'sessionStorage'
+        ? window.sessionStorage
+        : window.localStorage
+    const count =
+      Math.max(0, Number(storage?.length) || 0)
+    const entries = []
+    const max =
+      Math.min(count, MAX_FUNDING_CHOICES_PROVIDER_STORAGE_KEYS)
+
+    for (let index = 0; index < max; index += 1) {
+      const key =
+        storage.key(index)
+
+      if (!key) continue
+
+      entries.push({
+        key:
+          String(key || '').slice(0, 120),
+        value:
+          String(storage.getItem(key) || '').slice(0, 180),
+      })
+    }
+
+    return {
+      available: true,
+      count,
+      truncated:
+        count > MAX_FUNDING_CHOICES_PROVIDER_STORAGE_KEYS,
+      entries,
+    }
+  } catch (error) {
+    return {
+      available: false,
+      count: 0,
+      truncated: false,
+      entries: [],
+      error:
+        String(error?.message || error || '').slice(0, 120),
+    }
+  }
+}
+
+function diffFundingChoicesProviderStorageSnapshots(before, after) {
+  const beforeEntries =
+    Array.isArray(before?.entries) ? before.entries : []
+  const afterEntries =
+    Array.isArray(after?.entries) ? after.entries : []
+  const beforeMap =
+    new Map(beforeEntries.map((entry) => [entry.key, entry.value]))
+  const afterMap =
+    new Map(afterEntries.map((entry) => [entry.key, entry.value]))
+  const writes = []
+
+  for (const [key, value] of afterMap.entries()) {
+    if (!beforeMap.has(key)) {
+      writes.push({
+        type: 'added',
+        key,
+        before: '',
+        after: value,
+      })
+    } else if (beforeMap.get(key) !== value) {
+      writes.push({
+        type: 'changed',
+        key,
+        before: beforeMap.get(key),
+        after: value,
+      })
+    }
+  }
+
+  for (const [key, value] of beforeMap.entries()) {
+    if (!afterMap.has(key)) {
+      writes.push({
+        type: 'removed',
+        key,
+        before: value,
+        after: '',
+      })
+    }
+  }
+
+  return writes.slice(0, MAX_FUNDING_CHOICES_PROVIDER_STORAGE_WRITES)
+}
+
+function storeFundingChoicesProviderStorageDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== 'object') return
+
+  lastFundingChoicesProviderStorageDiagnostic = diagnostic
+
+  if (
+    lastFundingChoicesControlDiagnostics &&
+    typeof lastFundingChoicesControlDiagnostics === 'object'
+  ) {
+    lastFundingChoicesControlDiagnostics.providerStorageWrites = diagnostic
+  }
+
+  if (!hasExtensionContext()) return
+
+  safeStorageGet({
+    [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
+  }, (data) => {
+    const current =
+      data?.[CURRENT_SITE_DIAGNOSTIC_KEY]
+
+    if (!current || typeof current !== 'object') {
+      return
+    }
+
+    const fundingChoicesControlDiagnostics =
+      current.fundingChoicesControlDiagnostics &&
+      typeof current.fundingChoicesControlDiagnostics === 'object'
+        ? current.fundingChoicesControlDiagnostics
+        : {}
+
+    safeStorageSet({
+      [CURRENT_SITE_DIAGNOSTIC_KEY]: {
+        ...current,
+        fundingChoicesControlDiagnostics: {
+          ...fundingChoicesControlDiagnostics,
+          providerStorageWrites:
+            sanitizeFundingChoicesProviderStorageDiagnostic(diagnostic),
+        },
+        lastUpdatedAt: new Date().toISOString(),
+      },
+    })
+  })
+}
+
+function scheduleFundingChoicesProviderStorageObservation(input, root) {
+  if (!input?.isConnected || fundingChoicesProviderStorageProbeRunning) {
+    return
+  }
+
+  const signature =
+    getFundingChoicesProviderStateOwnershipSignature(input, root)
+
+  if (
+    signature &&
+    fundingChoicesProviderStorageProbeSignature === signature &&
+    lastFundingChoicesProviderStorageDiagnostic?.completed
+  ) {
+    return
+  }
+
+  fundingChoicesProviderStorageProbeSignature = signature
+  fundingChoicesProviderStorageProbeRunning = true
+
+  const diagnostic = {
+    signature,
+    method: 'snapshot_delta_read_only',
+    running: true,
+    completed: false,
+    localStorageBefore:
+      getFundingChoicesProviderStorageSnapshot('localStorage'),
+    sessionStorageBefore:
+      getFundingChoicesProviderStorageSnapshot('sessionStorage'),
+    localStorageAfter:
+      null,
+    sessionStorageAfter:
+      null,
+    localStorageWrites:
+      [],
+    sessionStorageWrites:
+      [],
+  }
+
+  storeFundingChoicesProviderStorageDiagnostic(diagnostic)
+
+  setTimeout(() => {
+    try {
+      diagnostic.localStorageAfter =
+        getFundingChoicesProviderStorageSnapshot('localStorage')
+      diagnostic.sessionStorageAfter =
+        getFundingChoicesProviderStorageSnapshot('sessionStorage')
+      diagnostic.localStorageWrites =
+        diffFundingChoicesProviderStorageSnapshots(
+          diagnostic.localStorageBefore,
+          diagnostic.localStorageAfter
+        )
+      diagnostic.sessionStorageWrites =
+        diffFundingChoicesProviderStorageSnapshots(
+          diagnostic.sessionStorageBefore,
+          diagnostic.sessionStorageAfter
+        )
+    } catch (error) {
+      diagnostic.error =
+        String(error?.message || error || '').slice(0, 120)
+    }
+
+    diagnostic.running = false
+    diagnostic.completed = true
+    fundingChoicesProviderStorageProbeRunning = false
+    storeFundingChoicesProviderStorageDiagnostic(diagnostic)
+  }, 800)
+}
+
+function getFundingChoicesGlobalStateTargetNames() {
+  return [
+    '__tcfapi',
+    '__cmp',
+    'googlefc',
+    'googlefcPresent',
+    'FundingChoices',
+    'fc',
+    'consent',
+    'privacy',
+    'tcData',
+  ]
+}
+
+function getFundingChoicesGlobalStateSearchTokens() {
+  return [
+    '__tcfapi',
+    '__cmp',
+    'googlefc',
+    'fundingchoices',
+    'funding_choices',
+    'consent',
+    'privacy',
+    'tcdata',
+  ]
+}
+
+function getFundingChoicesGlobalValue(scope, name) {
+  try {
+    if (!scope || !(name in scope)) {
+      return {
+        exists: false,
+        value: undefined,
+      }
+    }
+
+    return {
+      exists: true,
+      value: scope[name],
+    }
+  } catch (error) {
+    return {
+      exists: true,
+      value: undefined,
+      error:
+        String(error?.message || error || '').slice(0, 120),
+    }
+  }
+}
+
+function getFundingChoicesGlobalObjectDiagnostic(scopeName, name, scope) {
+  const result =
+    getFundingChoicesGlobalValue(scope, name)
+  const value =
+    result.value
+  const type =
+    result.exists
+      ? typeof value
+      : 'undefined'
+  let enumerableKeys = []
+
+  if (
+    result.exists &&
+    value &&
+    (
+      type === 'object' ||
+      type === 'function'
+    )
+  ) {
+    try {
+      enumerableKeys =
+        Object.keys(value)
+          .map((key) => String(key || '').slice(0, 120))
+          .slice(0, MAX_FUNDING_CHOICES_GLOBAL_OBJECT_KEYS)
+    } catch (error) {
+      return {
+        scope: scopeName,
+        name,
+        exists: true,
+        type,
+        enumerableKeys: [],
+        keyReadError:
+          String(error?.message || error || '').slice(0, 120),
+      }
+    }
+  }
+
+  return {
+    scope: scopeName,
+    name,
+    exists: Boolean(result.exists),
+    type,
+    enumerableKeys,
+    error:
+      String(result.error || '').slice(0, 120),
+    valuePreview:
+      (
+        type === 'string' ||
+        type === 'number' ||
+        type === 'boolean'
+      )
+        ? String(value).slice(0, 120)
+        : '',
+  }
+}
+
+function getFundingChoicesGlobalScopeNames(scope) {
+  try {
+    return Object.getOwnPropertyNames(scope)
+  } catch {
+    return []
+  }
+}
+
+function collectFundingChoicesGlobalObjectDiagnostics() {
+  const targetNames =
+    getFundingChoicesGlobalStateTargetNames()
+  const tokens =
+    getFundingChoicesGlobalStateSearchTokens()
+  const candidates =
+    new Set(targetNames)
+  const windowNames =
+    getFundingChoicesGlobalScopeNames(window)
+
+  for (const name of windowNames) {
+    const normalized =
+      String(name || '').toLowerCase()
+
+    if (
+      tokens.some((token) =>
+        normalized.includes(token)
+      )
+    ) {
+      candidates.add(name)
+    }
+
+    if (candidates.size >= MAX_FUNDING_CHOICES_GLOBAL_OBJECTS) {
+      break
+    }
+  }
+
+  const diagnostics = []
+  for (const name of candidates) {
+    if (diagnostics.length >= MAX_FUNDING_CHOICES_GLOBAL_OBJECTS) {
+      break
+    }
+
+    diagnostics.push(
+      getFundingChoicesGlobalObjectDiagnostic('window', name, window)
+    )
+  }
+
+  if (
+    typeof globalThis !== 'undefined' &&
+    globalThis !== window
+  ) {
+    for (const name of targetNames) {
+      if (diagnostics.length >= MAX_FUNDING_CHOICES_GLOBAL_OBJECTS) {
+        break
+      }
+
+      diagnostics.push(
+        getFundingChoicesGlobalObjectDiagnostic(
+          'globalThis',
+          name,
+          globalThis
+        )
+      )
+    }
+  }
+
+  return diagnostics
+}
+
+function getFundingChoicesGlobalVendor11State() {
+  const tcDataResult =
+    getFundingChoicesGlobalValue(window, 'tcData')
+  const tcData =
+    tcDataResult.value
+
+  if (!tcData || typeof tcData !== 'object') {
+    return null
+  }
+
+  try {
+    return {
+      vendorConsents:
+        tcData.vendor?.consents?.['11'] ??
+        tcData.vendorConsents?.['11'] ??
+        null,
+      vendorLegitimateInterests:
+        tcData.vendor?.legitimateInterests?.['11'] ??
+        tcData.vendorLegitimateInterests?.['11'] ??
+        null,
+      purposeConsents:
+        tcData.purpose?.consents || null,
+      purposeLegitimateInterests:
+        tcData.purpose?.legitimateInterests || null,
+    }
+  } catch (error) {
+    return {
+      error:
+        String(error?.message || error || '').slice(0, 120),
+    }
+  }
+}
+
+function getFundingChoicesProviderVendor11Mapping(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(document)
+  const searchRoot =
+    providerPanel ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document
+  const input =
+    safeQuerySelectorAll(
+      searchRoot,
+      [
+        'input.gvl-vendor[data-id="11"]',
+        '#fc-preference-slider-gvl-vendor-11',
+        'input.gvl-vendor[id*="vendor-11"]',
+        'input.fc-preference-legitimate-interest.gvl-vendor[data-id="11"]',
+        'input.fc-preference-consent.gvl-vendor[data-id="11"]',
+      ].join(',')
+    )[0] || null
+  const label =
+    input
+      ? safeClosest(input, 'label.fc-preference-slider-container')
+      : null
+  const slider =
+    input
+      ? safeClosest(input, '.fc-preference-slider')
+      : null
+  const row =
+    input
+      ? getFundingChoicesProviderFirstActiveRow(input, label, slider)
+      : null
+
+  return {
+    found:
+      Boolean(input),
+    inputAttrs:
+      getFundingChoicesProviderDiagnosticAllAttributes(input),
+    rowAttrs:
+      getFundingChoicesProviderDiagnosticAllAttributes(row),
+    ariaLabel:
+      String(input?.getAttribute?.('aria-label') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    rowText:
+      normalizeMatchText(row?.innerText || row?.textContent || '')
+        .slice(0, 240),
+    globalTcData:
+      getFundingChoicesGlobalVendor11State(),
+  }
+}
+
+function collectFundingChoicesMessageListenerHints() {
+  const hints = []
+  const onMessageType =
+    typeof window.onmessage
+
+  if (onMessageType !== 'undefined') {
+    hints.push({
+      type: 'window.onmessage',
+      detail: onMessageType,
+      consentRelated: false,
+    })
+  }
+
+  const scripts =
+    safeQuerySelectorAll(document, 'script')
+      .slice(0, 80)
+
+  for (const script of scripts) {
+    if (hints.length >= MAX_FUNDING_CHOICES_MESSAGE_LISTENER_HINTS) {
+      break
+    }
+
+    const src =
+      String(script.getAttribute?.('src') || '').slice(0, 180)
+    const inlineText =
+      src
+        ? ''
+        : String(script.textContent || '').slice(0, 3000)
+    const signal =
+      normalizeMatchText([
+        src,
+        inlineText,
+      ].join(' '))
+    const hasMessageSignal =
+      textHasAny(signal, [
+        'message',
+        'postmessage',
+        'addeventlistener message',
+        'add event listener message',
+      ])
+    const hasConsentSignal =
+      textHasAny(signal, [
+        'consent',
+        'privacy',
+        'tcdata',
+        '__tcfapi',
+        '__cmp',
+        'googlefc',
+        'fundingchoices',
+      ])
+
+    if (!hasMessageSignal || !hasConsentSignal) {
+      continue
+    }
+
+    hints.push({
+      type: src ? 'script-src' : 'inline-script',
+      detail: src || inlineText.slice(0, 180),
+      consentRelated: true,
+    })
+  }
+
+  return hints
+}
+
+function collectFundingChoicesGlobalStateDiagnostics(root) {
+  const globalObjects =
+    collectFundingChoicesGlobalObjectDiagnostics()
+  const messageListenerHints =
+    collectFundingChoicesMessageListenerHints()
+  const diagnostic = {
+    collectedAt:
+      new Date().toISOString(),
+    globalObjects,
+    globalObjectNames:
+      globalObjects
+        .filter((entry) => entry.exists)
+        .map((entry) => `${entry.scope}.${entry.name}`)
+        .slice(0, MAX_FUNDING_CHOICES_GLOBAL_OBJECTS),
+    tcfapiExists:
+      globalObjects.some((entry) =>
+        entry.name === '__tcfapi' && entry.exists
+      ),
+    cmpExists:
+      globalObjects.some((entry) =>
+        entry.name === '__cmp' && entry.exists
+      ),
+    googlefcExists:
+      globalObjects.some((entry) =>
+        entry.name === 'googlefc' && entry.exists
+      ),
+    messageListenerConsentHints:
+      messageListenerHints,
+    messageListenerConsentRelated:
+      messageListenerHints.some((hint) =>
+        Boolean(hint.consentRelated)
+      ),
+    providerVendor11Mapping:
+      getFundingChoicesProviderVendor11Mapping(root),
+  }
+
+  lastFundingChoicesGlobalStateDiagnostic =
+    diagnostic
+
+  return diagnostic
+}
+
 function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
   if (!input || !input.isConnected || fundingChoicesProviderStateOwnershipProbeRunning) {
     return
@@ -12310,30 +13619,27 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
     safeClosest(input, '.fc-preference-slider')
   const row =
     getFundingChoicesProviderFirstActiveRow(input, label, slider)
-  const originalValues =
-    getFundingChoicesProviderOriginalProbeValues(input)
-  const originalChecked =
-    Boolean(input.checked)
-  const originalCheckedAttribute =
-    input.getAttribute?.('checked')
+  const componentRoot =
+    getFundingChoicesProviderClosestComponentRoot(input, row, root)
   const diagnostic = {
     signature,
-    mutation: 'input.checked=false',
-    running: true,
-    completed: false,
+    mutation: 'none_read_only',
+    running: false,
+    completed: true,
     inputOuterHTML:
       String(input.outerHTML || ''),
     labelOuterHTML:
       String(label?.outerHTML || ''),
     rowOuterHTML:
       String(row?.outerHTML || ''),
-    originalValues,
+    originalValues:
+      getFundingChoicesProviderOriginalProbeValues(input),
     originalCheckedAttribute:
-      String(originalCheckedAttribute || '').slice(0, 40),
+      String(input.getAttribute?.('checked') || '').slice(0, 40),
     original:
       getFundingChoicesProviderInputStateSnapshot(input),
     immediate:
-      null,
+      getFundingChoicesProviderInputStateSnapshot(input),
     raf:
       null,
     after100ms:
@@ -12358,22 +13664,17 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
       null,
     ariaCheckedSetFalse:
       null,
+    ownerDiagnostics:
+      getFundingChoicesProviderOwnerDiagnostics({
+        input,
+        label,
+        slider,
+        row,
+        componentRoot,
+      }),
   }
 
-  try {
-    input.checked = false
-    diagnostic.immediate =
-      getFundingChoicesProviderInputStateSnapshot(input)
-    storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
-  } catch (error) {
-    diagnostic.running = false
-    diagnostic.completed = true
-    diagnostic.error =
-      String(error?.message || error || '').slice(0, 120)
-    fundingChoicesProviderStateOwnershipProbeRunning = false
-    storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
-    return
-  }
+  storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
 
   const captureRaf = () => {
     if (input.isConnected) {
@@ -12402,33 +13703,6 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
       if (input.isConnected) {
         diagnostic.after500ms =
           getFundingChoicesProviderInputStateSnapshot(input)
-        diagnostic.checkedRestoredAfter500ms =
-          isFundingChoicesProviderStateRestored(
-            diagnostic.original,
-            diagnostic.after500ms
-          )
-        diagnostic.ariaPressedRestoredAfter500ms =
-          Boolean(
-            diagnostic.original &&
-              diagnostic.after500ms &&
-              String(diagnostic.after500ms.ariaPressed || '') ===
-                String(diagnostic.original.ariaPressed || '')
-          )
-        diagnostic.ariaCheckedRestoredAfter500ms =
-          Boolean(
-            diagnostic.original &&
-              diagnostic.after500ms &&
-              String(diagnostic.after500ms.ariaChecked || '') ===
-                String(diagnostic.original.ariaChecked || '')
-          )
-
-        input.checked = originalChecked
-        restoreFundingChoicesProviderAttribute(
-          input,
-          'checked',
-          originalCheckedAttribute !== null,
-          originalCheckedAttribute
-        )
         diagnostic.restoredOriginalAfterProbe =
           getFundingChoicesProviderInputStateSnapshot(input)
       }
@@ -12437,15 +13711,8 @@ function scheduleFundingChoicesProviderStateOwnershipProbe(input, root) {
         String(error?.message || error || '').slice(0, 120)
     }
 
+    fundingChoicesProviderStateOwnershipProbeRunning = false
     storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic)
-    runFundingChoicesProviderAriaStateOwnershipProbe(
-      input,
-      diagnostic,
-      originalValues
-    )
-      .finally(() => {
-        fundingChoicesProviderStateOwnershipProbeRunning = false
-      })
   }, 500)
 }
 
@@ -12484,6 +13751,8 @@ function getFundingChoicesProviderFirstActiveToggleDiagnostic(root) {
     null
   const row =
     getFundingChoicesProviderFirstActiveRow(input, label, slider)
+  const componentRoot =
+    getFundingChoicesProviderClosestComponentRoot(input, row, providerPanel)
 
   const diagnostic = {
     providerFirstActiveInputHTML:
@@ -12518,13 +13787,28 @@ function getFundingChoicesProviderFirstActiveToggleDiagnostic(root) {
       getFundingChoicesProviderDiagnosticAllAttributes(sliderContainer),
     providerFirstActiveSliderAttrs:
       getFundingChoicesProviderDiagnosticAllAttributes(slider),
+    providerFirstActiveComponentRootAttrs:
+      getFundingChoicesProviderDiagnosticAllAttributes(componentRoot),
+    providerFirstActiveOwnerDiagnostics:
+      getFundingChoicesProviderOwnerDiagnostics({
+        input,
+        label,
+        slider,
+        row,
+        componentRoot,
+      }),
     providerStateOwnership:
       lastFundingChoicesProviderStateOwnershipDiagnostic,
+    providerStorageWrites:
+      lastFundingChoicesProviderStorageDiagnostic,
   }
 
   scheduleFundingChoicesProviderStateOwnershipProbe(input, providerPanel)
+  scheduleFundingChoicesProviderStorageObservation(input, providerPanel)
   diagnostic.providerStateOwnership =
     lastFundingChoicesProviderStateOwnershipDiagnostic
+  diagnostic.providerStorageWrites =
+    lastFundingChoicesProviderStorageDiagnostic
 
   return diagnostic
 }
@@ -12603,6 +13887,87 @@ function sanitizeFundingChoicesProviderDiagnosticAllAttributes(attrs) {
   }
 }
 
+function sanitizeFundingChoicesProviderDatasetValues(datasetValues) {
+  if (!datasetValues || typeof datasetValues !== 'object') return {}
+
+  return Object.fromEntries(
+    Object.entries(datasetValues)
+      .slice(0, 12)
+      .map(([key, value]) => [
+        String(key || '').slice(0, 80),
+        String(value || '')
+          .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+      ])
+  )
+}
+
+function sanitizeFundingChoicesProviderOwnerElementDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== 'object') return null
+
+  return {
+    tagName:
+      String(diagnostic.tagName || '').slice(0, 40),
+    id:
+      String(diagnostic.id || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    class:
+      String(diagnostic.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    role:
+      String(diagnostic.role || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    reactFiberKeys:
+      (Array.isArray(diagnostic.reactFiberKeys)
+        ? diagnostic.reactFiberKeys
+        : [])
+        .slice(0, 4)
+        .map((key) => String(key || '').slice(0, 120)),
+    reactPropsKeys:
+      (Array.isArray(diagnostic.reactPropsKeys)
+        ? diagnostic.reactPropsKeys
+        : [])
+        .slice(0, 4)
+        .map((key) => String(key || '').slice(0, 120)),
+    angularKeys:
+      (Array.isArray(diagnostic.angularKeys)
+        ? diagnostic.angularKeys
+        : [])
+        .slice(0, 4)
+        .map((key) => String(key || '').slice(0, 120)),
+    ownPropertyNames:
+      (Array.isArray(diagnostic.ownPropertyNames)
+        ? diagnostic.ownPropertyNames
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_OWNER_KEYS)
+        .map((name) => String(name || '').slice(0, 120)),
+    datasetValues:
+      sanitizeFundingChoicesProviderDatasetValues(diagnostic.datasetValues),
+    attributes:
+      sanitizeFundingChoicesProviderDiagnosticAllAttributes(
+        diagnostic.attributes
+      ),
+  }
+}
+
+function sanitizeFundingChoicesProviderOwnerDiagnostics(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== 'object') return null
+
+  return {
+    input:
+      sanitizeFundingChoicesProviderOwnerElementDiagnostic(diagnostic.input),
+    label:
+      sanitizeFundingChoicesProviderOwnerElementDiagnostic(diagnostic.label),
+    slider:
+      sanitizeFundingChoicesProviderOwnerElementDiagnostic(diagnostic.slider),
+    row:
+      sanitizeFundingChoicesProviderOwnerElementDiagnostic(diagnostic.row),
+    componentRoot:
+      sanitizeFundingChoicesProviderOwnerElementDiagnostic(
+        diagnostic.componentRoot
+      ),
+  }
+}
+
 function sanitizeFundingChoicesProviderStateSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return null
 
@@ -12656,6 +14021,201 @@ function sanitizeFundingChoicesProviderAttributeMutationProbe(probe) {
       String(probe.error || '').slice(0, 120),
     restoreError:
       String(probe.restoreError || '').slice(0, 120),
+  }
+}
+
+function sanitizeFundingChoicesProviderStorageSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+
+  return {
+    available:
+      Boolean(snapshot.available),
+    count:
+      Math.max(0, Number(snapshot.count) || 0),
+    truncated:
+      Boolean(snapshot.truncated),
+    error:
+      String(snapshot.error || '').slice(0, 120),
+  }
+}
+
+function sanitizeFundingChoicesProviderStorageWrites(writes) {
+  return (Array.isArray(writes) ? writes : [])
+    .slice(0, MAX_FUNDING_CHOICES_PROVIDER_STORAGE_WRITES)
+    .map((write) => ({
+      type:
+        String(write?.type || '').slice(0, 24),
+      key:
+        String(write?.key || '').slice(0, 120),
+      before:
+        String(write?.before || '').slice(0, 160),
+      after:
+        String(write?.after || '').slice(0, 160),
+    }))
+}
+
+function sanitizeFundingChoicesProviderStorageDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== 'object') return null
+
+  return {
+    signature:
+      String(diagnostic.signature || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    method:
+      String(diagnostic.method || '').slice(0, 60),
+    running:
+      Boolean(diagnostic.running),
+    completed:
+      Boolean(diagnostic.completed),
+    localStorageBefore:
+      sanitizeFundingChoicesProviderStorageSnapshot(
+        diagnostic.localStorageBefore
+      ),
+    localStorageAfter:
+      sanitizeFundingChoicesProviderStorageSnapshot(
+        diagnostic.localStorageAfter
+      ),
+    sessionStorageBefore:
+      sanitizeFundingChoicesProviderStorageSnapshot(
+        diagnostic.sessionStorageBefore
+      ),
+    sessionStorageAfter:
+      sanitizeFundingChoicesProviderStorageSnapshot(
+        diagnostic.sessionStorageAfter
+      ),
+    localStorageWrites:
+      sanitizeFundingChoicesProviderStorageWrites(
+        diagnostic.localStorageWrites
+      ),
+    sessionStorageWrites:
+      sanitizeFundingChoicesProviderStorageWrites(
+        diagnostic.sessionStorageWrites
+      ),
+    error:
+      String(diagnostic.error || '').slice(0, 120),
+  }
+}
+
+function sanitizeFundingChoicesGlobalObjectDiagnostic(entry) {
+  if (!entry || typeof entry !== 'object') return null
+
+  return {
+    scope:
+      String(entry.scope || '').slice(0, 40),
+    name:
+      String(entry.name || '').slice(0, 120),
+    exists:
+      Boolean(entry.exists),
+    type:
+      String(entry.type || '').slice(0, 40),
+    enumerableKeys:
+      (Array.isArray(entry.enumerableKeys)
+        ? entry.enumerableKeys
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_GLOBAL_OBJECT_KEYS)
+        .map((key) => String(key || '').slice(0, 120)),
+    valuePreview:
+      String(entry.valuePreview || '').slice(0, 120),
+    error:
+      String(entry.error || '').slice(0, 120),
+    keyReadError:
+      String(entry.keyReadError || '').slice(0, 120),
+  }
+}
+
+function sanitizeFundingChoicesMessageListenerHint(hint) {
+  if (!hint || typeof hint !== 'object') return null
+
+  return {
+    type:
+      String(hint.type || '').slice(0, 40),
+    detail:
+      String(hint.detail || '').slice(0, 180),
+    consentRelated:
+      Boolean(hint.consentRelated),
+  }
+}
+
+function sanitizeFundingChoicesProviderVendor11Mapping(mapping) {
+  if (!mapping || typeof mapping !== 'object') return null
+
+  return {
+    found:
+      Boolean(mapping.found),
+    inputAttrs:
+      sanitizeFundingChoicesProviderDiagnosticAllAttributes(
+        mapping.inputAttrs
+      ),
+    rowAttrs:
+      sanitizeFundingChoicesProviderDiagnosticAllAttributes(
+        mapping.rowAttrs
+      ),
+    ariaLabel:
+      String(mapping.ariaLabel || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    rowText:
+      String(mapping.rowText || '').slice(0, 240),
+    globalTcData:
+      mapping.globalTcData &&
+      typeof mapping.globalTcData === 'object'
+        ? {
+            vendorConsents:
+              String(mapping.globalTcData.vendorConsents ?? '')
+                .slice(0, 40),
+            vendorLegitimateInterests:
+              String(mapping.globalTcData.vendorLegitimateInterests ?? '')
+                .slice(0, 40),
+            purposeConsentKeys:
+              Object.keys(mapping.globalTcData.purposeConsents || {})
+                .slice(0, 20),
+            purposeLegitimateInterestKeys:
+              Object.keys(mapping.globalTcData.purposeLegitimateInterests || {})
+                .slice(0, 20),
+            error:
+              String(mapping.globalTcData.error || '').slice(0, 120),
+          }
+        : null,
+  }
+}
+
+function sanitizeFundingChoicesGlobalStateDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== 'object') return null
+
+  return {
+    collectedAt:
+      String(diagnostic.collectedAt || '').slice(0, 40),
+    globalObjectNames:
+      (Array.isArray(diagnostic.globalObjectNames)
+        ? diagnostic.globalObjectNames
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_GLOBAL_OBJECTS)
+        .map((name) => String(name || '').slice(0, 160)),
+    globalObjects:
+      (Array.isArray(diagnostic.globalObjects)
+        ? diagnostic.globalObjects
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_GLOBAL_OBJECTS)
+        .map(sanitizeFundingChoicesGlobalObjectDiagnostic)
+        .filter(Boolean),
+    tcfapiExists:
+      Boolean(diagnostic.tcfapiExists),
+    cmpExists:
+      Boolean(diagnostic.cmpExists),
+    googlefcExists:
+      Boolean(diagnostic.googlefcExists),
+    messageListenerConsentRelated:
+      Boolean(diagnostic.messageListenerConsentRelated),
+    messageListenerConsentHints:
+      (Array.isArray(diagnostic.messageListenerConsentHints)
+        ? diagnostic.messageListenerConsentHints
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_MESSAGE_LISTENER_HINTS)
+        .map(sanitizeFundingChoicesMessageListenerHint)
+        .filter(Boolean),
+    providerVendor11Mapping:
+      sanitizeFundingChoicesProviderVendor11Mapping(
+        diagnostic.providerVendor11Mapping
+      ),
   }
 }
 
@@ -12735,6 +14295,10 @@ function sanitizeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic) {
     ariaCheckedSetFalse:
       sanitizeFundingChoicesProviderAttributeMutationProbe(
         diagnostic.ariaCheckedSetFalse
+      ),
+    ownerDiagnostics:
+      sanitizeFundingChoicesProviderOwnerDiagnostics(
+        diagnostic.ownerDiagnostics
       ),
     error:
       String(diagnostic.error || '').slice(0, 120),
@@ -12848,10 +14412,23 @@ function sanitizeFundingChoicesProviderFirstActiveToggleDiagnostic(summary) {
       sanitizeFundingChoicesProviderDiagnosticAllAttributes(
         summary.providerFirstActiveSliderAttrs
       ),
+    providerFirstActiveComponentRootAttrs:
+      sanitizeFundingChoicesProviderDiagnosticAllAttributes(
+        summary.providerFirstActiveComponentRootAttrs
+      ),
+    providerFirstActiveOwnerDiagnostics:
+      sanitizeFundingChoicesProviderOwnerDiagnostics(
+        summary.providerFirstActiveOwnerDiagnostics
+      ),
     providerStateOwnership:
       sanitizeFundingChoicesProviderStateOwnershipDiagnostic(
         summary.providerStateOwnership ||
           lastFundingChoicesProviderStateOwnershipDiagnostic
+      ),
+    providerStorageWrites:
+      sanitizeFundingChoicesProviderStorageDiagnostic(
+        summary.providerStorageWrites ||
+          lastFundingChoicesProviderStorageDiagnostic
       ),
   }
 }
@@ -12941,6 +14518,19 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   lastFundingChoicesProviderInspectedCount = providerInputs.length
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
   lastFundingChoicesProviderTimeBudgetExceeded = false
+
+  if (FUNDING_CHOICES_PROVIDER_OWNER_DIAGNOSTIC_ONLY) {
+    if (activeInputs[0]) {
+      getFundingChoicesProviderFirstActiveToggleDiagnostic(providerPanel)
+    }
+
+    lastFundingChoicesProviderToggleMethod =
+      activeInputs.length > 0
+        ? 'read-only-diagnostic'
+        : ''
+
+    return false
+  }
 
   for (const input of activeInputs.slice(
     0,
@@ -13101,11 +14691,25 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
               finishFundingChoicesFinalizationPathAfterSecondBack(
                 finalDiagnosticRoot
               )
+              if (
+                maybeStartFundingChoicesReloadPersistenceVerification(
+                  finalDiagnosticRoot
+                )
+              ) {
+                return
+              }
               recordFinalDiagnostic()
             }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
             return
           }
 
+          if (
+            maybeStartFundingChoicesReloadPersistenceVerification(
+              reopenedPanel || finalDiagnosticRoot
+            )
+          ) {
+            return
+          }
           recordFinalDiagnostic()
         }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
         return
@@ -13153,7 +14757,11 @@ function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.provider_phase1_aria_pressed',
       status: providerPhaseHandled ? 'handled' : 'skipped',
-      reason: providerPhaseHandled ? '' : 'provider_aria_pressed_no_change',
+      reason: providerPhaseHandled
+        ? ''
+        : lastFundingChoicesProviderToggleMethod === 'read-only-diagnostic'
+          ? 'provider_owner_diagnostic_only_no_mutation'
+          : 'provider_aria_pressed_no_change',
       found: handledCount,
       scanned: activeBefore,
     })
@@ -13944,6 +15552,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
+  const fundingChoicesGlobalStateDiagnostic =
+    collectFundingChoicesGlobalStateDiagnostics(root)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -14000,6 +15610,13 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPersistenceReason: lastFundingChoicesProviderPersistenceReason,
     providerToggleCountAfterReopen: lastFundingChoicesProviderToggleCountAfterReopen,
     activeProviderToggleCountAfterReopen: lastFundingChoicesActiveProviderToggleCountAfterReopen,
+    providerReloadVerificationStarted: lastFundingChoicesProviderReloadVerificationStarted,
+    providerReloadCloseFound: lastFundingChoicesProviderReloadCloseFound,
+    providerReloadCloseClicked: lastFundingChoicesProviderReloadCloseClicked,
+    providerToggleCountAfterReload: lastFundingChoicesProviderToggleCountAfterReload,
+    activeProviderToggleCountAfterReload: lastFundingChoicesActiveProviderToggleCountAfterReload,
+    providerPersistenceAcrossReload: lastFundingChoicesProviderPersistenceAcrossReload,
+    reloadVerificationReason: lastFundingChoicesReloadVerificationReason,
     providerReopenCandidateCount: lastFundingChoicesProviderReopenCandidateCount,
     providerReopenCandidateVisibleCount: lastFundingChoicesProviderReopenCandidateVisibleCount,
     providerReopenCandidateTotalCount: lastFundingChoicesProviderReopenCandidateTotalCount,
@@ -14020,6 +15637,8 @@ function collectFundingChoicesControlDiagnostics(root) {
         .slice(0, MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS),
     clickableOwnerCount,
     ...providerSaveCandidateDiagnostics,
+    fundingChoicesGlobalState:
+      fundingChoicesGlobalStateDiagnostic,
     ...(providerFirstActiveToggleDiagnostic || {}),
     preferenceToggleActions,
     controls,
@@ -14102,6 +15721,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
+  const fundingChoicesGlobalStateDiagnostic =
+    collectFundingChoicesGlobalStateDiagnostics(root)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -14158,6 +15779,13 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerPersistenceReason: lastFundingChoicesProviderPersistenceReason,
     providerToggleCountAfterReopen: lastFundingChoicesProviderToggleCountAfterReopen,
     activeProviderToggleCountAfterReopen: lastFundingChoicesActiveProviderToggleCountAfterReopen,
+    providerReloadVerificationStarted: lastFundingChoicesProviderReloadVerificationStarted,
+    providerReloadCloseFound: lastFundingChoicesProviderReloadCloseFound,
+    providerReloadCloseClicked: lastFundingChoicesProviderReloadCloseClicked,
+    providerToggleCountAfterReload: lastFundingChoicesProviderToggleCountAfterReload,
+    activeProviderToggleCountAfterReload: lastFundingChoicesActiveProviderToggleCountAfterReload,
+    providerPersistenceAcrossReload: lastFundingChoicesProviderPersistenceAcrossReload,
+    reloadVerificationReason: lastFundingChoicesReloadVerificationReason,
     providerReopenCandidateCount: lastFundingChoicesProviderReopenCandidateCount,
     providerReopenCandidateVisibleCount: lastFundingChoicesProviderReopenCandidateVisibleCount,
     providerReopenCandidateTotalCount: lastFundingChoicesProviderReopenCandidateTotalCount,
@@ -14178,6 +15806,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
         .slice(0, MAX_FUNDING_CHOICES_FINALIZATION_CONTROL_DIAGNOSTICS),
     clickableOwnerCount: 0,
     ...providerSaveCandidateDiagnostics,
+    fundingChoicesGlobalState:
+      fundingChoicesGlobalStateDiagnostic,
     ...(providerFirstActiveToggleDiagnostic || {}),
     preferenceToggleActions:
       lastFundingChoicesPreferenceToggleActions
@@ -14853,7 +16483,11 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     appendLastDiagnosticDecisionStep({
       strategy: 'fc.provider_phase1_aria_pressed',
       status: providerPhaseHandled ? 'handled' : 'skipped',
-      reason: providerPhaseHandled ? '' : 'provider_aria_pressed_no_active_inputs',
+      reason: providerPhaseHandled
+        ? ''
+        : lastFundingChoicesProviderToggleMethod === 'read-only-diagnostic'
+          ? 'provider_owner_diagnostic_only_no_mutation'
+          : 'provider_aria_pressed_no_active_inputs',
       found: Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0) -
         Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
       scanned: Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0),
@@ -15000,11 +16634,25 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
               finishFundingChoicesFinalizationPathAfterSecondBack(
                 finalDiagnosticRoot
               )
+              if (
+                maybeStartFundingChoicesReloadPersistenceVerification(
+                  finalDiagnosticRoot
+                )
+              ) {
+                return
+              }
               recordFinalDiagnostic()
             }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
             return
           }
 
+          if (
+            maybeStartFundingChoicesReloadPersistenceVerification(
+              reopenedPanel || finalDiagnosticRoot
+            )
+          ) {
+            return
+          }
           recordFinalDiagnostic()
         }, FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS)
         return
@@ -15816,6 +17464,10 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderStateOwnershipDiagnostic = null
     fundingChoicesProviderStateOwnershipProbeSignature = ''
     fundingChoicesProviderStateOwnershipProbeRunning = false
+    lastFundingChoicesProviderStorageDiagnostic = null
+    fundingChoicesProviderStorageProbeSignature = ''
+    fundingChoicesProviderStorageProbeRunning = false
+    lastFundingChoicesGlobalStateDiagnostic = null
     fundingChoicesProviderPhase1Attempted = false
     fundingChoicesProviderPhase1Running = false
 
@@ -23207,6 +24859,11 @@ function stopObserver() {
 }
 
 function applyRuntimeState() {
+  if (fundingChoicesReloadVerificationActive) {
+    stopObserver()
+    return
+  }
+
   if (shouldRunOnThisSite()) {
     scheduleInitialObserverStartup()
   } else {
@@ -23227,6 +24884,7 @@ safeStorageGet(
     protectionEnabled: false,
     excludedDomains: [],
     protectionMode: 'normal',
+    [FUNDING_CHOICES_RELOAD_VERIFICATION_KEY]: null,
   },
   (data) => {
     protectionEnabled = Boolean(data.protectionEnabled)
@@ -23234,6 +24892,14 @@ safeStorageGet(
       ? data.excludedDomains.map(normalizeDomain).filter(Boolean)
       : []
     protectionMode = data.protectionMode || 'normal'
+
+    if (
+      scheduleFundingChoicesReloadVerificationAfterLoad(
+        data[FUNDING_CHOICES_RELOAD_VERIFICATION_KEY]
+      )
+    ) {
+      return
+    }
 
     applyRuntimeState()
   }
