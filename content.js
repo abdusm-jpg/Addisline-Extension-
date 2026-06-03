@@ -153,6 +153,8 @@ let lastFundingChoicesProviderStorageDiagnostic = null
 let fundingChoicesProviderStorageProbeSignature = ''
 let fundingChoicesProviderStorageProbeRunning = false
 let lastFundingChoicesGlobalStateDiagnostic = null
+let fundingChoicesMessageTrafficListenerInstalled = false
+let fundingChoicesMessageTrafficDiagnostics = []
 let fundingChoicesReloadVerificationActive = false
 let fundingChoicesReloadVerificationScheduled = false
 let fundingChoicesProviderPhase1Attempted = false
@@ -277,6 +279,9 @@ const MAX_FUNDING_CHOICES_PROVIDER_STORAGE_WRITES = 8
 const MAX_FUNDING_CHOICES_GLOBAL_OBJECT_KEYS = 20
 const MAX_FUNDING_CHOICES_GLOBAL_OBJECTS = 20
 const MAX_FUNDING_CHOICES_MESSAGE_LISTENER_HINTS = 8
+const MAX_FUNDING_CHOICES_VISIBLE_IFRAME_DIAGNOSTICS = 12
+const MAX_FUNDING_CHOICES_MESSAGE_TRAFFIC_DIAGNOSTICS = 12
+const MAX_FUNDING_CHOICES_MESSAGE_SCHEMA_KEYS = 18
 const FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS = 120
 const FUNDING_CHOICES_RELOAD_VERIFICATION_KEY = 'fundingChoicesReloadVerification'
 const FUNDING_CHOICES_RELOAD_VERIFICATION_TTL_MS = 45000
@@ -1459,6 +1464,7 @@ function exposeContentScriptLoadedMarker() {
 }
 
 exposeContentScriptLoadedMarker()
+installFundingChoicesMessageTrafficListener()
 
 function isAddislineTestMode() {
   try {
@@ -13552,11 +13558,190 @@ function collectFundingChoicesMessageListenerHints() {
   return hints
 }
 
+function getFundingChoicesIframeOrigin(src) {
+  try {
+    return src
+      ? new URL(src, window.location.href).origin
+      : ''
+  } catch {
+    return ''
+  }
+}
+
+function collectFundingChoicesVisibleIframeDiagnostics() {
+  return safeQuerySelectorAll(document, 'iframe')
+    .filter((iframe) =>
+      iframe?.isConnected && isVisible(iframe)
+    )
+    .slice(0, MAX_FUNDING_CHOICES_VISIBLE_IFRAME_DIAGNOSTICS)
+    .map((iframe) => {
+      const src =
+        String(iframe.getAttribute?.('src') || iframe.src || '')
+          .slice(0, 300)
+      const rect =
+        getSafeClientRect(iframe)
+
+      return {
+        src,
+        origin:
+          getFundingChoicesIframeOrigin(src),
+        title:
+          String(iframe.getAttribute?.('title') || iframe.title || '')
+            .slice(0, 160),
+        sandbox:
+          String(iframe.getAttribute?.('sandbox') || '')
+            .slice(0, 220),
+        id:
+          String(iframe.id || iframe.getAttribute?.('id') || '')
+            .slice(0, 120),
+        className:
+          getClassNameText(iframe).slice(0, 160),
+        rectWidth:
+          Math.max(0, Number(rect?.width) || 0),
+        rectHeight:
+          Math.max(0, Number(rect?.height) || 0),
+      }
+    })
+}
+
+function getFundingChoicesMessageSchemaKeys(value, depth = 0) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    depth > 1
+  ) {
+    return []
+  }
+
+  try {
+    return Object.keys(value)
+      .slice(0, MAX_FUNDING_CHOICES_MESSAGE_SCHEMA_KEYS)
+      .map((key) => String(key || '').slice(0, 120))
+  } catch {
+    return []
+  }
+}
+
+function getFundingChoicesMessageNestedSchema(value) {
+  if (!value || typeof value !== 'object') return []
+
+  try {
+    return Object.keys(value)
+      .slice(0, 8)
+      .map((key) => {
+        const child =
+          value?.[key]
+
+        return {
+          key:
+            String(key || '').slice(0, 120),
+          type:
+            typeof child,
+          keys:
+            getFundingChoicesMessageSchemaKeys(child, 1),
+        }
+      })
+      .filter((entry) =>
+        entry.keys.length > 0
+      )
+  } catch {
+    return []
+  }
+}
+
+function getFundingChoicesMessageTrafficDiagnostic(event) {
+  const data =
+    event?.data
+  const dataType =
+    data === null
+      ? 'null'
+      : Array.isArray(data)
+        ? 'array'
+        : typeof data
+  const schemaKeys =
+    getFundingChoicesMessageSchemaKeys(data)
+  const typeKeys =
+    schemaKeys
+      .filter((key) =>
+        String(key || '').toLowerCase().includes('type')
+      )
+      .slice(0, 6)
+  const nestedSchema =
+    getFundingChoicesMessageNestedSchema(data)
+  const signal =
+    normalizeMatchText([
+      schemaKeys.join(' '),
+      nestedSchema
+        .map((entry) => `${entry.key} ${entry.keys.join(' ')}`)
+        .join(' '),
+    ].join(' '))
+
+  return {
+    capturedAt:
+      new Date().toISOString(),
+    origin:
+      String(event?.origin || '').slice(0, 180),
+    dataType,
+    schemaKeys,
+    typeKeys,
+    nestedSchema,
+    consentRelated:
+      textHasAny(signal, [
+        'consent',
+        'privacy',
+        'tcdata',
+        'tcf',
+        'cmp',
+        'googlefc',
+        'fundingchoices',
+        'vendor',
+      ]),
+  }
+}
+
+function handleFundingChoicesMessageTraffic(event) {
+  try {
+    const diagnostic =
+      getFundingChoicesMessageTrafficDiagnostic(event)
+
+    if (!diagnostic.consentRelated) {
+      return
+    }
+
+    fundingChoicesMessageTrafficDiagnostics = [
+      diagnostic,
+      ...fundingChoicesMessageTrafficDiagnostics,
+    ].slice(0, MAX_FUNDING_CHOICES_MESSAGE_TRAFFIC_DIAGNOSTICS)
+  } catch {
+    // Message diagnostics must never affect page behavior.
+  }
+}
+
+function installFundingChoicesMessageTrafficListener() {
+  if (fundingChoicesMessageTrafficListenerInstalled) {
+    return
+  }
+
+  fundingChoicesMessageTrafficListenerInstalled = true
+
+  try {
+    window.addEventListener(
+      'message',
+      handleFundingChoicesMessageTraffic,
+      false
+    )
+  } catch {
+    // Ignore listener failures.
+  }
+}
+
 function collectFundingChoicesGlobalStateDiagnostics(root) {
   const globalObjects =
     collectFundingChoicesGlobalObjectDiagnostics()
   const messageListenerHints =
     collectFundingChoicesMessageListenerHints()
+  const visibleIframes =
+    collectFundingChoicesVisibleIframeDiagnostics()
   const diagnostic = {
     collectedAt:
       new Date().toISOString(),
@@ -13584,6 +13769,16 @@ function collectFundingChoicesGlobalStateDiagnostics(root) {
       messageListenerHints.some((hint) =>
         Boolean(hint.consentRelated)
       ),
+    messageTrafficListenerInstalled:
+      fundingChoicesMessageTrafficListenerInstalled,
+    addEventListenerType:
+      typeof window.addEventListener,
+    onmessageType:
+      typeof window.onmessage,
+    messageTraffic:
+      fundingChoicesMessageTrafficDiagnostics
+        .slice(0, MAX_FUNDING_CHOICES_MESSAGE_TRAFFIC_DIAGNOSTICS),
+    visibleIframes,
     providerVendor11Mapping:
       getFundingChoicesProviderVendor11Mapping(root),
   }
@@ -14136,6 +14331,72 @@ function sanitizeFundingChoicesMessageListenerHint(hint) {
   }
 }
 
+function sanitizeFundingChoicesVisibleIframeDiagnostic(iframe) {
+  if (!iframe || typeof iframe !== 'object') return null
+
+  return {
+    src:
+      String(iframe.src || '').slice(0, 300),
+    origin:
+      String(iframe.origin || '').slice(0, 180),
+    title:
+      String(iframe.title || '').slice(0, 160),
+    sandbox:
+      String(iframe.sandbox || '').slice(0, 220),
+    id:
+      String(iframe.id || '').slice(0, 120),
+    className:
+      String(iframe.className || '').slice(0, 160),
+    rectWidth:
+      Math.max(0, Number(iframe.rectWidth) || 0),
+    rectHeight:
+      Math.max(0, Number(iframe.rectHeight) || 0),
+  }
+}
+
+function sanitizeFundingChoicesMessageNestedSchema(entry) {
+  if (!entry || typeof entry !== 'object') return null
+
+  return {
+    key:
+      String(entry.key || '').slice(0, 120),
+    type:
+      String(entry.type || '').slice(0, 40),
+    keys:
+      (Array.isArray(entry.keys) ? entry.keys : [])
+        .slice(0, MAX_FUNDING_CHOICES_MESSAGE_SCHEMA_KEYS)
+        .map((key) => String(key || '').slice(0, 120)),
+  }
+}
+
+function sanitizeFundingChoicesMessageTrafficDiagnostic(message) {
+  if (!message || typeof message !== 'object') return null
+
+  return {
+    capturedAt:
+      String(message.capturedAt || '').slice(0, 40),
+    origin:
+      String(message.origin || '').slice(0, 180),
+    dataType:
+      String(message.dataType || '').slice(0, 40),
+    schemaKeys:
+      (Array.isArray(message.schemaKeys) ? message.schemaKeys : [])
+        .slice(0, MAX_FUNDING_CHOICES_MESSAGE_SCHEMA_KEYS)
+        .map((key) => String(key || '').slice(0, 120)),
+    typeKeys:
+      (Array.isArray(message.typeKeys) ? message.typeKeys : [])
+        .slice(0, 8)
+        .map((key) => String(key || '').slice(0, 120)),
+    nestedSchema:
+      (Array.isArray(message.nestedSchema) ? message.nestedSchema : [])
+        .slice(0, 8)
+        .map(sanitizeFundingChoicesMessageNestedSchema)
+        .filter(Boolean),
+    consentRelated:
+      Boolean(message.consentRelated),
+  }
+}
+
 function sanitizeFundingChoicesProviderVendor11Mapping(mapping) {
   if (!mapping || typeof mapping !== 'object') return null
 
@@ -14211,6 +14472,26 @@ function sanitizeFundingChoicesGlobalStateDiagnostic(diagnostic) {
         : [])
         .slice(0, MAX_FUNDING_CHOICES_MESSAGE_LISTENER_HINTS)
         .map(sanitizeFundingChoicesMessageListenerHint)
+        .filter(Boolean),
+    messageTrafficListenerInstalled:
+      Boolean(diagnostic.messageTrafficListenerInstalled),
+    addEventListenerType:
+      String(diagnostic.addEventListenerType || '').slice(0, 40),
+    onmessageType:
+      String(diagnostic.onmessageType || '').slice(0, 40),
+    messageTraffic:
+      (Array.isArray(diagnostic.messageTraffic)
+        ? diagnostic.messageTraffic
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_MESSAGE_TRAFFIC_DIAGNOSTICS)
+        .map(sanitizeFundingChoicesMessageTrafficDiagnostic)
+        .filter(Boolean),
+    visibleIframes:
+      (Array.isArray(diagnostic.visibleIframes)
+        ? diagnostic.visibleIframes
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_VISIBLE_IFRAME_DIAGNOSTICS)
+        .map(sanitizeFundingChoicesVisibleIframeDiagnostic)
         .filter(Boolean),
     providerVendor11Mapping:
       sanitizeFundingChoicesProviderVendor11Mapping(

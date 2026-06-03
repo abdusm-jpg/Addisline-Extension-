@@ -2628,6 +2628,77 @@ function formatFundingChoicesMessageHints(hints) {
   ].join('\n')
 }
 
+function formatFundingChoicesVisibleIframes(iframes) {
+  const entries =
+    Array.isArray(iframes)
+      ? iframes
+          .filter((iframe) => iframe && typeof iframe === 'object')
+          .slice(0, 12)
+      : []
+
+  if (entries.length === 0) {
+    return 'visibleIframes: none'
+  }
+
+  return [
+    'visibleIframes:',
+    ...entries.map((iframe, index) =>
+      [
+        `${index + 1}. origin:${String(iframe.origin || 'none').slice(0, 90)}`,
+        `title:${String(iframe.title || 'none').slice(0, 80)}`,
+        `sandbox:${String(iframe.sandbox || 'none').slice(0, 100)}`,
+        `rect:${Math.max(0, Number(iframe.rectWidth) || 0)}x${Math.max(0, Number(iframe.rectHeight) || 0)}`,
+        `src:${String(iframe.src || 'none').slice(0, 140)}`,
+      ].join(' | ')
+    ),
+  ].join('\n')
+}
+
+function formatFundingChoicesNestedMessageSchema(nestedSchema) {
+  const entries =
+    Array.isArray(nestedSchema)
+      ? nestedSchema
+          .filter((entry) => entry && typeof entry === 'object')
+          .slice(0, 6)
+      : []
+
+  if (entries.length === 0) {
+    return 'nested:none'
+  }
+
+  return entries
+    .map((entry) =>
+      `${String(entry.key || 'unknown').slice(0, 50)}(${String(entry.type || 'unknown').slice(0, 20)}):${formatProviderKeyList(entry.keys)}`
+    )
+    .join(';')
+}
+
+function formatFundingChoicesMessageTraffic(messages) {
+  const entries =
+    Array.isArray(messages)
+      ? messages
+          .filter((message) => message && typeof message === 'object')
+          .slice(0, 12)
+      : []
+
+  if (entries.length === 0) {
+    return 'messageTraffic: none'
+  }
+
+  return [
+    'messageTraffic:',
+    ...entries.map((message, index) =>
+      [
+        `${index + 1}. origin:${String(message.origin || 'none').slice(0, 90)}`,
+        `dataType:${String(message.dataType || 'unknown').slice(0, 30)}`,
+        `typeKeys:${formatProviderKeyList(message.typeKeys)}`,
+        `schema:${formatProviderKeyList(message.schemaKeys)}`,
+        formatFundingChoicesNestedMessageSchema(message.nestedSchema),
+      ].join(' | ')
+    ),
+  ].join('\n')
+}
+
 function formatFundingChoicesVendor11Mapping(mapping) {
   if (!mapping || typeof mapping !== 'object') {
     return 'providerVendor11Mapping: none'
@@ -2687,6 +2758,9 @@ function formatFundingChoicesGlobalStateCopySection(diagnostic) {
       `__cmp:${Boolean(globalState.cmpExists)}`,
       `googlefc:${Boolean(globalState.googlefcExists)}`,
       `messageConsentHints:${Boolean(globalState.messageListenerConsentRelated)}`,
+      `messageListenerInstalled:${Boolean(globalState.messageTrafficListenerInstalled)}`,
+      `addEventListener:${String(globalState.addEventListenerType || 'none').slice(0, 30)}`,
+      `onmessage:${String(globalState.onmessageType || 'none').slice(0, 30)}`,
       `names:${formatProviderKeyList(globalState.globalObjectNames)}`,
     ].join(', '),
     globalObjects.length > 0
@@ -2697,6 +2771,12 @@ function formatFundingChoicesGlobalStateCopySection(diagnostic) {
       : 'globalObjects: none',
     formatFundingChoicesMessageHints(
       globalState.messageListenerConsentHints
+    ),
+    formatFundingChoicesVisibleIframes(
+      globalState.visibleIframes
+    ),
+    formatFundingChoicesMessageTraffic(
+      globalState.messageTraffic
     ),
     formatFundingChoicesVendor11Mapping(
       globalState.providerVendor11Mapping
