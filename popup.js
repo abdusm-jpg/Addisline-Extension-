@@ -2731,6 +2731,50 @@ function formatFundingChoicesVendor11Mapping(mapping) {
   ].join('\n')
 }
 
+function formatFundingChoicesNetworkEntry(entry, index) {
+  return [
+    `${index + 1}. phase:${String(entry.phase || 'unknown').slice(0, 60)}`,
+    `channel:${String(entry.channel || 'unknown').slice(0, 40)}`,
+    `method:${String(entry.method || 'none').slice(0, 20)}`,
+    `status:${Math.max(0, Number(entry.status) || 0)}`,
+    `durationMs:${Math.max(0, Number(entry.durationMs) || 0)}`,
+    `startTime:${Math.max(0, Number(entry.startTime) || 0)}`,
+    entry.errorName
+      ? `error:${String(entry.errorName || '').slice(0, 80)}`
+      : 'error:none',
+    `url:${String(entry.url || 'none').slice(0, 300)}`,
+  ].join(' | ')
+}
+
+function formatFundingChoicesNetworkActivity(networkActivity) {
+  if (!networkActivity || typeof networkActivity !== 'object') {
+    return 'networkActivity: none'
+  }
+
+  const entries =
+    Array.isArray(networkActivity.entries)
+      ? networkActivity.entries
+          .filter((entry) => entry && typeof entry === 'object')
+          .slice(0, 24)
+      : []
+
+  return [
+    [
+      'networkActivity:',
+      `installed:${Boolean(networkActivity.installed)}`,
+      `phase:${String(networkActivity.phase || 'none').slice(0, 60)}`,
+      `filters:${formatProviderKeyList(networkActivity.filterTokens)}`,
+      `count:${entries.length}`,
+    ].join(', '),
+    entries.length > 0
+      ? [
+          'networkActivityEntries:',
+          ...entries.map(formatFundingChoicesNetworkEntry),
+        ].join('\n')
+      : 'networkActivityEntries: none',
+  ].join('\n')
+}
+
 function formatFundingChoicesGlobalStateCopySection(diagnostic) {
   const summary =
     diagnostic?.fundingChoicesControlDiagnostics
@@ -2777,6 +2821,9 @@ function formatFundingChoicesGlobalStateCopySection(diagnostic) {
     ),
     formatFundingChoicesMessageTraffic(
       globalState.messageTraffic
+    ),
+    formatFundingChoicesNetworkActivity(
+      globalState.networkActivity
     ),
     formatFundingChoicesVendor11Mapping(
       globalState.providerVendor11Mapping

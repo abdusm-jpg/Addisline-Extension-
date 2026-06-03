@@ -155,6 +155,9 @@ let fundingChoicesProviderStorageProbeRunning = false
 let lastFundingChoicesGlobalStateDiagnostic = null
 let fundingChoicesMessageTrafficListenerInstalled = false
 let fundingChoicesMessageTrafficDiagnostics = []
+let fundingChoicesNetworkBridgeInstalled = false
+let fundingChoicesNetworkDiagnostics = []
+let fundingChoicesNetworkPhase = 'page_observation'
 let fundingChoicesReloadVerificationActive = false
 let fundingChoicesReloadVerificationScheduled = false
 let fundingChoicesProviderPhase1Attempted = false
@@ -282,6 +285,8 @@ const MAX_FUNDING_CHOICES_MESSAGE_LISTENER_HINTS = 8
 const MAX_FUNDING_CHOICES_VISIBLE_IFRAME_DIAGNOSTICS = 12
 const MAX_FUNDING_CHOICES_MESSAGE_TRAFFIC_DIAGNOSTICS = 12
 const MAX_FUNDING_CHOICES_MESSAGE_SCHEMA_KEYS = 18
+const MAX_FUNDING_CHOICES_NETWORK_DIAGNOSTICS = 24
+const MAX_FUNDING_CHOICES_NETWORK_URL = 300
 const FUNDING_CHOICES_PROVIDER_BACK_DIAGNOSTIC_DELAY_MS = 120
 const FUNDING_CHOICES_RELOAD_VERIFICATION_KEY = 'fundingChoicesReloadVerification'
 const FUNDING_CHOICES_RELOAD_VERIFICATION_TTL_MS = 45000
@@ -1465,6 +1470,7 @@ function exposeContentScriptLoadedMarker() {
 
 exposeContentScriptLoadedMarker()
 installFundingChoicesMessageTrafficListener()
+installFundingChoicesNetworkBridge()
 
 function isAddislineTestMode() {
   try {
@@ -9486,6 +9492,7 @@ function findFundingChoicesProviderSaveBackButton(root) {
 }
 
 function clickFundingChoicesProviderSaveBackForDiagnostics(root) {
+  setFundingChoicesNetworkPhase('back_navigation')
   resetFundingChoicesProviderSaveBackDiagnostics()
 
   const startedAt =
@@ -10458,6 +10465,7 @@ function maybeStartFundingChoicesReloadPersistenceVerification(root) {
     return false
   }
 
+  setFundingChoicesNetworkPhase('reload')
   fundingChoicesReloadVerificationScheduled = true
   lastFundingChoicesProviderReloadVerificationStarted = true
 
@@ -10498,6 +10506,8 @@ function maybeStartFundingChoicesReloadPersistenceVerification(root) {
       lastFundingChoicesProviderToggleCountAfterReopen,
     activeProviderToggleCountAfterReopen:
       lastFundingChoicesActiveProviderToggleCountAfterReopen,
+    networkActivityBeforeReload:
+      getFundingChoicesNetworkDiagnosticsSnapshot(),
   }
 
   safeStorageSetWithCallback(
@@ -10765,6 +10775,8 @@ function scheduleFundingChoicesReloadVerificationAfterLoad(pending) {
     return false
   }
 
+  hydrateFundingChoicesNetworkDiagnosticsFromReloadPending(pending)
+  setFundingChoicesNetworkPhase('reload')
   fundingChoicesReloadVerificationActive = true
   lastFundingChoicesProviderReloadVerificationStarted = true
   rejectFlowCompleted = true
@@ -13735,6 +13747,364 @@ function installFundingChoicesMessageTrafficListener() {
   }
 }
 
+function setFundingChoicesNetworkPhase(phase) {
+  fundingChoicesNetworkPhase =
+    String(phase || 'page_observation').slice(0, 60)
+}
+
+function isFundingChoicesNetworkUrlRelevant(url) {
+  const normalized =
+    normalizeMatchText(url)
+
+  return textHasAny(normalized, [
+    'consent',
+    'privacy',
+    'fc',
+    'funding',
+    'choice',
+    'tcf',
+    'vendor',
+  ])
+}
+
+function getFundingChoicesNetworkPageBridgeScript() {
+  return `
+;(function () {
+  if (window.__addislineFundingChoicesNetworkBridgeInstalled) return;
+  window.__addislineFundingChoicesNetworkBridgeInstalled = true;
+  var maxUrlLength = ${MAX_FUNDING_CHOICES_NETWORK_URL};
+  var tokens = ['consent', 'privacy', 'fc', 'funding', 'choice', 'tcf', 'vendor'];
+  function now() {
+    try {
+      return performance.now();
+    } catch (error) {
+      return Date.now();
+    }
+  }
+  function normalizeUrl(value) {
+    try {
+      if (!value) return '';
+      if (typeof value === 'string') return value;
+      if (value && typeof value.url === 'string') return value.url;
+      return String(value || '');
+    } catch (error) {
+      return '';
+    }
+  }
+  function relevantUrl(url) {
+    var lower = String(url || '').toLowerCase();
+    return tokens.some(function (token) {
+      return lower.indexOf(token) !== -1;
+    });
+  }
+  function post(entry) {
+    try {
+      if (!entry || !relevantUrl(entry.url)) return;
+      entry.url = String(entry.url || '').slice(0, maxUrlLength);
+      window.postMessage({
+        __addislineFundingChoicesNetwork: true,
+        entry: entry
+      }, '*');
+    } catch (error) {}
+  }
+  try {
+    if (typeof window.fetch === 'function') {
+      var originalFetch = window.fetch;
+      window.fetch = function addislineFundingChoicesFetch(input, init) {
+        var startedAt = now();
+        var url = normalizeUrl(input);
+        var method = 'GET';
+        try {
+          method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        } catch (error) {}
+        return originalFetch.apply(this, arguments)
+          .then(function (response) {
+            post({
+              channel: 'fetch',
+              method: method,
+              url: url,
+              status: response && typeof response.status === 'number' ? response.status : 0,
+              startTime: Math.round(startedAt),
+              durationMs: Math.round(Math.max(0, now() - startedAt))
+            });
+            return response;
+          }, function (error) {
+            post({
+              channel: 'fetch',
+              method: method,
+              url: url,
+              status: 0,
+              errorName: error && error.name ? String(error.name).slice(0, 80) : 'fetch_error',
+              startTime: Math.round(startedAt),
+              durationMs: Math.round(Math.max(0, now() - startedAt))
+            });
+            throw error;
+          });
+      };
+    }
+  } catch (error) {}
+  try {
+    if (window.XMLHttpRequest && window.XMLHttpRequest.prototype) {
+      var proto = window.XMLHttpRequest.prototype;
+      var originalOpen = proto.open;
+      var originalSend = proto.send;
+      proto.open = function addislineFundingChoicesXhrOpen(method, url) {
+        try {
+          this.__addislineFundingChoicesNetwork = {
+            method: String(method || 'GET').toUpperCase(),
+            url: normalizeUrl(url)
+          };
+        } catch (error) {}
+        return originalOpen.apply(this, arguments);
+      };
+      proto.send = function addislineFundingChoicesXhrSend() {
+        var xhr = this;
+        var startedAt = now();
+        function done() {
+          try {
+            var meta = xhr.__addislineFundingChoicesNetwork || {};
+            post({
+              channel: 'xmlhttprequest',
+              method: meta.method || 'GET',
+              url: meta.url || '',
+              status: typeof xhr.status === 'number' ? xhr.status : 0,
+              startTime: Math.round(startedAt),
+              durationMs: Math.round(Math.max(0, now() - startedAt))
+            });
+          } catch (error) {}
+        }
+        try {
+          xhr.addEventListener('loadend', done, { once: true });
+        } catch (error) {}
+        return originalSend.apply(this, arguments);
+      };
+    }
+  } catch (error) {}
+  try {
+    if (navigator && typeof navigator.sendBeacon === 'function') {
+      var originalSendBeacon = navigator.sendBeacon.bind(navigator);
+      navigator.sendBeacon = function addislineFundingChoicesSendBeacon(url) {
+        var startedAt = now();
+        var accepted = originalSendBeacon.apply(this, arguments);
+        post({
+          channel: 'sendBeacon',
+          method: 'POST',
+          url: normalizeUrl(url),
+          status: accepted ? 1 : 0,
+          startTime: Math.round(startedAt),
+          durationMs: Math.round(Math.max(0, now() - startedAt))
+        });
+        return accepted;
+      };
+    }
+  } catch (error) {}
+  try {
+    if (window.PerformanceObserver) {
+      var observer = new PerformanceObserver(function (list) {
+        try {
+          list.getEntries().forEach(function (entry) {
+            if (!entry || !relevantUrl(entry.name)) return;
+            post({
+              channel: entry.initiatorType || 'resource',
+              method: '',
+              url: entry.name || '',
+              status: typeof entry.responseStatus === 'number' ? entry.responseStatus : 0,
+              startTime: Math.round(entry.startTime || 0),
+              durationMs: Math.round(entry.duration || 0)
+            });
+          });
+        } catch (error) {}
+      });
+      observer.observe({ type: 'resource', buffered: true });
+    }
+  } catch (error) {}
+})();`
+}
+
+function getFundingChoicesNetworkEntrySignature(entry) {
+  return [
+    entry.channel,
+    entry.method,
+    entry.status,
+    entry.url,
+    entry.startTime,
+  ].join('|')
+}
+
+function normalizeFundingChoicesNetworkDiagnosticEntry(
+  rawEntry,
+  fallbackPhase = fundingChoicesNetworkPhase
+) {
+  if (!rawEntry || typeof rawEntry !== 'object') return null
+
+  const url =
+    String(rawEntry.url || '').slice(0, MAX_FUNDING_CHOICES_NETWORK_URL)
+
+  if (!isFundingChoicesNetworkUrlRelevant(url)) {
+    return null
+  }
+
+  return {
+    capturedAt:
+      String(rawEntry.capturedAt || new Date().toISOString()).slice(0, 40),
+    phase:
+      String(rawEntry.phase || fallbackPhase || 'page_observation').slice(0, 60),
+    channel:
+      String(rawEntry.channel || '').slice(0, 40),
+    method:
+      String(rawEntry.method || '').slice(0, 20),
+    url,
+    status:
+      Math.max(0, Number(rawEntry.status) || 0),
+    startTime:
+      Math.max(0, Number(rawEntry.startTime) || 0),
+    durationMs:
+      Math.max(0, Number(rawEntry.durationMs) || 0),
+    errorName:
+      String(rawEntry.errorName || '').slice(0, 80),
+  }
+}
+
+function mergeFundingChoicesNetworkDiagnosticEntries(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return
+
+  const merged = []
+
+  for (const rawEntry of entries) {
+    const entry =
+      normalizeFundingChoicesNetworkDiagnosticEntry(rawEntry)
+    if (!entry) continue
+    if (
+      merged.some((existing) =>
+        getFundingChoicesNetworkEntrySignature(existing) ===
+          getFundingChoicesNetworkEntrySignature(entry)
+      )
+    ) {
+      continue
+    }
+    merged.push(entry)
+    if (merged.length >= MAX_FUNDING_CHOICES_NETWORK_DIAGNOSTICS) break
+  }
+
+  for (const existing of fundingChoicesNetworkDiagnostics) {
+    if (merged.length >= MAX_FUNDING_CHOICES_NETWORK_DIAGNOSTICS) break
+    if (
+      merged.some((entry) =>
+        getFundingChoicesNetworkEntrySignature(entry) ===
+          getFundingChoicesNetworkEntrySignature(existing)
+      )
+    ) {
+      continue
+    }
+    merged.push(existing)
+  }
+
+  fundingChoicesNetworkDiagnostics =
+    merged.slice(0, MAX_FUNDING_CHOICES_NETWORK_DIAGNOSTICS)
+}
+
+function hydrateFundingChoicesNetworkDiagnosticsFromReloadPending(pending) {
+  const networkActivity =
+    pending?.networkActivityBeforeReload
+
+  if (!networkActivity || typeof networkActivity !== 'object') {
+    return
+  }
+
+  mergeFundingChoicesNetworkDiagnosticEntries(networkActivity.entries)
+}
+
+function recordFundingChoicesNetworkDiagnosticEntry(rawEntry) {
+  const entry =
+    normalizeFundingChoicesNetworkDiagnosticEntry(rawEntry)
+
+  if (!entry) return
+
+  const signature =
+    getFundingChoicesNetworkEntrySignature(entry)
+
+  if (
+    fundingChoicesNetworkDiagnostics.some((existing) =>
+      getFundingChoicesNetworkEntrySignature(existing) === signature
+    )
+  ) {
+    return
+  }
+
+  fundingChoicesNetworkDiagnostics = [
+    entry,
+    ...fundingChoicesNetworkDiagnostics,
+  ].slice(0, MAX_FUNDING_CHOICES_NETWORK_DIAGNOSTICS)
+}
+
+function handleFundingChoicesNetworkBridgeMessage(event) {
+  try {
+    if (
+      event?.source !== window ||
+      !event.data ||
+      event.data.__addislineFundingChoicesNetwork !== true
+    ) {
+      return
+    }
+
+    recordFundingChoicesNetworkDiagnosticEntry(event.data.entry)
+  } catch {
+    // Network diagnostics must never affect page behavior.
+  }
+}
+
+function installFundingChoicesNetworkBridge() {
+  if (fundingChoicesNetworkBridgeInstalled) {
+    return
+  }
+
+  fundingChoicesNetworkBridgeInstalled = true
+
+  try {
+    window.addEventListener(
+      'message',
+      handleFundingChoicesNetworkBridgeMessage,
+      false
+    )
+  } catch {
+    // Ignore listener failures.
+  }
+
+  try {
+    const script =
+      document.createElement('script')
+    script.textContent =
+      getFundingChoicesNetworkPageBridgeScript()
+    script.dataset.addislineFundingChoicesNetworkBridge = 'true'
+    ;(document.documentElement || document.head || document.body)
+      ?.appendChild(script)
+    script.remove()
+  } catch {
+    fundingChoicesNetworkBridgeInstalled = false
+  }
+}
+
+function getFundingChoicesNetworkDiagnosticsSnapshot() {
+  return {
+    installed:
+      Boolean(fundingChoicesNetworkBridgeInstalled),
+    phase:
+      fundingChoicesNetworkPhase,
+    filterTokens: [
+      'consent',
+      'privacy',
+      'fc',
+      'funding',
+      'choice',
+      'tcf',
+      'vendor',
+    ],
+    entries:
+      fundingChoicesNetworkDiagnostics
+        .slice(0, MAX_FUNDING_CHOICES_NETWORK_DIAGNOSTICS),
+  }
+}
+
 function collectFundingChoicesGlobalStateDiagnostics(root) {
   const globalObjects =
     collectFundingChoicesGlobalObjectDiagnostics()
@@ -13779,6 +14149,8 @@ function collectFundingChoicesGlobalStateDiagnostics(root) {
       fundingChoicesMessageTrafficDiagnostics
         .slice(0, MAX_FUNDING_CHOICES_MESSAGE_TRAFFIC_DIAGNOSTICS),
     visibleIframes,
+    networkActivity:
+      getFundingChoicesNetworkDiagnosticsSnapshot(),
     providerVendor11Mapping:
       getFundingChoicesProviderVendor11Mapping(root),
   }
@@ -14439,6 +14811,55 @@ function sanitizeFundingChoicesProviderVendor11Mapping(mapping) {
   }
 }
 
+function sanitizeFundingChoicesNetworkDiagnosticEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null
+
+  return {
+    capturedAt:
+      String(entry.capturedAt || '').slice(0, 40),
+    phase:
+      String(entry.phase || '').slice(0, 60),
+    channel:
+      String(entry.channel || '').slice(0, 40),
+    method:
+      String(entry.method || '').slice(0, 20),
+    url:
+      String(entry.url || '').slice(0, MAX_FUNDING_CHOICES_NETWORK_URL),
+    status:
+      Math.max(0, Number(entry.status) || 0),
+    startTime:
+      Math.max(0, Number(entry.startTime) || 0),
+    durationMs:
+      Math.max(0, Number(entry.durationMs) || 0),
+    errorName:
+      String(entry.errorName || '').slice(0, 80),
+  }
+}
+
+function sanitizeFundingChoicesNetworkActivityDiagnostic(networkActivity) {
+  if (!networkActivity || typeof networkActivity !== 'object') return null
+
+  return {
+    installed:
+      Boolean(networkActivity.installed),
+    phase:
+      String(networkActivity.phase || '').slice(0, 60),
+    filterTokens:
+      (Array.isArray(networkActivity.filterTokens)
+        ? networkActivity.filterTokens
+        : [])
+        .slice(0, 12)
+        .map((token) => String(token || '').slice(0, 40)),
+    entries:
+      (Array.isArray(networkActivity.entries)
+        ? networkActivity.entries
+        : [])
+        .slice(0, MAX_FUNDING_CHOICES_NETWORK_DIAGNOSTICS)
+        .map(sanitizeFundingChoicesNetworkDiagnosticEntry)
+        .filter(Boolean),
+  }
+}
+
 function sanitizeFundingChoicesGlobalStateDiagnostic(diagnostic) {
   if (!diagnostic || typeof diagnostic !== 'object') return null
 
@@ -14493,6 +14914,10 @@ function sanitizeFundingChoicesGlobalStateDiagnostic(diagnostic) {
         .slice(0, MAX_FUNDING_CHOICES_VISIBLE_IFRAME_DIAGNOSTICS)
         .map(sanitizeFundingChoicesVisibleIframeDiagnostic)
         .filter(Boolean),
+    networkActivity:
+      sanitizeFundingChoicesNetworkActivityDiagnostic(
+        diagnostic.networkActivity
+      ),
     providerVendor11Mapping:
       sanitizeFundingChoicesProviderVendor11Mapping(
         diagnostic.providerVendor11Mapping
@@ -14775,6 +15200,7 @@ function isFundingChoicesProviderInputActiveForPhase1(input) {
 }
 
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
+  setFundingChoicesNetworkPhase('provider_state_change')
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
 
@@ -16655,6 +17081,7 @@ function findFundingChoicesManageVendorsButton(root, startedAt, options = {}) {
 }
 
 function clickFundingChoicesManageVendorsButton(control) {
+  setFundingChoicesNetworkPhase('opening_providers')
   if (
     !shouldRunOnThisSite() ||
     !control ||
