@@ -3110,6 +3110,11 @@ function formatFundingChoicesControls(summary) {
     typeof summary.providerPhaseGuardState === 'object'
       ? summary.providerPhaseGuardState
       : null
+  const providerPhaseLastError =
+    summary.providerPhaseLastError &&
+    typeof summary.providerPhaseLastError === 'object'
+      ? summary.providerPhaseLastError
+      : null
   const providerReopenCandidates =
     Array.isArray(summary.providerReopenCandidates)
       ? summary.providerReopenCandidates
@@ -3244,6 +3249,7 @@ function formatFundingChoicesControls(summary) {
       `providerLabelCoordinateInvocationState: ${String(summary.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
       `providerPhaseBlockedReason: ${String(summary.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
       `providerPhaseGuardState: attempted:${Boolean(providerPhaseGuardState?.attempted)} running:${Boolean(providerPhaseGuardState?.running)} preferencesOpen:${Boolean(providerPhaseGuardState?.preferencesOpen)} activeProviderCount:${Math.max(0, Number(providerPhaseGuardState?.activeProviderCount) || 0)} panelVerified:${Boolean(providerPhaseGuardState?.panelVerified)} providerAutomationEnabled:${Boolean(providerPhaseGuardState?.providerAutomationEnabled)}`,
+      `providerPhaseLastError: phase:${String(providerPhaseLastError?.phase || 'none').slice(0, 60)} message:${String(providerPhaseLastError?.message || 'none').slice(0, 120)}`,
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,

@@ -100,6 +100,7 @@ let lastFundingChoicesProviderLabelCoordinateAfterActiveCount = 0
 let lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
+let lastFundingChoicesProviderPhaseLastError = null
 let lastFundingChoicesProviderPreferenceTextMatch = ''
 let lastFundingChoicesProviderPreferenceClickableTargetTag = ''
 let lastFundingChoicesProviderPreferenceClickMethod = ''
@@ -1358,7 +1359,7 @@ function getCookieDebugElementSummary(element) {
 
   return {
     tagName: element.tagName?.toLowerCase?.() || '',
-    id: element.id || '',
+    id: element?.id || '',
     className: getClassNameText(element).slice(0, 120),
     text: getActionText(element).slice(0, 140),
   }
@@ -1523,7 +1524,7 @@ function getElementTestSummary(element) {
 
   return {
     tag: String(element.tagName || '').toLowerCase(),
-    id: truncateTestText(element.id, 80),
+    id: truncateTestText(element?.id, 80),
     className: truncateTestText(getClassNameText(element), 120),
     role: truncateTestText(element.getAttribute?.('role'), 40),
     text: truncateTestText(getActionText(element), 120),
@@ -4144,6 +4145,16 @@ function recordCurrentSiteDiagnostic({
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerAutomationEnabled),
                   }
                 : null,
+            providerPhaseLastError:
+              fundingChoicesControlDiagnostics.providerPhaseLastError &&
+              typeof fundingChoicesControlDiagnostics.providerPhaseLastError === 'object'
+                ? {
+                    phase:
+                      String(fundingChoicesControlDiagnostics.providerPhaseLastError.phase || '').slice(0, 80),
+                    message:
+                      String(fundingChoicesControlDiagnostics.providerPhaseLastError.message || '').slice(0, 160),
+                  }
+                : null,
             providerPreferenceTextMatch:
               String(fundingChoicesControlDiagnostics.providerPreferenceTextMatch || '').slice(0, 90),
             providerPreferenceClickableTargetTag:
@@ -5226,7 +5237,7 @@ function getElementActionText(element) {
     element.getAttribute?.('title'),
     element.value,
     element.getAttribute?.('value'),
-    element.id,
+    element?.id,
     getClassNameText(element),
     element.getAttribute?.('data-action'),
     element.getAttribute?.('data-testid'),
@@ -5543,7 +5554,7 @@ function isLikelyNonCookieModal(element) {
   const signal = [
     getText(element).slice(0, 1200),
     getElementActionText(element).slice(0, 800),
-    element.id,
+    element?.id,
     getClassNameText(element),
     element.getAttribute?.('aria-label'),
   ]
@@ -5597,7 +5608,7 @@ function isTextFragmentOrControl(element) {
 
 function hasCookieAttributeSignal(element) {
   const signal = [
-    element.id,
+    element?.id,
     getClassNameText(element),
     element.getAttribute?.('aria-label'),
   ]
@@ -6136,7 +6147,7 @@ function isLikelyVisibleCMPModalRoot(element) {
     [
       getText(element).slice(0, 1200),
       getElementActionText(element).slice(0, 600),
-      element.id,
+      element?.id,
       getClassNameText(element),
       element.getAttribute?.('aria-label'),
       getDatasetText(element),
@@ -6936,7 +6947,7 @@ function getInitialCMPRootReason(element) {
 
   const signal =
     normalizeMatchText([
-      element.id,
+      element?.id,
       getClassNameText(element),
       element.getAttribute?.('aria-label'),
       element.getAttribute?.('data-testid'),
@@ -7137,7 +7148,7 @@ function hasSensitiveContext(element) {
   if (context) return true
 
   const signal = [
-    element.id,
+    element?.id,
     getClassNameText(element),
     element.getAttribute?.('aria-label'),
     getText(element).slice(0, 600),
@@ -7696,7 +7707,7 @@ function hasDirectSafeRejectSignal(element) {
 
   const actionText = getActionText(element)
   const classText = getClassNameText(element)
-  const idText = element.id || ''
+  const idText = element?.id || ''
 
   if (
     textMatchesDictionaryCookieIntent(actionText, 'rejectAll') ||
@@ -11565,6 +11576,27 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
     getFundingChoicesProviderPhaseBlockedReason(safeGuardState)
 }
 
+function getFundingChoicesProviderPhaseDiagnosticFields() {
+  return {
+    providerLabelCoordinateTargetFound:
+      lastFundingChoicesProviderLabelCoordinateTargetFound,
+    providerLabelCoordinateReason:
+      lastFundingChoicesProviderLabelCoordinateReason,
+    providerLabelCoordinateBeforeActiveCount:
+      lastFundingChoicesProviderLabelCoordinateBeforeActiveCount,
+    providerLabelCoordinateAfterActiveCount:
+      lastFundingChoicesProviderLabelCoordinateAfterActiveCount,
+    providerLabelCoordinateInvocationState:
+      lastFundingChoicesProviderLabelCoordinateInvocationState,
+    providerPhaseBlockedReason:
+      lastFundingChoicesProviderPhaseBlockedReason,
+    providerPhaseGuardState:
+      lastFundingChoicesProviderPhaseGuardState,
+    providerPhaseLastError:
+      lastFundingChoicesProviderPhaseLastError,
+  }
+}
+
 function getFundingChoicesProviderLabelCoordinateElementId(element) {
   return String(element?.id || element?.getAttribute?.('id') || '')
     .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
@@ -12657,6 +12689,20 @@ function getFundingChoicesProviderDiagnosticClass(element) {
     .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
 }
 
+function getFundingChoicesProviderDiagnosticId(element) {
+  return String(element?.id || element?.getAttribute?.('id') || '')
+    .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
+}
+
+function recordFundingChoicesProviderPhaseError(error, phase = 'unknown') {
+  lastFundingChoicesProviderPhaseLastError = {
+    phase:
+      String(phase || 'unknown').slice(0, 80),
+    message:
+      String(error?.message || error || '').slice(0, 160),
+  }
+}
+
 function getFundingChoicesProviderDiagnosticAllAttributes(element) {
   if (!element) return null
 
@@ -12664,8 +12710,7 @@ function getFundingChoicesProviderDiagnosticAllAttributes(element) {
     tagName:
       String(element.tagName || '').slice(0, 40),
     id:
-      String(element.id || element.getAttribute?.('id') || '')
-        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+      getFundingChoicesProviderDiagnosticId(element),
     name:
       String(element.name || element.getAttribute?.('name') || '')
         .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
@@ -12689,8 +12734,7 @@ function getFundingChoicesProviderFirstActiveInputAttrs(input) {
 
   return {
     id:
-      String(input.id || input.getAttribute?.('id') || '')
-        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+      getFundingChoicesProviderDiagnosticId(input),
     name:
       String(input.name || input.getAttribute?.('name') || '')
         .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
@@ -12865,8 +12909,7 @@ function getFundingChoicesProviderManualMutationTargetSummary(element) {
     tagName:
       String(element.tagName || '').slice(0, 40),
     id:
-      String(element.id || element.getAttribute?.('id') || '')
-        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+      getFundingChoicesProviderDiagnosticId(element),
     class:
       getFundingChoicesProviderDiagnosticClass(element),
     ariaPressed:
@@ -12980,7 +13023,7 @@ function addFundingChoicesProviderSnapshotComparisons(snapshot, original) {
 function getFundingChoicesProviderStateOwnershipSignature(input, root) {
   return String(
     getFundingChoicesSliderKey(input, root) ||
-      input?.id ||
+      getFundingChoicesProviderDiagnosticId(input) ||
       input?.name ||
       input?.getAttribute?.('data-id') ||
       input?.getAttribute?.('aria-label') ||
@@ -13523,8 +13566,7 @@ function getFundingChoicesProviderOwnerElementDiagnostic(element) {
     tagName:
       String(element.tagName || '').slice(0, 40),
     id:
-      String(element.id || element.getAttribute?.('id') || '')
-        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+      getFundingChoicesProviderDiagnosticId(element),
     class:
       getFundingChoicesProviderDiagnosticClass(element),
     role:
@@ -14153,7 +14195,7 @@ function collectFundingChoicesVisibleIframeDiagnostics() {
           String(iframe.getAttribute?.('sandbox') || '')
             .slice(0, 220),
         id:
-          String(iframe.id || iframe.getAttribute?.('id') || '')
+          String(iframe?.id || iframe?.getAttribute?.('id') || '')
             .slice(0, 120),
         className:
           getClassNameText(iframe).slice(0, 160),
@@ -15181,7 +15223,7 @@ function sanitizeFundingChoicesProviderManualMutationNode(node) {
     tagName:
       String(node.tagName || '').slice(0, 40),
     id:
-      String(node.id || '').slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+      String(node?.id || '').slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
     class:
       String(node.class || '').slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
     ariaPressed:
@@ -15388,7 +15430,7 @@ function sanitizeFundingChoicesVisibleIframeDiagnostic(iframe) {
     sandbox:
       String(iframe.sandbox || '').slice(0, 220),
     id:
-      String(iframe.id || '').slice(0, 120),
+      String(iframe?.id || '').slice(0, 120),
     className:
       String(iframe.className || '').slice(0, 160),
     rectWidth:
@@ -17136,6 +17178,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
       lastFundingChoicesProviderPhaseGuardState,
+    providerPhaseLastError:
+      lastFundingChoicesProviderPhaseLastError,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
@@ -17319,6 +17363,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
       lastFundingChoicesProviderPhaseGuardState,
+    providerPhaseLastError:
+      lastFundingChoicesProviderPhaseLastError,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
@@ -18063,12 +18109,20 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
   ) {
     setFundingChoicesProviderLabelCoordinateInvocationState('blocked_by_guard')
   }
-  const providerPhaseHandled =
-    Boolean(
-      opened &&
-        Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0 &&
-        handleFundingChoicesVisibleProviderTogglesPhase1(diagnosticRoot)
+  let providerPhaseHandled = false
+  try {
+    providerPhaseHandled =
+      Boolean(
+        opened &&
+          Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0 &&
+          handleFundingChoicesVisibleProviderTogglesPhase1(diagnosticRoot)
+      )
+  } catch (error) {
+    recordFundingChoicesProviderPhaseError(
+      error,
+      'recordFundingChoicesProviderPreferencesVisibleEntry.phase'
     )
+  }
 
   if (opened) {
     appendLastDiagnosticDecisionStep({
@@ -18100,7 +18154,36 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         ? getFundingChoicesPostProviderBackDiagnosticRoot(root)
         : diagnosticRoot
 
-    collectFundingChoicesLightweightControlDiagnostics(finalDiagnosticRoot)
+    try {
+      collectFundingChoicesLightweightControlDiagnostics(finalDiagnosticRoot)
+    } catch (error) {
+      recordFundingChoicesProviderPhaseError(
+        error,
+        'recordFundingChoicesProviderPreferencesVisibleEntry.diagnostics'
+      )
+      lastFundingChoicesControlDiagnostics = {
+        collectedAt: new Date().toISOString(),
+        controlCount: 0,
+        sliderCount: 0,
+        activeSliderCount: 0,
+        preferenceToggleCount: 0,
+        activePreferenceToggleCount: 0,
+        mainRequiredActiveBefore: lastFundingChoicesMainRequiredActiveBefore,
+        mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
+        mainClickedCount: lastFundingChoicesMainClickedCount,
+        mainToggleMethod: lastFundingChoicesMainToggleMethod,
+        providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
+        providerToggleCount: lastFundingChoicesProviderToggleCount,
+        activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
+        providerInspectedCount: lastFundingChoicesProviderInspectedCount,
+        providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
+        providerClickedCount: lastFundingChoicesProviderClickedCount,
+        providerTimeBudgetExceeded: lastFundingChoicesProviderTimeBudgetExceeded,
+        providerToggleMethod: lastFundingChoicesProviderToggleMethod,
+        ...getFundingChoicesProviderPhaseDiagnosticFields(),
+        controls: [],
+      }
+    }
 
     if (backDiagnosticResult.clicked) {
       updateFundingChoicesProviderSaveAfterBackDiagnostics(
@@ -19035,6 +19118,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
+    lastFundingChoicesProviderPhaseLastError = null
     lastFundingChoicesProviderPreferenceTextMatch = ''
     lastFundingChoicesProviderPreferenceClickableTargetTag = ''
     lastFundingChoicesProviderPreferenceClickMethod = ''
@@ -20570,7 +20654,7 @@ function getBannerActionSignature(element) {
   return normalizeMatchText(
     [
       getCurrentDomain(),
-      container ? container.id : '',
+      container?.id || '',
       container ? getClassNameText(container) : '',
       container ? getText(container).slice(0, 180) : '',
       getActionText(element).slice(0, 120),
@@ -20635,7 +20719,7 @@ function getBannerHideSignature(element) {
   return normalizeMatchText(
     [
       getCurrentDomain(),
-      container ? container.id : '',
+      container?.id || '',
       container ? getClassNameText(container) : '',
       container ? getText(container).slice(0, 220) : '',
     ].join(' ')
@@ -22462,7 +22546,7 @@ function getElementReferenceText(control, attributeName) {
 
 function getAssociatedLabelText(control) {
   const controlId =
-    control.id
+    control?.id
 
   const explicitLabel =
     controlId
@@ -23552,7 +23636,7 @@ function findProviderInfoModalCloseControl(modal) {
 function getProviderInfoModalSignature(modal) {
   return normalizeMatchText(
     [
-      modal.id,
+      modal?.id,
       getClassNameText(modal),
       getText(modal).slice(0, 220),
     ].join(' ')
@@ -25840,7 +25924,7 @@ function getMutationNodeText(node) {
 
   return normalizeMatchText(
     [
-      node.id || '',
+      node?.id || '',
       getClassNameText(node),
       node.getAttribute?.('role') || '',
       node.getAttribute?.('aria-label') || '',
@@ -26720,7 +26804,7 @@ function detectCMPFingerprint(container) {
     if (!element) return []
 
     return [
-      element.id ? `id:${normalizeMatchText(element.id).slice(0, 80)}` : '',
+      element?.id ? `id:${normalizeMatchText(element?.id).slice(0, 80)}` : '',
       getClassNameText(element) ? `class:${normalizeMatchText(getClassNameText(element)).slice(0, 120)}` : '',
       element.getAttribute?.('aria-label') ? `aria:${normalizeMatchText(element.getAttribute('aria-label')).slice(0, 80)}` : '',
       element.getAttribute?.('data-testid') ? `data-testid:${normalizeMatchText(element.getAttribute('data-testid')).slice(0, 80)}` : '',
@@ -30784,7 +30868,7 @@ function getCookieIntelligenceContainerKey(container) {
   const roundedWidth = Math.round(rect.width / 10) * 10
   const roundedHeight = Math.round(rect.height / 10) * 10
 
-  const id = container.id || ''
+  const id = container?.id || ''
   const rawClassName = typeof container.className === 'string' ? container.className : ''
   const classes = rawClassName.split(' ').slice(0, 2).join(' ')
 
