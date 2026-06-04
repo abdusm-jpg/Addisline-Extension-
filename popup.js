@@ -2565,11 +2565,39 @@ function formatProviderManualStateTransition(summary) {
   ].join(', ')
 }
 
+function formatProviderManualCompletionState(summary) {
+  const state =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'providerManualCompletionState:',
+    `observerInstalled:${Boolean(state?.observerInstalled)}`,
+    `targetDataId:${String(state?.targetDataId || 'none').slice(0, 80)}`,
+    `waitingForMutation:${Boolean(state?.waitingForMutation)}`,
+    `waitingForReacquire:${Boolean(state?.waitingForReacquire)}`,
+    `waitingForTimeout:${Boolean(state?.waitingForTimeout)}`,
+    `completionReason:${String(state?.completionReason || 'none').slice(0, 120)}`,
+  ].join(', ')
+}
+
 function formatProviderManualToggleInspection(inspection) {
   if (!inspection || typeof inspection !== 'object') {
     return 'providerManualToggleInspection: none'
   }
 
+  const observationAgeMs =
+    Math.max(
+      0,
+      Number(inspection.providerManualObservationAgeMs) ||
+        (
+          inspection.startedAtMs
+            ? Date.now() - Number(inspection.startedAtMs)
+            : 0
+        ) ||
+        0
+    )
   const mutations =
     Array.isArray(inspection.mutations)
       ? inspection.mutations
@@ -2582,6 +2610,8 @@ function formatProviderManualToggleInspection(inspection) {
       `mode:${String(inspection.mode || 'none').slice(0, 60)}`,
       `running:${Boolean(inspection.running)}`,
       `completed:${Boolean(inspection.completed)}`,
+      `providerManualObservationAgeMs:${observationAgeMs}`,
+      `providerManualPendingStep:${String(inspection.providerManualPendingStep || 'none').slice(0, 40)}`,
       `mutationCount:${Math.max(0, Number(inspection.mutationCount) || 0)}`,
       `attributeChanges:${Math.max(0, Number(inspection.attributeChangeCount) || 0)}`,
       `childNodeChanges:${Math.max(0, Number(inspection.childListChangeCount) || 0)}`,
@@ -2592,6 +2622,9 @@ function formatProviderManualToggleInspection(inspection) {
       `capturedAt:${String(inspection.capturedAt || 'none').slice(0, 40)}`,
       `error:${String(inspection.error || 'none').slice(0, 120)}`,
     ].join(', '),
+    formatProviderManualCompletionState(
+      inspection.providerManualCompletionState
+    ),
     formatProviderManualToggleSnapshot('manualBefore', inspection.before),
     formatProviderManualToggleSnapshot('manualAfter', inspection.after),
     formatProviderManualNodeReplacement(

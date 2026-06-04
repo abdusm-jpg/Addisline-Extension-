@@ -13926,6 +13926,10 @@ function stopFundingChoicesProviderManualToggleObserver() {
 function storeFundingChoicesProviderManualToggleDiagnostic(diagnostic) {
   if (!diagnostic || typeof diagnostic !== 'object') return
 
+  if (diagnostic.startedAtMs) {
+    diagnostic.providerManualObservationAgeMs =
+      Math.max(0, Date.now() - Number(diagnostic.startedAtMs))
+  }
   lastFundingChoicesProviderManualToggleDiagnostic = diagnostic
 
   if (
@@ -13996,6 +14000,21 @@ function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) 
     mode: 'manual_observation_only',
     running: true,
     completed: false,
+    startedAtMs:
+      Date.now(),
+    providerManualObservationAgeMs:
+      0,
+    providerManualPendingStep:
+      'installed',
+    providerManualCompletionState: {
+      observerInstalled: false,
+      targetDataId:
+        String(input.getAttribute?.('data-id') || '').slice(0, 80),
+      waitingForMutation: true,
+      waitingForReacquire: false,
+      waitingForTimeout: false,
+      completionReason: '',
+    },
     before:
       getFundingChoicesProviderManualToggleSnapshot(input, row),
     after:
@@ -14028,6 +14047,12 @@ function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) 
     fundingChoicesProviderManualToggleObserver =
       new MutationObserver((records) => {
         if (diagnostic.completed) return
+        diagnostic.providerManualPendingStep =
+          'mutation_seen'
+        diagnostic.providerManualCompletionState.waitingForMutation =
+          false
+        diagnostic.providerManualCompletionState.waitingForTimeout =
+          true
 
         diagnostic.mutations.push(
           ...records
@@ -14050,11 +14075,21 @@ function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) 
 
         fundingChoicesProviderManualToggleCaptureTimer = setTimeout(() => {
           try {
+            diagnostic.providerManualPendingStep =
+              'reacquire_attempt'
+            diagnostic.providerManualCompletionState.waitingForTimeout =
+              false
+            diagnostic.providerManualCompletionState.waitingForReacquire =
+              true
             const beforeDataId =
               diagnostic.before?.dataId ||
               String(input.getAttribute?.('data-id') || '')
             const replacementInput =
               findFundingChoicesProviderReplacementInput(root, beforeDataId)
+            if (replacementInput) {
+              diagnostic.providerManualPendingStep =
+                'reacquire_success'
+            }
             const replacementLabel =
               getFundingChoicesProviderLegitimateInterestLabel(replacementInput)
             const replacementSlider =
@@ -14097,9 +14132,21 @@ function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) 
               )
             diagnostic.running = false
             diagnostic.completed = true
+            diagnostic.providerManualPendingStep =
+              'completed'
+            diagnostic.providerManualCompletionState.waitingForReacquire =
+              false
+            diagnostic.providerManualCompletionState.completionReason =
+              replacementInput
+                ? 'mutation_reacquired'
+                : 'mutation_without_replacement'
             diagnostic.capturedAt =
               new Date().toISOString()
           } catch (error) {
+            diagnostic.providerManualPendingStep =
+              'exception'
+            diagnostic.providerManualCompletionState.completionReason =
+              'exception'
             diagnostic.error =
               String(error?.message || error || '').slice(0, 120)
           } finally {
@@ -14117,9 +14164,18 @@ function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) 
       childList: true,
       subtree: true,
     })
+    diagnostic.providerManualPendingStep =
+      'observing'
+    diagnostic.providerManualCompletionState.observerInstalled =
+      true
+    storeFundingChoicesProviderManualToggleDiagnostic(diagnostic)
   } catch (error) {
     diagnostic.running = false
     diagnostic.completed = true
+    diagnostic.providerManualPendingStep =
+      'exception'
+    diagnostic.providerManualCompletionState.completionReason =
+      'exception'
     diagnostic.error =
       String(error?.message || error || '').slice(0, 120)
     storeFundingChoicesProviderManualToggleDiagnostic(diagnostic)
@@ -16099,6 +16155,25 @@ function sanitizeFundingChoicesProviderManualStateTransition(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderManualCompletionState(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    observerInstalled:
+      Boolean(summary.observerInstalled),
+    targetDataId:
+      String(summary.targetDataId || '').slice(0, 80),
+    waitingForMutation:
+      Boolean(summary.waitingForMutation),
+    waitingForReacquire:
+      Boolean(summary.waitingForReacquire),
+    waitingForTimeout:
+      Boolean(summary.waitingForTimeout),
+    completionReason:
+      String(summary.completionReason || '').slice(0, 120),
+  }
+}
+
 function sanitizeFundingChoicesProviderManualMutationNode(node) {
   if (!node || typeof node !== 'object') return null
 
@@ -16191,6 +16266,25 @@ function sanitizeFundingChoicesProviderManualToggleDiagnostic(diagnostic) {
       sanitizeFundingChoicesProviderManualStateTransition(
         diagnostic.providerManualStateTransition
       ),
+    providerManualCompletionState:
+      sanitizeFundingChoicesProviderManualCompletionState(
+        diagnostic.providerManualCompletionState
+      ),
+    startedAtMs:
+      Math.max(0, Number(diagnostic.startedAtMs) || 0),
+    providerManualObservationAgeMs:
+      Math.max(
+        0,
+        Number(diagnostic.providerManualObservationAgeMs) ||
+          (
+            diagnostic.startedAtMs
+              ? Date.now() - Number(diagnostic.startedAtMs)
+              : 0
+          ) ||
+          0
+      ),
+    providerManualPendingStep:
+      String(diagnostic.providerManualPendingStep || '').slice(0, 40),
     capturedAt:
       String(diagnostic.capturedAt || '').slice(0, 40),
     error:
