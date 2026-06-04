@@ -3236,6 +3236,7 @@ function formatFundingChoicesControls(summary) {
       `providerLabelCoordinateReason: ${String(summary.providerLabelCoordinateReason || 'none').slice(0, 80)}`,
       `providerLabelCoordinateBeforeActiveCount: ${Math.max(0, Number(summary.providerLabelCoordinateBeforeActiveCount) || 0)}`,
       `providerLabelCoordinateAfterActiveCount: ${Math.max(0, Number(summary.providerLabelCoordinateAfterActiveCount) || 0)}`,
+      `providerLabelCoordinateInvocationState: ${String(summary.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,
