@@ -4155,6 +4155,18 @@ function recordCurrentSiteDiagnostic({
                       String(fundingChoicesControlDiagnostics.providerPhaseLastError.message || '').slice(0, 160),
                   }
                 : null,
+            legitimateInterestPressed:
+              sanitizeFundingChoicesProviderPressedDiagnostic(
+                fundingChoicesControlDiagnostics.legitimateInterestPressed
+              ),
+            consentPressed:
+              sanitizeFundingChoicesProviderPressedDiagnostic(
+                fundingChoicesControlDiagnostics.consentPressed
+              ),
+            providerCountBreakdown:
+              sanitizeFundingChoicesProviderCountBreakdown(
+                fundingChoicesControlDiagnostics.providerCountBreakdown
+              ),
             providerPreferenceTextMatch:
               String(fundingChoicesControlDiagnostics.providerPreferenceTextMatch || '').slice(0, 90),
             providerPreferenceClickableTargetTag:
@@ -12694,6 +12706,45 @@ function getFundingChoicesProviderDiagnosticId(element) {
     .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
 }
 
+function isFundingChoicesProviderLegitimateInterestInput(input) {
+  return getFundingChoicesProviderDiagnosticClass(input)
+    .toLowerCase()
+    .includes('fc-preference-legitimate-interest')
+}
+
+function isFundingChoicesProviderConsentInput(input) {
+  return getFundingChoicesProviderDiagnosticClass(input)
+    .toLowerCase()
+    .includes('fc-preference-consent')
+}
+
+function getFundingChoicesProviderPressedDiagnostic(input) {
+  if (!input) {
+    return {
+      found: false,
+      pressed: false,
+      dataId: '',
+      ariaLabel: '',
+      ariaPressed: '',
+      class: '',
+    }
+  }
+
+  return {
+    found: true,
+    pressed:
+      isFundingChoicesProviderInputActiveForPhase1(input),
+    dataId:
+      String(input.getAttribute?.('data-id') || '').slice(0, 80),
+    ariaLabel:
+      String(input.getAttribute?.('aria-label') || '').slice(0, 160),
+    ariaPressed:
+      String(input.getAttribute?.('aria-pressed') || '').slice(0, 40),
+    class:
+      getFundingChoicesProviderDiagnosticClass(input),
+  }
+}
+
 function recordFundingChoicesProviderPhaseError(error, phase = 'unknown') {
   lastFundingChoicesProviderPhaseLastError = {
     phase:
@@ -14976,6 +15027,111 @@ function getFundingChoicesProviderFirstActiveToggleDiagnostic(root) {
   return diagnostic
 }
 
+function getFundingChoicesProviderConsentBreakdownDiagnostic(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (!providerPanel) {
+    return {
+      legitimateInterestPressed:
+        getFundingChoicesProviderPressedDiagnostic(null),
+      consentPressed:
+        getFundingChoicesProviderPressedDiagnostic(null),
+      providerCountBreakdown: {
+        activeLegitimateInterestCount: 0,
+        activeConsentCount: 0,
+        activeOtherProviderCount: 0,
+        totalActiveProviderInputCount: 0,
+        providerActiveFoundCount:
+          lastFundingChoicesProviderActiveFoundCount,
+        activeProviderToggleCount:
+          lastFundingChoicesActiveProviderToggleCount,
+        providerActiveFoundCountSource:
+          'active_provider_inputs_total',
+        activeProviderToggleCountSource:
+          'active_provider_inputs_total',
+        firstActiveProviderDataId: '',
+      },
+    }
+  }
+
+  const startedAt =
+    Date.now()
+  const providerInputs =
+    getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
+  const activeInputs =
+    providerInputs.filter(isFundingChoicesProviderInputActiveForPhase1)
+  const firstActiveInput =
+    activeInputs[0] || null
+  const firstActiveDataId =
+    String(firstActiveInput?.getAttribute?.('data-id') || '').slice(0, 80)
+  const matchesFirstActiveProvider = (input) =>
+    Boolean(
+      input &&
+      firstActiveDataId &&
+      String(input.getAttribute?.('data-id') || '') === firstActiveDataId
+    )
+  const legitimateInterestInput =
+    providerInputs.find((input) =>
+      matchesFirstActiveProvider(input) &&
+      isFundingChoicesProviderLegitimateInterestInput(input)
+    ) ||
+    (
+      firstActiveInput &&
+      isFundingChoicesProviderLegitimateInterestInput(firstActiveInput)
+        ? firstActiveInput
+        : null
+    )
+  const consentInput =
+    providerInputs.find((input) =>
+      matchesFirstActiveProvider(input) &&
+      isFundingChoicesProviderConsentInput(input)
+    ) ||
+    (
+      firstActiveInput &&
+      isFundingChoicesProviderConsentInput(firstActiveInput)
+        ? firstActiveInput
+        : null
+    )
+  const activeLegitimateInterestCount =
+    activeInputs.filter(isFundingChoicesProviderLegitimateInterestInput).length
+  const activeConsentCount =
+    activeInputs.filter(isFundingChoicesProviderConsentInput).length
+  const activeOtherProviderCount =
+    activeInputs.length -
+      activeLegitimateInterestCount -
+      activeConsentCount
+
+  return {
+    legitimateInterestPressed:
+      getFundingChoicesProviderPressedDiagnostic(legitimateInterestInput),
+    consentPressed:
+      getFundingChoicesProviderPressedDiagnostic(consentInput),
+    providerCountBreakdown: {
+      activeLegitimateInterestCount,
+      activeConsentCount,
+      activeOtherProviderCount:
+        Math.max(0, activeOtherProviderCount),
+      totalActiveProviderInputCount:
+        activeInputs.length,
+      providerActiveFoundCount:
+        lastFundingChoicesProviderActiveFoundCount,
+      activeProviderToggleCount:
+        lastFundingChoicesActiveProviderToggleCount,
+      providerActiveFoundCountSource:
+        'active_provider_inputs_total',
+      activeProviderToggleCountSource:
+        'active_provider_inputs_total',
+      providerActiveFoundCountMatchesTotal:
+        lastFundingChoicesProviderActiveFoundCount === activeInputs.length,
+      activeProviderToggleCountMatchesTotal:
+        lastFundingChoicesActiveProviderToggleCount === activeInputs.length,
+      firstActiveProviderDataId:
+        firstActiveDataId,
+    },
+  }
+}
+
 function sanitizeFundingChoicesProviderDiagnosticDataAttributes(dataAttributes) {
   if (!dataAttributes || typeof dataAttributes !== 'object') return {}
 
@@ -15755,6 +15911,64 @@ function sanitizeFundingChoicesProviderFirstActiveInputAttrs(attrs) {
       Number(attrs.tabIndex) || 0,
     dataAttributes:
       sanitizeFundingChoicesProviderDiagnosticDataAttributes(attrs.dataAttributes),
+  }
+}
+
+function sanitizeFundingChoicesProviderPressedDiagnostic(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return {
+      found: false,
+      pressed: false,
+      dataId: '',
+      ariaLabel: '',
+      ariaPressed: '',
+      class: '',
+    }
+  }
+
+  return {
+    found:
+      Boolean(summary.found),
+    pressed:
+      Boolean(summary.pressed),
+    dataId:
+      String(summary.dataId || '').slice(0, 80),
+    ariaLabel:
+      String(summary.ariaLabel || '').slice(0, 160),
+    ariaPressed:
+      String(summary.ariaPressed || '').slice(0, 40),
+    class:
+      String(summary.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+  }
+}
+
+function sanitizeFundingChoicesProviderCountBreakdown(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    activeLegitimateInterestCount:
+      Math.max(0, Number(summary.activeLegitimateInterestCount) || 0),
+    activeConsentCount:
+      Math.max(0, Number(summary.activeConsentCount) || 0),
+    activeOtherProviderCount:
+      Math.max(0, Number(summary.activeOtherProviderCount) || 0),
+    totalActiveProviderInputCount:
+      Math.max(0, Number(summary.totalActiveProviderInputCount) || 0),
+    providerActiveFoundCount:
+      Math.max(0, Number(summary.providerActiveFoundCount) || 0),
+    activeProviderToggleCount:
+      Math.max(0, Number(summary.activeProviderToggleCount) || 0),
+    providerActiveFoundCountSource:
+      String(summary.providerActiveFoundCountSource || '').slice(0, 60),
+    activeProviderToggleCountSource:
+      String(summary.activeProviderToggleCountSource || '').slice(0, 60),
+    providerActiveFoundCountMatchesTotal:
+      Boolean(summary.providerActiveFoundCountMatchesTotal),
+    activeProviderToggleCountMatchesTotal:
+      Boolean(summary.activeProviderToggleCountMatchesTotal),
+    firstActiveProviderDataId:
+      String(summary.firstActiveProviderDataId || '').slice(0, 80),
   }
 }
 
@@ -17140,6 +17354,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       )
   const providerFirstActiveToggleDiagnostic =
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+  const providerConsentBreakdownDiagnostic =
+    getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
@@ -17180,6 +17396,12 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseGuardState,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
+    legitimateInterestPressed:
+      providerConsentBreakdownDiagnostic.legitimateInterestPressed,
+    consentPressed:
+      providerConsentBreakdownDiagnostic.consentPressed,
+    providerCountBreakdown:
+      providerConsentBreakdownDiagnostic.providerCountBreakdown,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
@@ -17325,6 +17547,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       .map(getFundingChoicesLightweightControlDiagnostic)
   const providerFirstActiveToggleDiagnostic =
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+  const providerConsentBreakdownDiagnostic =
+    getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
@@ -17365,6 +17589,12 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseGuardState,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
+    legitimateInterestPressed:
+      providerConsentBreakdownDiagnostic.legitimateInterestPressed,
+    consentPressed:
+      providerConsentBreakdownDiagnostic.consentPressed,
+    providerCountBreakdown:
+      providerConsentBreakdownDiagnostic.providerCountBreakdown,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,

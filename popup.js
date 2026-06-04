@@ -2952,6 +2952,70 @@ function formatFundingChoicesGlobalStateCopySection(diagnostic) {
   ].join('\n')
 }
 
+function getProviderDiagnosticsExported(summary) {
+  return Boolean(
+    summary &&
+    typeof summary === 'object' &&
+    'providerPhaseBlockedReason' in summary &&
+    'providerPhaseGuardState' in summary &&
+    'providerLabelCoordinateInvocationState' in summary
+  )
+}
+
+function formatProviderDiagnosticsExportSummary(summary) {
+  const guardState =
+    summary?.providerPhaseGuardState &&
+    typeof summary.providerPhaseGuardState === 'object'
+      ? summary.providerPhaseGuardState
+      : null
+
+  return [
+    `providerDiagnosticsExported:${getProviderDiagnosticsExported(summary)}`,
+    `providerPhaseBlockedReason:${String(summary?.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
+    `providerLabelCoordinateInvocationState:${String(summary?.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
+    `providerPhaseGuardState:attempted:${Boolean(guardState?.attempted)} running:${Boolean(guardState?.running)} preferencesOpen:${Boolean(guardState?.preferencesOpen)} activeProviderCount:${Math.max(0, Number(guardState?.activeProviderCount) || 0)} panelVerified:${Boolean(guardState?.panelVerified)} providerAutomationEnabled:${Boolean(guardState?.providerAutomationEnabled)}`,
+  ].join(', ')
+}
+
+function formatProviderPressedDiagnostic(label, summary) {
+  const diagnostic =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    `${label}:`,
+    `found:${Boolean(diagnostic?.found)}`,
+    `pressed:${Boolean(diagnostic?.pressed)}`,
+    `data-id:${String(diagnostic?.dataId || 'none').slice(0, 80)}`,
+    `aria-label:${String(diagnostic?.ariaLabel || 'none').slice(0, 120)}`,
+    `aria-pressed:${String(diagnostic?.ariaPressed || 'none').slice(0, 40)}`,
+    `class:${String(diagnostic?.class || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
+function formatProviderCountBreakdown(summary) {
+  const breakdown =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'providerCountBreakdown:',
+    `activeLegitimateInterestCount:${Math.max(0, Number(breakdown?.activeLegitimateInterestCount) || 0)}`,
+    `activeConsentCount:${Math.max(0, Number(breakdown?.activeConsentCount) || 0)}`,
+    `activeOtherProviderCount:${Math.max(0, Number(breakdown?.activeOtherProviderCount) || 0)}`,
+    `totalActiveProviderInputCount:${Math.max(0, Number(breakdown?.totalActiveProviderInputCount) || 0)}`,
+    `providerActiveFoundCount:${Math.max(0, Number(breakdown?.providerActiveFoundCount) || 0)}`,
+    `activeProviderToggleCount:${Math.max(0, Number(breakdown?.activeProviderToggleCount) || 0)}`,
+    `providerActiveFoundCountSource:${String(breakdown?.providerActiveFoundCountSource || 'none').slice(0, 60)}`,
+    `activeProviderToggleCountSource:${String(breakdown?.activeProviderToggleCountSource || 'none').slice(0, 60)}`,
+    `providerActiveFoundCountMatchesTotal:${Boolean(breakdown?.providerActiveFoundCountMatchesTotal)}`,
+    `activeProviderToggleCountMatchesTotal:${Boolean(breakdown?.activeProviderToggleCountMatchesTotal)}`,
+    `firstActiveProviderDataId:${String(breakdown?.firstActiveProviderDataId || 'none').slice(0, 80)}`,
+  ].join(' ')
+}
+
 function formatProviderStateOwnershipCopySection(diagnostic) {
   const summary =
     diagnostic?.fundingChoicesControlDiagnostics
@@ -2967,10 +3031,14 @@ function formatProviderStateOwnershipCopySection(diagnostic) {
       : null
 
   if (!stateOwnership) {
-    return 'providerStateOwnership: none'
+    return [
+      'providerStateOwnership: none',
+      formatProviderDiagnosticsExportSummary(summary),
+    ].join('\n')
   }
 
   return [
+    formatProviderDiagnosticsExportSummary(summary),
     [
       'providerStateOwnership:',
       `signature:${String(stateOwnership.signature || 'none').slice(0, 120)}`,
@@ -3250,6 +3318,16 @@ function formatFundingChoicesControls(summary) {
       `providerPhaseBlockedReason: ${String(summary.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
       `providerPhaseGuardState: attempted:${Boolean(providerPhaseGuardState?.attempted)} running:${Boolean(providerPhaseGuardState?.running)} preferencesOpen:${Boolean(providerPhaseGuardState?.preferencesOpen)} activeProviderCount:${Math.max(0, Number(providerPhaseGuardState?.activeProviderCount) || 0)} panelVerified:${Boolean(providerPhaseGuardState?.panelVerified)} providerAutomationEnabled:${Boolean(providerPhaseGuardState?.providerAutomationEnabled)}`,
       `providerPhaseLastError: phase:${String(providerPhaseLastError?.phase || 'none').slice(0, 60)} message:${String(providerPhaseLastError?.message || 'none').slice(0, 120)}`,
+      `providerDiagnosticsExported: ${getProviderDiagnosticsExported(summary)}`,
+      formatProviderPressedDiagnostic(
+        'legitimateInterestPressed',
+        summary.legitimateInterestPressed
+      ),
+      formatProviderPressedDiagnostic(
+        'consentPressed',
+        summary.consentPressed
+      ),
+      formatProviderCountBreakdown(summary.providerCountBreakdown),
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,
