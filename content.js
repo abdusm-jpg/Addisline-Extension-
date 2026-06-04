@@ -18,7 +18,7 @@ const ENABLE_CMP_SPECIFIC_HELPERS = false
 const ENABLE_CUSTOM_VISUAL_SWITCH_DETECTION = false
 const ENABLE_VERBOSE_DIAGNOSTICS = false
 const ENABLE_FC_PROVIDER_AUTOMATION = false
-const FUNDING_CHOICES_PROVIDER_OWNER_DIAGNOSTIC_ONLY = true
+const FUNDING_CHOICES_PROVIDER_OWNER_DIAGNOSTIC_ONLY = false
 const REJECT_FLOW_DEBUG = false
 
 let protectionEnabled = false
@@ -259,7 +259,6 @@ const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_CLICKS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT = 30
 const MAX_FUNDING_CHOICES_PROVIDER_ACTIVE_CLICKS = 10
 const FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS = 500
-const MAX_FUNDING_CHOICES_PROVIDER_ARIA_PRESSED_MUTATIONS = 9
 const FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS = 200
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 48
@@ -11387,6 +11386,114 @@ function dispatchFundingChoicesPreferenceToggleClick(element, root) {
   }
 }
 
+function waitForFundingChoicesProviderMicroDelay(delayMs = 25) {
+  const startedAt =
+    Date.now()
+
+  while (Date.now() - startedAt < delayMs) {
+    // Give synchronous Funding Choices handlers a brief chance to rerender.
+  }
+}
+
+function getFundingChoicesProviderLegitimateInterestLabel(input) {
+  const label =
+    safeClosest(
+      input,
+      'label.fc-preference-slider-container.fc-legitimate-interest-preference-container'
+    )
+
+  return label && isVisible(label)
+    ? label
+    : null
+}
+
+function isFundingChoicesProviderLegitimateInterestInput(input) {
+  return Boolean(
+    input &&
+      getFundingChoicesProviderLegitimateInterestLabel(input)
+  )
+}
+
+function dispatchFundingChoicesProviderLabelCoordinateClick(label, root) {
+  if (
+    !shouldRunOnThisSite() ||
+    !label ||
+    !root?.contains?.(label) ||
+    processedActionElements.has(label) ||
+    !canUsePageActionBudget('fundingChoicesProviderLabelCoordinateToggle')
+  ) {
+    return false
+  }
+
+  const rect =
+    label.getBoundingClientRect?.()
+
+  if (!rect || rect.width <= 0 || rect.height <= 0) {
+    return false
+  }
+
+  const clientX =
+    rect.left + rect.width * 0.25
+  const clientY =
+    rect.top + rect.height / 2
+  const screenX =
+    window.screenX + clientX
+  const screenY =
+    window.screenY + clientY
+
+  processedActionElements.add(label)
+
+  try {
+    const eventView =
+      label.ownerDocument?.defaultView || window
+    const shared = {
+      bubbles: true,
+      cancelable: true,
+      view: eventView,
+      clientX,
+      clientY,
+      screenX,
+      screenY,
+    }
+
+    if (typeof eventView.PointerEvent === 'function') {
+      label.dispatchEvent(
+        new eventView.PointerEvent('pointerdown', {
+          ...shared,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+    }
+
+    label.dispatchEvent(
+      new eventView.MouseEvent('mousedown', shared)
+    )
+
+    if (typeof eventView.PointerEvent === 'function') {
+      label.dispatchEvent(
+        new eventView.PointerEvent('pointerup', {
+          ...shared,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+    }
+
+    label.dispatchEvent(
+      new eventView.MouseEvent('mouseup', shared)
+    )
+    label.dispatchEvent(
+      new eventView.MouseEvent('click', shared)
+    )
+
+    return true
+  } catch (error) {
+    log('Funding Choices provider label coordinate click failed:', error)
+    return false
+  }
+}
+
 function dispatchFundingChoicesKeyboardToggle(input, root, key) {
   if (
     !shouldRunOnThisSite() ||
@@ -15600,6 +15707,18 @@ function isFundingChoicesProviderInputActiveForPhase1(input) {
   return isFundingChoicesProviderAriaPressedToggleActive(input)
 }
 
+function getFundingChoicesProviderActiveCountFromDocument(providerPanel) {
+  const startedAt =
+    Date.now()
+
+  return getFundingChoicesStableProviderToggleInputs(
+    providerPanel || document,
+    startedAt
+  )
+    .filter(isFundingChoicesProviderInputActiveForPhase1)
+    .length
+}
+
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   setFundingChoicesNetworkPhase('provider_state_change')
   const providerPanel =
@@ -15617,8 +15736,10 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   const providerInputs =
     getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
   const activeInputs =
-    providerInputs.filter(isFundingChoicesProviderInputActiveForPhase1)
-  let mutatedCount = 0
+    providerInputs
+      .filter(isFundingChoicesProviderInputActiveForPhase1)
+  const activeLegitimateInterestInputs =
+    activeInputs.filter(isFundingChoicesProviderLegitimateInterestInput)
 
   lastFundingChoicesProviderPreferenceOpened = true
   lastFundingChoicesProviderToggleCount = providerInputs.length
@@ -15640,32 +15761,46 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     return false
   }
 
-  for (const input of activeInputs.slice(
-    0,
-    MAX_FUNDING_CHOICES_PROVIDER_ARIA_PRESSED_MUTATIONS
-  )) {
-    if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
-      lastFundingChoicesProviderTimeBudgetExceeded = true
-      break
-    }
+  const input =
+    activeLegitimateInterestInputs[0] || null
+  const label =
+    getFundingChoicesProviderLegitimateInterestLabel(input)
 
-    if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
-      continue
-    }
-
-    input.setAttribute('aria-pressed', 'false')
-
-    if (!isFundingChoicesProviderInputActiveForPhase1(input)) {
-      mutatedCount += 1
-      lastFundingChoicesProviderClickedCount += 1
-      lastFundingChoicesProviderToggleMethod = 'aria-pressed'
-    }
+  if (!input || !label) {
+    lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+    return false
   }
 
-  lastFundingChoicesActiveProviderToggleCount =
-    providerInputs.filter(isFundingChoicesProviderInputActiveForPhase1).length
+  if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
+    lastFundingChoicesProviderTimeBudgetExceeded = true
+    return false
+  }
 
-  return mutatedCount > 0
+  const activeBefore =
+    activeInputs.length
+  const clicked =
+    dispatchFundingChoicesProviderLabelCoordinateClick(label, providerPanel)
+
+  if (!clicked) {
+    lastFundingChoicesActiveProviderToggleCount =
+      getFundingChoicesProviderActiveCountFromDocument(providerPanel)
+    return false
+  }
+
+  waitForFundingChoicesProviderMicroDelay()
+
+  const activeAfter =
+    getFundingChoicesProviderActiveCountFromDocument(providerPanel)
+
+  lastFundingChoicesActiveProviderToggleCount = activeAfter
+
+  if (activeAfter === activeBefore - 1) {
+    lastFundingChoicesProviderClickedCount = 1
+    lastFundingChoicesProviderToggleMethod = 'label-coordinate-click'
+    return true
+  }
+
+  return false
 }
 
 function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
@@ -15751,8 +15886,8 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
       recordCurrentSiteDiagnostic({
         status: providerPhaseHandled ? 'partial' : 'skipped',
         reason: providerPhaseHandled
-          ? 'fc_provider_aria_pressed_disabled'
-          : 'fc_provider_aria_pressed_skipped',
+          ? 'fc_provider_label_coordinate_clicked'
+          : 'fc_provider_label_coordinate_skipped',
         candidates: [finalDiagnosticRoot],
         blockedReason: '',
         fundingChoicesControlDiagnostics: lastFundingChoicesControlDiagnostics,
@@ -15863,13 +15998,13 @@ function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
       Math.max(0, activeBefore - lastFundingChoicesActiveProviderToggleCount)
 
     appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_phase1_aria_pressed',
+      strategy: 'fc.provider_phase1_label_coordinate_click',
       status: providerPhaseHandled ? 'handled' : 'skipped',
       reason: providerPhaseHandled
         ? ''
         : lastFundingChoicesProviderToggleMethod === 'read-only-diagnostic'
           ? 'provider_owner_diagnostic_only_no_mutation'
-          : 'provider_aria_pressed_no_change',
+          : 'provider_label_coordinate_no_change',
       found: handledCount,
       scanned: activeBefore,
     })
@@ -17590,13 +17725,13 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
 
   if (opened) {
     appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_phase1_aria_pressed',
+      strategy: 'fc.provider_phase1_label_coordinate_click',
       status: providerPhaseHandled ? 'handled' : 'skipped',
       reason: providerPhaseHandled
         ? ''
         : lastFundingChoicesProviderToggleMethod === 'read-only-diagnostic'
           ? 'provider_owner_diagnostic_only_no_mutation'
-          : 'provider_aria_pressed_no_active_inputs',
+          : 'provider_label_coordinate_no_active_inputs',
       found: Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0) -
         Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
       scanned: Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0),
@@ -17686,7 +17821,7 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         status: providerPhaseHandled ? 'partial' : opened ? 'settingsOpened' : 'partial',
         reason: opened
           ? providerPhaseHandled
-            ? 'fc_provider_aria_pressed_disabled'
+            ? 'fc_provider_label_coordinate_clicked'
             : reason
           : 'fc_provider_preferences_visual_verification_failed',
         candidates: finalDiagnosticRoot ? [finalDiagnosticRoot] : [],
