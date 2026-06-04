@@ -13387,10 +13387,33 @@ function getFundingChoicesProviderClassList(element) {
     .slice(0, 20)
 }
 
+function getFundingChoicesProviderManualRowSignature(row) {
+  if (!row) return ''
+
+  const dataAttributes =
+    getFundingChoicesProviderDiagnosticDataAttributes(row)
+  const dataSignature =
+    Object.entries(dataAttributes)
+      .slice(0, 4)
+      .map(([key, value]) => `${key}:${value}`)
+      .join('|')
+
+  return [
+    String(row.tagName || '').toLowerCase(),
+    getFundingChoicesProviderDiagnosticId(row),
+    getFundingChoicesProviderDiagnosticClass(row),
+    dataSignature,
+  ].join('|').slice(0, 500)
+}
+
 function getFundingChoicesProviderManualToggleSnapshot(input, row) {
   if (!input) return null
 
   return {
+    inputId:
+      getFundingChoicesProviderDiagnosticId(input),
+    dataId:
+      String(input.getAttribute?.('data-id') || '').slice(0, 80),
     checked:
       Boolean(input.checked),
     ariaPressed:
@@ -13401,8 +13424,59 @@ function getFundingChoicesProviderManualToggleSnapshot(input, row) {
       getFundingChoicesProviderClassList(input),
     parentRowClassList:
       getFundingChoicesProviderClassList(row),
+    rowSignature:
+      getFundingChoicesProviderManualRowSignature(row),
     activeDetected:
       getFundingChoicesProviderAriaPressedToggleState(input) === 'enabled',
+  }
+}
+
+function findFundingChoicesProviderReplacementInput(root, dataId) {
+  if (!dataId) return null
+
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(document) ||
+    root ||
+    document
+  const selector =
+    'input.fc-preference-legitimate-interest.gvl-vendor[data-id]'
+  const matchesDataId = (input) =>
+    String(input?.getAttribute?.('data-id') || '') === String(dataId)
+
+  return safeQuerySelectorAll(providerPanel, selector).find(matchesDataId) ||
+    safeQuerySelectorAll(document, selector).find(matchesDataId) ||
+    null
+}
+
+function getFundingChoicesProviderManualReplacementDiagnostic({
+  oldInput,
+  oldRow,
+  newInput,
+  newRow,
+}) {
+  return {
+    inputReplaced:
+      Boolean(oldInput && newInput && oldInput !== newInput),
+    rowReplaced:
+      Boolean(oldRow && newRow && oldRow !== newRow),
+    oldInputConnected:
+      Boolean(oldInput?.isConnected),
+    newInputFound:
+      Boolean(newInput),
+  }
+}
+
+function getFundingChoicesProviderManualStateTransition(before, after) {
+  return {
+    beforePressed:
+      String(before?.ariaPressed || '').slice(0, 40),
+    afterPressed:
+      String(after?.ariaPressed || '').slice(0, 40),
+    beforeChecked:
+      Boolean(before?.checked),
+    afterChecked:
+      Boolean(after?.checked),
   }
 }
 
@@ -13938,6 +14012,10 @@ function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) 
       false,
     inputConnectedAfter:
       false,
+    providerManualNodeReplacement:
+      null,
+    providerManualStateTransition:
+      null,
     capturedAt:
       '',
     error:
@@ -13972,12 +14050,51 @@ function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) 
 
         fundingChoicesProviderManualToggleCaptureTimer = setTimeout(() => {
           try {
+            const beforeDataId =
+              diagnostic.before?.dataId ||
+              String(input.getAttribute?.('data-id') || '')
+            const replacementInput =
+              findFundingChoicesProviderReplacementInput(root, beforeDataId)
+            const replacementLabel =
+              getFundingChoicesProviderLegitimateInterestLabel(replacementInput)
+            const replacementSlider =
+              replacementInput
+                ? safeClosest(replacementInput, '.fc-preference-slider')
+                : null
+            const replacementRow =
+              replacementInput
+                ? getFundingChoicesProviderFirstActiveRow(
+                    replacementInput,
+                    replacementLabel,
+                    replacementSlider
+                  )
+                : null
+            const snapshotInput =
+              replacementInput || input
+            const snapshotRow =
+              replacementRow || row
+
             diagnostic.after =
-              getFundingChoicesProviderManualToggleSnapshot(input, row)
+              getFundingChoicesProviderManualToggleSnapshot(
+                snapshotInput,
+                snapshotRow
+              )
             diagnostic.rowConnectedAfter =
               Boolean(row.isConnected)
             diagnostic.inputConnectedAfter =
               Boolean(input.isConnected)
+            diagnostic.providerManualNodeReplacement =
+              getFundingChoicesProviderManualReplacementDiagnostic({
+                oldInput: input,
+                oldRow: row,
+                newInput: replacementInput,
+                newRow: replacementRow,
+              })
+            diagnostic.providerManualStateTransition =
+              getFundingChoicesProviderManualStateTransition(
+                diagnostic.before,
+                diagnostic.after
+              )
             diagnostic.running = false
             diagnostic.completed = true
             diagnostic.capturedAt =
@@ -15928,6 +16045,11 @@ function sanitizeFundingChoicesProviderManualToggleSnapshot(snapshot) {
       String(snapshot.ariaPressed || '').slice(0, 40),
     ariaChecked:
       String(snapshot.ariaChecked || '').slice(0, 40),
+    inputId:
+      String(snapshot.inputId || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    dataId:
+      String(snapshot.dataId || '').slice(0, 80),
     classList:
       (Array.isArray(snapshot.classList) ? snapshot.classList : [])
         .map((className) => String(className || '').slice(0, 80))
@@ -15940,8 +16062,40 @@ function sanitizeFundingChoicesProviderManualToggleSnapshot(snapshot) {
         .map((className) => String(className || '').slice(0, 80))
         .filter(Boolean)
         .slice(0, 20),
+    rowSignature:
+      String(snapshot.rowSignature || '').slice(0, 160),
     activeDetected:
       Boolean(snapshot.activeDetected),
+  }
+}
+
+function sanitizeFundingChoicesProviderManualNodeReplacement(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    inputReplaced:
+      Boolean(summary.inputReplaced),
+    rowReplaced:
+      Boolean(summary.rowReplaced),
+    oldInputConnected:
+      Boolean(summary.oldInputConnected),
+    newInputFound:
+      Boolean(summary.newInputFound),
+  }
+}
+
+function sanitizeFundingChoicesProviderManualStateTransition(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    beforePressed:
+      String(summary.beforePressed || '').slice(0, 40),
+    afterPressed:
+      String(summary.afterPressed || '').slice(0, 40),
+    beforeChecked:
+      Boolean(summary.beforeChecked),
+    afterChecked:
+      Boolean(summary.afterChecked),
   }
 }
 
@@ -16029,6 +16183,14 @@ function sanitizeFundingChoicesProviderManualToggleDiagnostic(diagnostic) {
       Boolean(diagnostic.rowConnectedAfter),
     inputConnectedAfter:
       Boolean(diagnostic.inputConnectedAfter),
+    providerManualNodeReplacement:
+      sanitizeFundingChoicesProviderManualNodeReplacement(
+        diagnostic.providerManualNodeReplacement
+      ),
+    providerManualStateTransition:
+      sanitizeFundingChoicesProviderManualStateTransition(
+        diagnostic.providerManualStateTransition
+      ),
     capturedAt:
       String(diagnostic.capturedAt || '').slice(0, 40),
     error:

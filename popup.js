@@ -2482,10 +2482,13 @@ function formatProviderManualToggleSnapshot(label, snapshot) {
 
   return [
     `${label}:`,
+    `inputId:${String(snapshot.inputId || 'none').slice(0, 80)}`,
+    `dataId:${String(snapshot.dataId || 'none').slice(0, 80)}`,
     `checked:${Boolean(snapshot.checked)}`,
     `ariaPressed:${String(snapshot.ariaPressed || 'none').slice(0, 30)}`,
     `ariaChecked:${String(snapshot.ariaChecked || 'none').slice(0, 30)}`,
     `activeDetected:${Boolean(snapshot.activeDetected)}`,
+    `rowSignature:${String(snapshot.rowSignature || 'none').slice(0, 120)}`,
     `classList:${String(classList).slice(0, 220)}`,
     `parentRowClassList:${String(parentRowClassList).slice(0, 220)}`,
   ].join(', ')
@@ -2532,6 +2535,36 @@ function formatProviderManualMutation(mutation, index) {
   ].join(', ')
 }
 
+function formatProviderManualNodeReplacement(summary) {
+  const replacement =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'providerManualNodeReplacement:',
+    `inputReplaced:${Boolean(replacement?.inputReplaced)}`,
+    `rowReplaced:${Boolean(replacement?.rowReplaced)}`,
+    `oldInputConnected:${Boolean(replacement?.oldInputConnected)}`,
+    `newInputFound:${Boolean(replacement?.newInputFound)}`,
+  ].join(', ')
+}
+
+function formatProviderManualStateTransition(summary) {
+  const transition =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'providerManualStateTransition:',
+    `beforePressed:${String(transition?.beforePressed || 'none').slice(0, 30)}`,
+    `afterPressed:${String(transition?.afterPressed || 'none').slice(0, 30)}`,
+    `beforeChecked:${Boolean(transition?.beforeChecked)}`,
+    `afterChecked:${Boolean(transition?.afterChecked)}`,
+  ].join(', ')
+}
+
 function formatProviderManualToggleInspection(inspection) {
   if (!inspection || typeof inspection !== 'object') {
     return 'providerManualToggleInspection: none'
@@ -2561,6 +2594,12 @@ function formatProviderManualToggleInspection(inspection) {
     ].join(', '),
     formatProviderManualToggleSnapshot('manualBefore', inspection.before),
     formatProviderManualToggleSnapshot('manualAfter', inspection.after),
+    formatProviderManualNodeReplacement(
+      inspection.providerManualNodeReplacement
+    ),
+    formatProviderManualStateTransition(
+      inspection.providerManualStateTransition
+    ),
     ...(mutations.length > 0
       ? mutations.map(formatProviderManualMutation)
       : ['manualMutations: none']),
