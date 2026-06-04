@@ -2973,6 +2973,7 @@ function formatProviderDiagnosticsExportSummary(summary) {
     `providerDiagnosticsExported:${getProviderDiagnosticsExported(summary)}`,
     `providerPhaseBlockedReason:${String(summary?.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
     `providerLabelCoordinateInvocationState:${String(summary?.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
+    `providerAutomationGuardReason:${String(summary?.providerAutomationGuardReason || 'none').slice(0, 120)}`,
     `providerPhaseGuardState:attempted:${Boolean(guardState?.attempted)} running:${Boolean(guardState?.running)} preferencesOpen:${Boolean(guardState?.preferencesOpen)} activeProviderCount:${Math.max(0, Number(guardState?.activeProviderCount) || 0)} panelVerified:${Boolean(guardState?.panelVerified)} providerAutomationEnabled:${Boolean(guardState?.providerAutomationEnabled)}`,
   ].join(', ')
 }
@@ -3014,6 +3015,87 @@ function formatProviderCountBreakdown(summary) {
     `activeProviderToggleCountMatchesTotal:${Boolean(breakdown?.activeProviderToggleCountMatchesTotal)}`,
     `firstActiveProviderDataId:${String(breakdown?.firstActiveProviderDataId || 'none').slice(0, 80)}`,
   ].join(' ')
+}
+
+function formatProviderCountSource(label, source) {
+  const summary =
+    source && typeof source === 'object'
+      ? source
+      : null
+
+  return [
+    `${label}:`,
+    `selector:${String(summary?.selectorUsed || 'none').slice(0, 220)}`,
+    `selectedSource:${String(summary?.selectedSource || 'none').slice(0, 80)}`,
+    `activeCondition:${String(summary?.activeConditionUsed || 'none').slice(0, 140)}`,
+    `selectedInputCount:${Math.max(0, Number(summary?.selectedInputCount) || 0)}`,
+    `activeCountResult:${Math.max(0, Number(summary?.activeCountResult) || 0)}`,
+    `storedResult:${Math.max(0, Number(summary?.storedResult) || 0)}`,
+    `countResult:${Math.max(0, Number(summary?.countResult) || 0)}`,
+    `metricPath:${String(summary?.metricPath || 'none').slice(0, 140)}`,
+  ].join(' ')
+}
+
+function formatProviderCountSources(summary) {
+  const sources =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'providerCountSources:',
+    formatProviderCountSource(
+      'activeProviderCount',
+      sources?.activeProviderCount
+    ),
+    formatProviderCountSource(
+      'providerActiveFoundCount',
+      sources?.providerActiveFoundCount
+    ),
+    formatProviderCountSource(
+      'activeProviderToggleCount',
+      sources?.activeProviderToggleCount
+    ),
+  ].join('\n')
+}
+
+function formatProviderActiveEvaluation(evaluation, index) {
+  const summary =
+    evaluation && typeof evaluation === 'object'
+      ? evaluation
+      : null
+
+  return [
+    `${index + 1}. ${String(summary?.key || 'provider').slice(0, 80)}`,
+    `data-id:${String(summary?.dataId || 'none').slice(0, 80)}`,
+    `selectorMatched:${Boolean(summary?.selectorMatched)}`,
+    `inSelectedCountSet:${Boolean(summary?.inSelectedCountSet)}`,
+    `checked:${Boolean(summary?.checked)}`,
+    `ariaPressed:${String(summary?.ariaPressed || 'none').slice(0, 40)}`,
+    `countedAsActive:${Boolean(summary?.countedAsActive)}`,
+    `reason:${String(summary?.reason || 'none').slice(0, 100)}`,
+    `class:${String(summary?.class || 'none').slice(0, 100)}`,
+  ].join(' ')
+}
+
+function formatProviderFirstThreeActiveEvaluations(evaluations) {
+  const entries =
+    Array.isArray(evaluations)
+      ? evaluations
+          .filter((entry) =>
+            entry && typeof entry === 'object'
+          )
+          .slice(0, 3)
+      : []
+
+  if (entries.length === 0) {
+    return 'providerFirstThreeActiveEvaluations: none'
+  }
+
+  return [
+    'providerFirstThreeActiveEvaluations:',
+    ...entries.map(formatProviderActiveEvaluation),
+  ].join('\n')
 }
 
 function formatProviderStateOwnershipCopySection(diagnostic) {
@@ -3318,6 +3400,7 @@ function formatFundingChoicesControls(summary) {
       `providerPhaseBlockedReason: ${String(summary.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
       `providerPhaseGuardState: attempted:${Boolean(providerPhaseGuardState?.attempted)} running:${Boolean(providerPhaseGuardState?.running)} preferencesOpen:${Boolean(providerPhaseGuardState?.preferencesOpen)} activeProviderCount:${Math.max(0, Number(providerPhaseGuardState?.activeProviderCount) || 0)} panelVerified:${Boolean(providerPhaseGuardState?.panelVerified)} providerAutomationEnabled:${Boolean(providerPhaseGuardState?.providerAutomationEnabled)}`,
       `providerPhaseLastError: phase:${String(providerPhaseLastError?.phase || 'none').slice(0, 60)} message:${String(providerPhaseLastError?.message || 'none').slice(0, 120)}`,
+      `providerAutomationGuardReason: ${String(summary.providerAutomationGuardReason || 'none').slice(0, 120)}`,
       `providerDiagnosticsExported: ${getProviderDiagnosticsExported(summary)}`,
       formatProviderPressedDiagnostic(
         'legitimateInterestPressed',
@@ -3328,6 +3411,10 @@ function formatFundingChoicesControls(summary) {
         summary.consentPressed
       ),
       formatProviderCountBreakdown(summary.providerCountBreakdown),
+      formatProviderCountSources(summary.providerCountSources),
+      formatProviderFirstThreeActiveEvaluations(
+        summary.providerFirstThreeActiveEvaluations
+      ),
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,

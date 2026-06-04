@@ -101,6 +101,9 @@ let lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_rea
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderPhaseLastError = null
+let lastFundingChoicesProviderCountSources = null
+let lastFundingChoicesProviderFirstThreeActiveEvaluations = []
+let lastFundingChoicesProviderAutomationGuardReason = ''
 let lastFundingChoicesProviderPreferenceTextMatch = ''
 let lastFundingChoicesProviderPreferenceClickableTargetTag = ''
 let lastFundingChoicesProviderPreferenceClickMethod = ''
@@ -4155,6 +4158,16 @@ function recordCurrentSiteDiagnostic({
                       String(fundingChoicesControlDiagnostics.providerPhaseLastError.message || '').slice(0, 160),
                   }
                 : null,
+            providerCountSources:
+              sanitizeFundingChoicesProviderCountSources(
+                fundingChoicesControlDiagnostics.providerCountSources
+              ),
+            providerFirstThreeActiveEvaluations:
+              sanitizeFundingChoicesProviderActiveEvaluations(
+                fundingChoicesControlDiagnostics.providerFirstThreeActiveEvaluations
+              ),
+            providerAutomationGuardReason:
+              String(fundingChoicesControlDiagnostics.providerAutomationGuardReason || '').slice(0, 120),
             legitimateInterestPressed:
               sanitizeFundingChoicesProviderPressedDiagnostic(
                 fundingChoicesControlDiagnostics.legitimateInterestPressed
@@ -11586,6 +11599,10 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
   lastFundingChoicesProviderPhaseGuardState = safeGuardState
   lastFundingChoicesProviderPhaseBlockedReason =
     getFundingChoicesProviderPhaseBlockedReason(safeGuardState)
+  lastFundingChoicesProviderAutomationGuardReason =
+    safeGuardState.providerAutomationEnabled
+      ? 'automation_enabled'
+      : 'not_applied_to_provider_phase_guard'
 }
 
 function getFundingChoicesProviderPhaseDiagnosticFields() {
@@ -11606,6 +11623,12 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderPhaseGuardState,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
+    providerCountSources:
+      lastFundingChoicesProviderCountSources,
+    providerFirstThreeActiveEvaluations:
+      lastFundingChoicesProviderFirstThreeActiveEvaluations,
+    providerAutomationGuardReason:
+      lastFundingChoicesProviderAutomationGuardReason,
   }
 }
 
@@ -12621,6 +12644,156 @@ function getDocumentFundingChoicesProviderToggleInputs(startedAt) {
   return inputs
 }
 
+function getFundingChoicesProviderActiveEvaluationReason(input, countedAsActive) {
+  if (!input) return 'missing_input'
+  if (!input.matches?.('input.gvl-vendor')) return 'not_input_gvl_vendor'
+
+  const state =
+    getFundingChoicesProviderAriaPressedToggleState(input)
+
+  if (state === 'enabled') {
+    return countedAsActive
+      ? 'aria_pressed_true'
+      : 'aria_pressed_true_not_counted'
+  }
+
+  if (state === 'disabled') return 'aria_pressed_false'
+
+  return 'aria_pressed_unknown'
+}
+
+function getFundingChoicesProviderActiveEvaluation(input, selectedInputs) {
+  const selectorMatched =
+    Boolean(
+      input &&
+        (
+          input.matches?.(FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS) ||
+          input.matches?.(FUNDING_CHOICES_DOCUMENT_PROVIDER_INPUT_SELECTORS)
+        )
+    )
+  const inSelectedCountSet =
+    Boolean(input && selectedInputs.includes(input))
+  const countedAsActive =
+    Boolean(
+      inSelectedCountSet &&
+        isFundingChoicesProviderAriaPressedToggleActive(input)
+    )
+
+  return {
+    key:
+      `vendor${String(input?.getAttribute?.('data-id') || 'unknown').slice(0, 40)}`,
+    dataId:
+      String(input?.getAttribute?.('data-id') || '').slice(0, 80),
+    selectorMatched,
+    inSelectedCountSet,
+    checked:
+      Boolean(input?.checked),
+    ariaPressed:
+      String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
+    countedAsActive,
+    reason:
+      getFundingChoicesProviderActiveEvaluationReason(input, countedAsActive),
+    class:
+      getFundingChoicesProviderDiagnosticClass(input),
+  }
+}
+
+function getFundingChoicesProviderCountComputationDiagnostics(root) {
+  const startedAt =
+    Date.now()
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  const panelVerified =
+    Boolean(
+      providerPanel &&
+        isFundingChoicesProviderPreferencesVisuallyVerified(providerPanel)
+    )
+  const boundedInputs =
+    panelVerified
+      ? getBoundedFundingChoicesProviderToggleInputs(providerPanel, startedAt)
+      : []
+  const visibleInputs =
+    panelVerified
+      ? boundedInputs.filter((input) =>
+          isFundingChoicesProviderToggleVisible(input, providerPanel)
+        )
+      : []
+  const documentInputs =
+    getDocumentFundingChoicesProviderToggleInputs(startedAt)
+  const selectedInputs =
+    panelVerified
+      ? (
+          visibleInputs.length > 0
+            ? visibleInputs
+            : documentInputs
+        )
+      : []
+  const selectedSource =
+    !panelVerified
+      ? 'provider_panel_not_verified'
+      : visibleInputs.length > 0
+        ? 'provider_panel_visible_inputs'
+        : 'document_provider_inputs_fallback'
+  const activeInputs =
+    selectedInputs.filter(isFundingChoicesProviderAriaPressedToggleActive)
+  const evaluationInputs =
+    uniqueElements([
+      ...selectedInputs,
+      ...documentInputs,
+    ]).slice(0, 3)
+  const selectorUsed =
+    selectedSource === 'document_provider_inputs_fallback'
+      ? FUNDING_CHOICES_DOCUMENT_PROVIDER_INPUT_SELECTORS
+      : FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS
+  const activeConditionUsed =
+    'input.matches("input.gvl-vendor") && aria-pressed === "true"'
+  const guardActiveProviderCount =
+    Number(lastFundingChoicesProviderPhaseGuardState?.activeProviderCount)
+  const countSource = {
+    selectorUsed,
+    selectedSource,
+    activeConditionUsed,
+    selectedInputCount:
+      selectedInputs.length,
+    activeCountResult:
+      activeInputs.length,
+    storedResult:
+      lastFundingChoicesActiveProviderToggleCount,
+  }
+
+  return {
+    providerCountSources: {
+      activeProviderCount: {
+        ...countSource,
+        metricPath:
+          'providerPhaseGuardState.activeProviderCount <- lastFundingChoicesActiveProviderToggleCount',
+        countResult:
+          Number.isFinite(guardActiveProviderCount)
+            ? Math.max(0, guardActiveProviderCount)
+            : Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
+      },
+      providerActiveFoundCount: {
+        ...countSource,
+        metricPath:
+          'lastFundingChoicesProviderActiveFoundCount <- activeInputs.length',
+        countResult:
+          lastFundingChoicesProviderActiveFoundCount,
+      },
+      activeProviderToggleCount: {
+        ...countSource,
+        metricPath:
+          'lastFundingChoicesActiveProviderToggleCount <- activeInputs.length',
+        countResult:
+          lastFundingChoicesActiveProviderToggleCount,
+      },
+    },
+    providerFirstThreeActiveEvaluations:
+      evaluationInputs.map((input) =>
+        getFundingChoicesProviderActiveEvaluation(input, selectedInputs)
+      ),
+  }
+}
+
 function isFundingChoicesProviderToggleVisible(input, root) {
   if (!input || !root?.contains?.(input)) return false
 
@@ -12706,13 +12879,13 @@ function getFundingChoicesProviderDiagnosticId(element) {
     .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
 }
 
-function isFundingChoicesProviderLegitimateInterestInput(input) {
+function isFundingChoicesProviderLegitimateInterestClassInput(input) {
   return getFundingChoicesProviderDiagnosticClass(input)
     .toLowerCase()
     .includes('fc-preference-legitimate-interest')
 }
 
-function isFundingChoicesProviderConsentInput(input) {
+function isFundingChoicesProviderConsentClassInput(input) {
   return getFundingChoicesProviderDiagnosticClass(input)
     .toLowerCase()
     .includes('fc-preference-consent')
@@ -15074,29 +15247,29 @@ function getFundingChoicesProviderConsentBreakdownDiagnostic(root) {
   const legitimateInterestInput =
     providerInputs.find((input) =>
       matchesFirstActiveProvider(input) &&
-      isFundingChoicesProviderLegitimateInterestInput(input)
+      isFundingChoicesProviderLegitimateInterestClassInput(input)
     ) ||
     (
       firstActiveInput &&
-      isFundingChoicesProviderLegitimateInterestInput(firstActiveInput)
+      isFundingChoicesProviderLegitimateInterestClassInput(firstActiveInput)
         ? firstActiveInput
         : null
     )
   const consentInput =
     providerInputs.find((input) =>
       matchesFirstActiveProvider(input) &&
-      isFundingChoicesProviderConsentInput(input)
+      isFundingChoicesProviderConsentClassInput(input)
     ) ||
     (
       firstActiveInput &&
-      isFundingChoicesProviderConsentInput(firstActiveInput)
+      isFundingChoicesProviderConsentClassInput(firstActiveInput)
         ? firstActiveInput
         : null
     )
   const activeLegitimateInterestCount =
-    activeInputs.filter(isFundingChoicesProviderLegitimateInterestInput).length
+    activeInputs.filter(isFundingChoicesProviderLegitimateInterestClassInput).length
   const activeConsentCount =
-    activeInputs.filter(isFundingChoicesProviderConsentInput).length
+    activeInputs.filter(isFundingChoicesProviderConsentClassInput).length
   const activeOtherProviderCount =
     activeInputs.length -
       activeLegitimateInterestCount -
@@ -15970,6 +16143,78 @@ function sanitizeFundingChoicesProviderCountBreakdown(summary) {
     firstActiveProviderDataId:
       String(summary.firstActiveProviderDataId || '').slice(0, 80),
   }
+}
+
+function sanitizeFundingChoicesProviderCountSource(source) {
+  if (!source || typeof source !== 'object') return null
+
+  return {
+    selectorUsed:
+      String(source.selectorUsed || '').slice(0, 400),
+    selectedSource:
+      String(source.selectedSource || '').slice(0, 80),
+    activeConditionUsed:
+      String(source.activeConditionUsed || '').slice(0, 160),
+    selectedInputCount:
+      Math.max(0, Number(source.selectedInputCount) || 0),
+    activeCountResult:
+      Math.max(0, Number(source.activeCountResult) || 0),
+    storedResult:
+      Math.max(0, Number(source.storedResult) || 0),
+    countResult:
+      Math.max(0, Number(source.countResult) || 0),
+    metricPath:
+      String(source.metricPath || '').slice(0, 160),
+  }
+}
+
+function sanitizeFundingChoicesProviderCountSources(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    activeProviderCount:
+      sanitizeFundingChoicesProviderCountSource(summary.activeProviderCount),
+    providerActiveFoundCount:
+      sanitizeFundingChoicesProviderCountSource(summary.providerActiveFoundCount),
+    activeProviderToggleCount:
+      sanitizeFundingChoicesProviderCountSource(summary.activeProviderToggleCount),
+  }
+}
+
+function sanitizeFundingChoicesProviderActiveEvaluation(evaluation) {
+  if (!evaluation || typeof evaluation !== 'object') return null
+
+  return {
+    key:
+      String(evaluation.key || '').slice(0, 80),
+    dataId:
+      String(evaluation.dataId || '').slice(0, 80),
+    selectorMatched:
+      Boolean(evaluation.selectorMatched),
+    inSelectedCountSet:
+      Boolean(evaluation.inSelectedCountSet),
+    checked:
+      Boolean(evaluation.checked),
+    ariaPressed:
+      String(evaluation.ariaPressed || '').slice(0, 40),
+    countedAsActive:
+      Boolean(evaluation.countedAsActive),
+    reason:
+      String(evaluation.reason || '').slice(0, 120),
+    class:
+      String(evaluation.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+  }
+}
+
+function sanitizeFundingChoicesProviderActiveEvaluations(evaluations) {
+  return (Array.isArray(evaluations) ? evaluations : [])
+    .filter((evaluation) =>
+      evaluation && typeof evaluation === 'object'
+    )
+    .slice(0, 3)
+    .map(sanitizeFundingChoicesProviderActiveEvaluation)
+    .filter(Boolean)
 }
 
 function sanitizeFundingChoicesProviderFirstActiveRowAttrs(attrs) {
@@ -17356,6 +17601,12 @@ function collectFundingChoicesControlDiagnostics(root) {
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
+  const providerCountComputationDiagnostic =
+    getFundingChoicesProviderCountComputationDiagnostics(root)
+  lastFundingChoicesProviderCountSources =
+    providerCountComputationDiagnostic.providerCountSources
+  lastFundingChoicesProviderFirstThreeActiveEvaluations =
+    providerCountComputationDiagnostic.providerFirstThreeActiveEvaluations
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
@@ -17396,6 +17647,12 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseGuardState,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
+    providerCountSources:
+      lastFundingChoicesProviderCountSources,
+    providerFirstThreeActiveEvaluations:
+      lastFundingChoicesProviderFirstThreeActiveEvaluations,
+    providerAutomationGuardReason:
+      lastFundingChoicesProviderAutomationGuardReason,
     legitimateInterestPressed:
       providerConsentBreakdownDiagnostic.legitimateInterestPressed,
     consentPressed:
@@ -17549,6 +17806,12 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
+  const providerCountComputationDiagnostic =
+    getFundingChoicesProviderCountComputationDiagnostics(root)
+  lastFundingChoicesProviderCountSources =
+    providerCountComputationDiagnostic.providerCountSources
+  lastFundingChoicesProviderFirstThreeActiveEvaluations =
+    providerCountComputationDiagnostic.providerFirstThreeActiveEvaluations
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
@@ -17589,6 +17852,12 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseGuardState,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
+    providerCountSources:
+      lastFundingChoicesProviderCountSources,
+    providerFirstThreeActiveEvaluations:
+      lastFundingChoicesProviderFirstThreeActiveEvaluations,
+    providerAutomationGuardReason:
+      lastFundingChoicesProviderAutomationGuardReason,
     legitimateInterestPressed:
       providerConsentBreakdownDiagnostic.legitimateInterestPressed,
     consentPressed:
@@ -19349,6 +19618,9 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderPhaseLastError = null
+    lastFundingChoicesProviderCountSources = null
+    lastFundingChoicesProviderFirstThreeActiveEvaluations = []
+    lastFundingChoicesProviderAutomationGuardReason = ''
     lastFundingChoicesProviderPreferenceTextMatch = ''
     lastFundingChoicesProviderPreferenceClickableTargetTag = ''
     lastFundingChoicesProviderPreferenceClickMethod = ''
