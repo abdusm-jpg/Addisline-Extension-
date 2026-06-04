@@ -3019,6 +3019,8 @@ function formatProviderDiagnosticsExportSummary(summary) {
     `providerPhaseBlockedReason:${String(summary?.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
     `providerLabelCoordinateInvocationState:${String(summary?.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
     `providerAutomationGuardReason:${String(summary?.providerAutomationGuardReason || 'none').slice(0, 120)}`,
+    `providerPhaseGuardComputedCount:${Math.max(0, Number(summary?.providerPhaseGuardComputedCount ?? guardState?.providerPhaseGuardComputedCount) || 0)}`,
+    `providerPhaseGuardUsedCurrentScan:${Boolean(summary?.providerPhaseGuardUsedCurrentScan ?? guardState?.providerPhaseGuardUsedCurrentScan)}`,
     `providerPhaseGuardState:attempted:${Boolean(guardState?.attempted)} running:${Boolean(guardState?.running)} preferencesOpen:${Boolean(guardState?.preferencesOpen)} activeProviderCount:${Math.max(0, Number(guardState?.activeProviderCount) || 0)} panelVerified:${Boolean(guardState?.panelVerified)} providerAutomationEnabled:${Boolean(guardState?.providerAutomationEnabled)}`,
   ].join(', ')
 }
@@ -3521,6 +3523,8 @@ function formatFundingChoicesControls(summary) {
       `providerLabelCoordinateAfterActiveCount: ${Math.max(0, Number(summary.providerLabelCoordinateAfterActiveCount) || 0)}`,
       `providerLabelCoordinateInvocationState: ${String(summary.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
       `providerPhaseBlockedReason: ${String(summary.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
+      `providerPhaseGuardComputedCount: ${Math.max(0, Number(summary.providerPhaseGuardComputedCount ?? providerPhaseGuardState?.providerPhaseGuardComputedCount) || 0)}`,
+      `providerPhaseGuardUsedCurrentScan: ${Boolean(summary.providerPhaseGuardUsedCurrentScan ?? providerPhaseGuardState?.providerPhaseGuardUsedCurrentScan)}`,
       `providerPhaseGuardState: attempted:${Boolean(providerPhaseGuardState?.attempted)} running:${Boolean(providerPhaseGuardState?.running)} preferencesOpen:${Boolean(providerPhaseGuardState?.preferencesOpen)} activeProviderCount:${Math.max(0, Number(providerPhaseGuardState?.activeProviderCount) || 0)} panelVerified:${Boolean(providerPhaseGuardState?.panelVerified)} providerAutomationEnabled:${Boolean(providerPhaseGuardState?.providerAutomationEnabled)}`,
       `providerPhaseLastError: phase:${String(providerPhaseLastError?.phase || 'none').slice(0, 60)} message:${String(providerPhaseLastError?.message || 'none').slice(0, 120)}`,
       `providerAutomationGuardReason: ${String(summary.providerAutomationGuardReason || 'none').slice(0, 120)}`,

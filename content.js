@@ -104,6 +104,8 @@ let lastFundingChoicesProviderPhaseLastError = null
 let lastFundingChoicesProviderCountSources = null
 let lastFundingChoicesProviderFirstThreeActiveEvaluations = []
 let lastFundingChoicesProviderAutomationGuardReason = ''
+let lastFundingChoicesProviderPhaseGuardComputedCount = 0
+let lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false
 let fundingChoicesProviderCountLifecycleOrder = 0
 let lastFundingChoicesProviderCountLifecycle = {
   lastWrittenValue: 0,
@@ -4163,12 +4165,20 @@ function recordCurrentSiteDiagnostic({
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.preferencesOpen),
                     activeProviderCount:
                       Math.max(0, Number(fundingChoicesControlDiagnostics.providerPhaseGuardState.activeProviderCount) || 0),
+                    providerPhaseGuardComputedCount:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerPhaseGuardComputedCount) || 0),
+                    providerPhaseGuardUsedCurrentScan:
+                      Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerPhaseGuardUsedCurrentScan),
                     panelVerified:
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.panelVerified),
                     providerAutomationEnabled:
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerAutomationEnabled),
                   }
                 : null,
+            providerPhaseGuardComputedCount:
+              Math.max(0, Number(fundingChoicesControlDiagnostics.providerPhaseGuardComputedCount) || 0),
+            providerPhaseGuardUsedCurrentScan:
+              Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardUsedCurrentScan),
             providerPhaseLastError:
               fundingChoicesControlDiagnostics.providerPhaseLastError &&
               typeof fundingChoicesControlDiagnostics.providerPhaseLastError === 'object'
@@ -11698,6 +11708,25 @@ function collectFundingChoicesProviderActiveInputsCurrentScan() {
   }
 }
 
+function getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel) {
+  if (!providerPanel) {
+    return {
+      count: 0,
+      usedCurrentScan: false,
+    }
+  }
+
+  const inputs =
+    safeQuerySelectorAll(providerPanel, 'input.gvl-vendor[aria-pressed="true"]')
+
+  return {
+    count:
+      inputs.length,
+    usedCurrentScan:
+      true,
+  }
+}
+
 function recordFundingChoicesProviderGuardCountRead(value, source) {
   const readAtMs =
     Date.now()
@@ -11773,6 +11802,10 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
       Boolean(guardState?.preferencesOpen),
     activeProviderCount:
       Math.max(0, Number(guardState?.activeProviderCount) || 0),
+    providerPhaseGuardComputedCount:
+      Math.max(0, Number(guardState?.providerPhaseGuardComputedCount) || 0),
+    providerPhaseGuardUsedCurrentScan:
+      Boolean(guardState?.providerPhaseGuardUsedCurrentScan),
     panelVerified:
       Boolean(guardState?.panelVerified),
     providerAutomationEnabled:
@@ -11784,6 +11817,10 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
     'setFundingChoicesProviderPhaseGuardDiagnostics'
   )
   lastFundingChoicesProviderPhaseGuardState = safeGuardState
+  lastFundingChoicesProviderPhaseGuardComputedCount =
+    safeGuardState.providerPhaseGuardComputedCount
+  lastFundingChoicesProviderPhaseGuardUsedCurrentScan =
+    safeGuardState.providerPhaseGuardUsedCurrentScan
   lastFundingChoicesProviderPhaseBlockedReason =
     getFundingChoicesProviderPhaseBlockedReason(safeGuardState)
   lastFundingChoicesProviderAutomationGuardReason =
@@ -11808,6 +11845,10 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
       lastFundingChoicesProviderPhaseGuardState,
+    providerPhaseGuardComputedCount:
+      lastFundingChoicesProviderPhaseGuardComputedCount,
+    providerPhaseGuardUsedCurrentScan:
+      lastFundingChoicesProviderPhaseGuardUsedCurrentScan,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
     providerCountSources:
@@ -17067,11 +17108,15 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
 function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
   const guardPanel =
     getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+  const guardCount =
+    getFundingChoicesProviderPhaseGuardCurrentCount(guardPanel)
   setFundingChoicesProviderPhaseGuardDiagnostics({
     attempted: fundingChoicesProviderPhase1Attempted,
     running: fundingChoicesProviderPhase1Running,
     preferencesOpen: lastFundingChoicesProviderPreferenceOpened,
-    activeProviderCount: lastFundingChoicesActiveProviderToggleCount,
+    activeProviderCount: guardCount.count,
+    providerPhaseGuardComputedCount: guardCount.count,
+    providerPhaseGuardUsedCurrentScan: guardCount.usedCurrentScan,
     panelVerified: Boolean(guardPanel),
     providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
   })
@@ -17948,6 +17993,10 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
       lastFundingChoicesProviderPhaseGuardState,
+    providerPhaseGuardComputedCount:
+      lastFundingChoicesProviderPhaseGuardComputedCount,
+    providerPhaseGuardUsedCurrentScan:
+      lastFundingChoicesProviderPhaseGuardUsedCurrentScan,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
     providerCountSources:
@@ -18159,6 +18208,10 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
       lastFundingChoicesProviderPhaseGuardState,
+    providerPhaseGuardComputedCount:
+      lastFundingChoicesProviderPhaseGuardComputedCount,
+    providerPhaseGuardUsedCurrentScan:
+      lastFundingChoicesProviderPhaseGuardUsedCurrentScan,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
     providerCountSources:
@@ -18910,11 +18963,15 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
 
   markFundingChoicesProviderPreferencesVisibleEntryLifecycle()
   lastFundingChoicesProviderPreferenceOpened = opened
+  const guardCount =
+    getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel)
   setFundingChoicesProviderPhaseGuardDiagnostics({
     attempted: fundingChoicesProviderPhase1Attempted,
     running: fundingChoicesProviderPhase1Running,
     preferencesOpen: opened,
-    activeProviderCount: lastFundingChoicesActiveProviderToggleCount,
+    activeProviderCount: guardCount.count,
+    providerPhaseGuardComputedCount: guardCount.count,
+    providerPhaseGuardUsedCurrentScan: guardCount.usedCurrentScan,
     panelVerified: opened,
     providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
   })
@@ -19941,6 +19998,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderCountSources = null
     lastFundingChoicesProviderFirstThreeActiveEvaluations = []
     lastFundingChoicesProviderAutomationGuardReason = ''
+    lastFundingChoicesProviderPhaseGuardComputedCount = 0
+    lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false
     lastFundingChoicesProviderCountLifecycle = {
       ...lastFundingChoicesProviderCountLifecycle,
       guardReadValue: 0,
