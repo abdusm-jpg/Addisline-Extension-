@@ -149,6 +149,10 @@ let lastFundingChoicesProviderReopenOriginalManageVendorsConnectedAfterBack = fa
 let lastFundingChoicesProviderStateOwnershipDiagnostic = null
 let fundingChoicesProviderStateOwnershipProbeSignature = ''
 let fundingChoicesProviderStateOwnershipProbeRunning = false
+let lastFundingChoicesProviderManualToggleDiagnostic = null
+let fundingChoicesProviderManualToggleSignature = ''
+let fundingChoicesProviderManualToggleObserver = null
+let fundingChoicesProviderManualToggleCaptureTimer = null
 let lastFundingChoicesProviderStorageDiagnostic = null
 let fundingChoicesProviderStorageProbeSignature = ''
 let fundingChoicesProviderStorageProbeRunning = false
@@ -279,6 +283,8 @@ const MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR = 160
 const MAX_FUNDING_CHOICES_PROVIDER_OWNER_KEYS = 30
 const MAX_FUNDING_CHOICES_PROVIDER_STORAGE_KEYS = 60
 const MAX_FUNDING_CHOICES_PROVIDER_STORAGE_WRITES = 8
+const MAX_FUNDING_CHOICES_PROVIDER_MANUAL_MUTATIONS = 20
+const MAX_FUNDING_CHOICES_PROVIDER_MANUAL_NODES = 6
 const MAX_FUNDING_CHOICES_GLOBAL_OBJECT_KEYS = 20
 const MAX_FUNDING_CHOICES_GLOBAL_OBJECTS = 20
 const MAX_FUNDING_CHOICES_MESSAGE_LISTENER_HINTS = 8
@@ -12550,6 +12556,97 @@ function getFundingChoicesProviderInputStateSnapshot(input) {
   }
 }
 
+function getFundingChoicesProviderClassList(element) {
+  return Array.from(element?.classList || [])
+    .map((className) => String(className || '').slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 20)
+}
+
+function getFundingChoicesProviderManualToggleSnapshot(input, row) {
+  if (!input) return null
+
+  return {
+    checked:
+      Boolean(input.checked),
+    ariaPressed:
+      String(input.getAttribute?.('aria-pressed') || '').slice(0, 40),
+    ariaChecked:
+      String(input.getAttribute?.('aria-checked') || '').slice(0, 40),
+    classList:
+      getFundingChoicesProviderClassList(input),
+    parentRowClassList:
+      getFundingChoicesProviderClassList(row),
+    activeDetected:
+      getFundingChoicesProviderAriaPressedToggleState(input) === 'enabled',
+  }
+}
+
+function getFundingChoicesProviderManualMutationTargetSummary(element) {
+  if (!element) return null
+
+  return {
+    tagName:
+      String(element.tagName || '').slice(0, 40),
+    id:
+      String(element.id || element.getAttribute?.('id') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    class:
+      getFundingChoicesProviderDiagnosticClass(element),
+    ariaPressed:
+      String(element.getAttribute?.('aria-pressed') || '').slice(0, 40),
+    ariaChecked:
+      String(element.getAttribute?.('aria-checked') || '').slice(0, 40),
+  }
+}
+
+function getFundingChoicesProviderManualMutationNodeSummary(node) {
+  if (!node) return null
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return {
+      nodeType:
+        Number(node.nodeType) || 0,
+      text:
+        String(node.textContent || '').trim().slice(0, 80),
+    }
+  }
+
+  return getFundingChoicesProviderManualMutationTargetSummary(node)
+}
+
+function summarizeFundingChoicesProviderManualMutation(record) {
+  if (!record) return null
+
+  const target =
+    record.target
+
+  return {
+    type:
+      String(record.type || '').slice(0, 40),
+    target:
+      getFundingChoicesProviderManualMutationTargetSummary(target),
+    attributeName:
+      String(record.attributeName || '').slice(0, 80),
+    oldValue:
+      String(record.oldValue ?? '').slice(0, 160),
+    newValue:
+      record.type === 'attributes' && record.attributeName
+        ? String(target?.getAttribute?.(record.attributeName) ?? '').slice(0, 160)
+        : '',
+    addedNodes:
+      Array.from(record.addedNodes || [])
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_MANUAL_NODES)
+        .map(getFundingChoicesProviderManualMutationNodeSummary)
+        .filter(Boolean),
+    removedNodes:
+      Array.from(record.removedNodes || [])
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_MANUAL_NODES)
+        .map(getFundingChoicesProviderManualMutationNodeSummary)
+        .filter(Boolean),
+  }
+}
+
 function getFundingChoicesProviderElementVisualSnapshot(element) {
   if (!element) return null
 
@@ -12911,6 +13008,182 @@ function storeFundingChoicesProviderStateOwnershipDiagnostic(diagnostic) {
       },
     })
   })
+}
+
+function stopFundingChoicesProviderManualToggleObserver() {
+  if (fundingChoicesProviderManualToggleCaptureTimer) {
+    clearTimeout(fundingChoicesProviderManualToggleCaptureTimer)
+    fundingChoicesProviderManualToggleCaptureTimer = null
+  }
+
+  if (fundingChoicesProviderManualToggleObserver) {
+    try {
+      fundingChoicesProviderManualToggleObserver.disconnect()
+    } catch {
+      // Ignore observer cleanup failures.
+    }
+    fundingChoicesProviderManualToggleObserver = null
+  }
+}
+
+function storeFundingChoicesProviderManualToggleDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== 'object') return
+
+  lastFundingChoicesProviderManualToggleDiagnostic = diagnostic
+
+  if (
+    lastFundingChoicesControlDiagnostics &&
+    typeof lastFundingChoicesControlDiagnostics === 'object'
+  ) {
+    lastFundingChoicesControlDiagnostics.providerManualToggleInspection =
+      diagnostic
+  }
+
+  if (!hasExtensionContext()) return
+
+  safeStorageGet({
+    [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
+  }, (data) => {
+    const current =
+      data?.[CURRENT_SITE_DIAGNOSTIC_KEY]
+
+    if (!current || typeof current !== 'object') {
+      return
+    }
+
+    const fundingChoicesControlDiagnostics =
+      current.fundingChoicesControlDiagnostics &&
+      typeof current.fundingChoicesControlDiagnostics === 'object'
+        ? current.fundingChoicesControlDiagnostics
+        : {}
+
+    safeStorageSet({
+      [CURRENT_SITE_DIAGNOSTIC_KEY]: {
+        ...current,
+        fundingChoicesControlDiagnostics: {
+          ...fundingChoicesControlDiagnostics,
+          providerManualToggleInspection:
+            sanitizeFundingChoicesProviderManualToggleDiagnostic(diagnostic),
+        },
+        lastUpdatedAt: new Date().toISOString(),
+      },
+    })
+  })
+}
+
+function scheduleFundingChoicesProviderManualToggleInspection(input, row, root) {
+  if (!input || !row || !input.isConnected || !row.isConnected) {
+    return
+  }
+
+  const signature =
+    getFundingChoicesProviderStateOwnershipSignature(input, root)
+
+  if (
+    signature &&
+    fundingChoicesProviderManualToggleSignature === signature &&
+    (
+      lastFundingChoicesProviderManualToggleDiagnostic?.running ||
+      lastFundingChoicesProviderManualToggleDiagnostic?.completed
+    )
+  ) {
+    return
+  }
+
+  stopFundingChoicesProviderManualToggleObserver()
+
+  fundingChoicesProviderManualToggleSignature = signature
+
+  const diagnostic = {
+    signature,
+    mode: 'manual_observation_only',
+    running: true,
+    completed: false,
+    before:
+      getFundingChoicesProviderManualToggleSnapshot(input, row),
+    after:
+      null,
+    mutationCount: 0,
+    attributeChangeCount: 0,
+    childListChangeCount: 0,
+    mutations: [],
+    rowConnectedBefore:
+      Boolean(row.isConnected),
+    inputConnectedBefore:
+      Boolean(input.isConnected),
+    rowConnectedAfter:
+      false,
+    inputConnectedAfter:
+      false,
+    capturedAt:
+      '',
+    error:
+      '',
+  }
+
+  storeFundingChoicesProviderManualToggleDiagnostic(diagnostic)
+
+  try {
+    fundingChoicesProviderManualToggleObserver =
+      new MutationObserver((records) => {
+        if (diagnostic.completed) return
+
+        diagnostic.mutations.push(
+          ...records
+            .map(summarizeFundingChoicesProviderManualMutation)
+            .filter(Boolean)
+        )
+        diagnostic.mutations =
+          diagnostic.mutations.slice(0, MAX_FUNDING_CHOICES_PROVIDER_MANUAL_MUTATIONS)
+        diagnostic.mutationCount += records.length
+        diagnostic.attributeChangeCount += records.filter((record) =>
+          record.type === 'attributes'
+        ).length
+        diagnostic.childListChangeCount += records.filter((record) =>
+          record.type === 'childList'
+        ).length
+
+        if (fundingChoicesProviderManualToggleCaptureTimer) {
+          clearTimeout(fundingChoicesProviderManualToggleCaptureTimer)
+        }
+
+        fundingChoicesProviderManualToggleCaptureTimer = setTimeout(() => {
+          try {
+            diagnostic.after =
+              getFundingChoicesProviderManualToggleSnapshot(input, row)
+            diagnostic.rowConnectedAfter =
+              Boolean(row.isConnected)
+            diagnostic.inputConnectedAfter =
+              Boolean(input.isConnected)
+            diagnostic.running = false
+            diagnostic.completed = true
+            diagnostic.capturedAt =
+              new Date().toISOString()
+          } catch (error) {
+            diagnostic.error =
+              String(error?.message || error || '').slice(0, 120)
+          } finally {
+            stopFundingChoicesProviderManualToggleObserver()
+            storeFundingChoicesProviderManualToggleDiagnostic(diagnostic)
+          }
+        }, 0)
+
+        storeFundingChoicesProviderManualToggleDiagnostic(diagnostic)
+      })
+
+    fundingChoicesProviderManualToggleObserver.observe(row, {
+      attributes: true,
+      attributeOldValue: true,
+      childList: true,
+      subtree: true,
+    })
+  } catch (error) {
+    diagnostic.running = false
+    diagnostic.completed = true
+    diagnostic.error =
+      String(error?.message || error || '').slice(0, 120)
+    storeFundingChoicesProviderManualToggleDiagnostic(diagnostic)
+  }
 }
 
 function getFundingChoicesProviderOwnPropertyNames(element) {
@@ -14366,14 +14639,19 @@ function getFundingChoicesProviderFirstActiveToggleDiagnostic(root) {
       }),
     providerStateOwnership:
       lastFundingChoicesProviderStateOwnershipDiagnostic,
+    providerManualToggleInspection:
+      lastFundingChoicesProviderManualToggleDiagnostic,
     providerStorageWrites:
       lastFundingChoicesProviderStorageDiagnostic,
   }
 
   scheduleFundingChoicesProviderStateOwnershipProbe(input, providerPanel)
+  scheduleFundingChoicesProviderManualToggleInspection(input, row, providerPanel)
   scheduleFundingChoicesProviderStorageObservation(input, providerPanel)
   diagnostic.providerStateOwnership =
     lastFundingChoicesProviderStateOwnershipDiagnostic
+  diagnostic.providerManualToggleInspection =
+    lastFundingChoicesProviderManualToggleDiagnostic
   diagnostic.providerStorageWrites =
     lastFundingChoicesProviderStorageDiagnostic
 
@@ -14588,6 +14866,124 @@ function sanitizeFundingChoicesProviderAttributeMutationProbe(probe) {
       String(probe.error || '').slice(0, 120),
     restoreError:
       String(probe.restoreError || '').slice(0, 120),
+  }
+}
+
+function sanitizeFundingChoicesProviderManualToggleSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+
+  return {
+    checked:
+      Boolean(snapshot.checked),
+    ariaPressed:
+      String(snapshot.ariaPressed || '').slice(0, 40),
+    ariaChecked:
+      String(snapshot.ariaChecked || '').slice(0, 40),
+    classList:
+      (Array.isArray(snapshot.classList) ? snapshot.classList : [])
+        .map((className) => String(className || '').slice(0, 80))
+        .filter(Boolean)
+        .slice(0, 20),
+    parentRowClassList:
+      (Array.isArray(snapshot.parentRowClassList)
+        ? snapshot.parentRowClassList
+        : [])
+        .map((className) => String(className || '').slice(0, 80))
+        .filter(Boolean)
+        .slice(0, 20),
+    activeDetected:
+      Boolean(snapshot.activeDetected),
+  }
+}
+
+function sanitizeFundingChoicesProviderManualMutationNode(node) {
+  if (!node || typeof node !== 'object') return null
+
+  return {
+    nodeType:
+      Math.max(0, Number(node.nodeType) || 0),
+    tagName:
+      String(node.tagName || '').slice(0, 40),
+    id:
+      String(node.id || '').slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    class:
+      String(node.class || '').slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    ariaPressed:
+      String(node.ariaPressed || '').slice(0, 40),
+    ariaChecked:
+      String(node.ariaChecked || '').slice(0, 40),
+    text:
+      String(node.text || '').slice(0, 80),
+  }
+}
+
+function sanitizeFundingChoicesProviderManualMutation(mutation) {
+  if (!mutation || typeof mutation !== 'object') return null
+
+  return {
+    type:
+      String(mutation.type || '').slice(0, 40),
+    target:
+      sanitizeFundingChoicesProviderManualMutationNode(mutation.target),
+    attributeName:
+      String(mutation.attributeName || '').slice(0, 80),
+    oldValue:
+      String(mutation.oldValue || '').slice(0, 160),
+    newValue:
+      String(mutation.newValue || '').slice(0, 160),
+    addedNodes:
+      (Array.isArray(mutation.addedNodes) ? mutation.addedNodes : [])
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_MANUAL_NODES)
+        .map(sanitizeFundingChoicesProviderManualMutationNode)
+        .filter(Boolean),
+    removedNodes:
+      (Array.isArray(mutation.removedNodes) ? mutation.removedNodes : [])
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_MANUAL_NODES)
+        .map(sanitizeFundingChoicesProviderManualMutationNode)
+        .filter(Boolean),
+  }
+}
+
+function sanitizeFundingChoicesProviderManualToggleDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== 'object') return null
+
+  return {
+    signature:
+      String(diagnostic.signature || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    mode:
+      String(diagnostic.mode || '').slice(0, 60),
+    running:
+      Boolean(diagnostic.running),
+    completed:
+      Boolean(diagnostic.completed),
+    before:
+      sanitizeFundingChoicesProviderManualToggleSnapshot(diagnostic.before),
+    after:
+      sanitizeFundingChoicesProviderManualToggleSnapshot(diagnostic.after),
+    mutationCount:
+      Math.max(0, Number(diagnostic.mutationCount) || 0),
+    attributeChangeCount:
+      Math.max(0, Number(diagnostic.attributeChangeCount) || 0),
+    childListChangeCount:
+      Math.max(0, Number(diagnostic.childListChangeCount) || 0),
+    mutations:
+      (Array.isArray(diagnostic.mutations) ? diagnostic.mutations : [])
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_MANUAL_MUTATIONS)
+        .map(sanitizeFundingChoicesProviderManualMutation)
+        .filter(Boolean),
+    rowConnectedBefore:
+      Boolean(diagnostic.rowConnectedBefore),
+    inputConnectedBefore:
+      Boolean(diagnostic.inputConnectedBefore),
+    rowConnectedAfter:
+      Boolean(diagnostic.rowConnectedAfter),
+    inputConnectedAfter:
+      Boolean(diagnostic.inputConnectedAfter),
+    capturedAt:
+      String(diagnostic.capturedAt || '').slice(0, 40),
+    error:
+      String(diagnostic.error || '').slice(0, 120),
   }
 }
 
@@ -15130,6 +15526,11 @@ function sanitizeFundingChoicesProviderFirstActiveToggleDiagnostic(summary) {
       sanitizeFundingChoicesProviderStateOwnershipDiagnostic(
         summary.providerStateOwnership ||
           lastFundingChoicesProviderStateOwnershipDiagnostic
+      ),
+    providerManualToggleInspection:
+      sanitizeFundingChoicesProviderManualToggleDiagnostic(
+        summary.providerManualToggleInspection ||
+          lastFundingChoicesProviderManualToggleDiagnostic
       ),
     providerStorageWrites:
       sanitizeFundingChoicesProviderStorageDiagnostic(
@@ -18172,6 +18573,9 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderStateOwnershipDiagnostic = null
     fundingChoicesProviderStateOwnershipProbeSignature = ''
     fundingChoicesProviderStateOwnershipProbeRunning = false
+    stopFundingChoicesProviderManualToggleObserver()
+    lastFundingChoicesProviderManualToggleDiagnostic = null
+    fundingChoicesProviderManualToggleSignature = ''
     lastFundingChoicesProviderStorageDiagnostic = null
     fundingChoicesProviderStorageProbeSignature = ''
     fundingChoicesProviderStorageProbeRunning = false

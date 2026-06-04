@@ -2440,6 +2440,108 @@ function formatProviderAttributeMutationProbe(label, probe) {
   ].join('\n')
 }
 
+function formatProviderManualToggleSnapshot(label, snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return `${label}: none`
+  }
+
+  const classList =
+    Array.isArray(snapshot.classList) && snapshot.classList.length > 0
+      ? snapshot.classList.join('|')
+      : 'none'
+  const parentRowClassList =
+    Array.isArray(snapshot.parentRowClassList) &&
+    snapshot.parentRowClassList.length > 0
+      ? snapshot.parentRowClassList.join('|')
+      : 'none'
+
+  return [
+    `${label}:`,
+    `checked:${Boolean(snapshot.checked)}`,
+    `ariaPressed:${String(snapshot.ariaPressed || 'none').slice(0, 30)}`,
+    `ariaChecked:${String(snapshot.ariaChecked || 'none').slice(0, 30)}`,
+    `activeDetected:${Boolean(snapshot.activeDetected)}`,
+    `classList:${String(classList).slice(0, 220)}`,
+    `parentRowClassList:${String(parentRowClassList).slice(0, 220)}`,
+  ].join(', ')
+}
+
+function formatProviderManualMutationNode(node) {
+  if (!node || typeof node !== 'object') {
+    return 'none'
+  }
+
+  return [
+    String(node.tagName || `node${Number(node.nodeType) || 0}`).slice(0, 24),
+    `id:${String(node.id || 'none').slice(0, 40)}`,
+    `class:${String(node.class || 'none').slice(0, 80)}`,
+    `ariaPressed:${String(node.ariaPressed || 'none').slice(0, 20)}`,
+    `ariaChecked:${String(node.ariaChecked || 'none').slice(0, 20)}`,
+    `text:${String(node.text || 'none').slice(0, 50)}`,
+  ].join(' ')
+}
+
+function formatProviderManualMutation(mutation, index) {
+  if (!mutation || typeof mutation !== 'object') {
+    return `manualMutation${index + 1}: none`
+  }
+
+  const added =
+    Array.isArray(mutation.addedNodes) && mutation.addedNodes.length > 0
+      ? mutation.addedNodes.map(formatProviderManualMutationNode).join(' || ')
+      : 'none'
+  const removed =
+    Array.isArray(mutation.removedNodes) && mutation.removedNodes.length > 0
+      ? mutation.removedNodes.map(formatProviderManualMutationNode).join(' || ')
+      : 'none'
+
+  return [
+    `manualMutation${index + 1}:`,
+    `type:${String(mutation.type || 'none').slice(0, 30)}`,
+    `target:${formatProviderManualMutationNode(mutation.target)}`,
+    `attribute:${String(mutation.attributeName || 'none').slice(0, 50)}`,
+    `old:${String(mutation.oldValue || 'none').slice(0, 80)}`,
+    `new:${String(mutation.newValue || 'none').slice(0, 80)}`,
+    `added:${String(added).slice(0, 180)}`,
+    `removed:${String(removed).slice(0, 180)}`,
+  ].join(', ')
+}
+
+function formatProviderManualToggleInspection(inspection) {
+  if (!inspection || typeof inspection !== 'object') {
+    return 'providerManualToggleInspection: none'
+  }
+
+  const mutations =
+    Array.isArray(inspection.mutations)
+      ? inspection.mutations
+      : []
+
+  return [
+    [
+      'providerManualToggleInspection:',
+      `signature:${String(inspection.signature || 'none').slice(0, 120)}`,
+      `mode:${String(inspection.mode || 'none').slice(0, 60)}`,
+      `running:${Boolean(inspection.running)}`,
+      `completed:${Boolean(inspection.completed)}`,
+      `mutationCount:${Math.max(0, Number(inspection.mutationCount) || 0)}`,
+      `attributeChanges:${Math.max(0, Number(inspection.attributeChangeCount) || 0)}`,
+      `childNodeChanges:${Math.max(0, Number(inspection.childListChangeCount) || 0)}`,
+      `rowConnectedBefore:${Boolean(inspection.rowConnectedBefore)}`,
+      `inputConnectedBefore:${Boolean(inspection.inputConnectedBefore)}`,
+      `rowConnectedAfter:${Boolean(inspection.rowConnectedAfter)}`,
+      `inputConnectedAfter:${Boolean(inspection.inputConnectedAfter)}`,
+      `capturedAt:${String(inspection.capturedAt || 'none').slice(0, 40)}`,
+      `error:${String(inspection.error || 'none').slice(0, 120)}`,
+    ].join(', '),
+    formatProviderManualToggleSnapshot('manualBefore', inspection.before),
+    formatProviderManualToggleSnapshot('manualAfter', inspection.after),
+    ...(mutations.length > 0
+      ? mutations.map(formatProviderManualMutation)
+      : ['manualMutations: none']),
+  ].join('\n')
+}
+
 function formatProviderDatasetValues(datasetValues) {
   if (!datasetValues || typeof datasetValues !== 'object') {
     return 'none'
@@ -2891,6 +2993,9 @@ function formatProviderStateOwnershipCopySection(diagnostic) {
     formatProviderAttributeMutationProbe(
       'ariaCheckedSetFalse',
       stateOwnership.ariaCheckedSetFalse
+    ),
+    formatProviderManualToggleInspection(
+      summary.providerManualToggleInspection
     ),
     formatProviderStorageDiagnostics(summary.providerStorageWrites),
     'outerHTML: omitted',
@@ -3356,6 +3461,11 @@ function formatFundingChoicesControls(summary) {
       )
     }
 
+    lines.push(
+      formatProviderManualToggleInspection(
+        summary.providerManualToggleInspection
+      )
+    )
     lines.push('providerFirstActiveHTML: omitted')
   }
 
