@@ -98,6 +98,8 @@ let lastFundingChoicesProviderLabelCoordinateReason = ''
 let lastFundingChoicesProviderLabelCoordinateBeforeActiveCount = 0
 let lastFundingChoicesProviderLabelCoordinateAfterActiveCount = 0
 let lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
+let lastFundingChoicesProviderPhaseBlockedReason = ''
+let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderPreferenceTextMatch = ''
 let lastFundingChoicesProviderPreferenceClickableTargetTag = ''
 let lastFundingChoicesProviderPreferenceClickMethod = ''
@@ -4122,6 +4124,26 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerLabelCoordinateAfterActiveCount) || 0),
             providerLabelCoordinateInvocationState:
               String(fundingChoicesControlDiagnostics.providerLabelCoordinateInvocationState || '').slice(0, 40),
+            providerPhaseBlockedReason:
+              String(fundingChoicesControlDiagnostics.providerPhaseBlockedReason || '').slice(0, 80),
+            providerPhaseGuardState:
+              fundingChoicesControlDiagnostics.providerPhaseGuardState &&
+              typeof fundingChoicesControlDiagnostics.providerPhaseGuardState === 'object'
+                ? {
+                    attempted:
+                      Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.attempted),
+                    running:
+                      Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.running),
+                    preferencesOpen:
+                      Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.preferencesOpen),
+                    activeProviderCount:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerPhaseGuardState.activeProviderCount) || 0),
+                    panelVerified:
+                      Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.panelVerified),
+                    providerAutomationEnabled:
+                      Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerAutomationEnabled),
+                  }
+                : null,
             providerPreferenceTextMatch:
               String(fundingChoicesControlDiagnostics.providerPreferenceTextMatch || '').slice(0, 90),
             providerPreferenceClickableTargetTag:
@@ -11500,6 +11522,49 @@ function setFundingChoicesProviderLabelCoordinateInvocationState(state) {
     String(state || 'function_not_reached').slice(0, 40)
 }
 
+function getFundingChoicesProviderPhaseBlockedReason(guardState) {
+  if (!guardState || typeof guardState !== 'object') {
+    return 'unknown_guard'
+  }
+
+  if (guardState.running) return 'phase_already_running'
+  if (guardState.attempted) return 'phase_already_attempted'
+  if (
+    guardState.providerAutomationGateApplies &&
+    !guardState.providerAutomationEnabled
+  ) {
+    return 'provider_automation_disabled'
+  }
+  if (!guardState.preferencesOpen) return 'provider_preferences_not_open'
+  if (Math.max(0, Number(guardState.activeProviderCount) || 0) <= 0) {
+    return 'active_provider_count_zero'
+  }
+  if (!guardState.panelVerified) return 'provider_panel_not_verified'
+
+  return ''
+}
+
+function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
+  const safeGuardState = {
+    attempted:
+      Boolean(guardState?.attempted),
+    running:
+      Boolean(guardState?.running),
+    preferencesOpen:
+      Boolean(guardState?.preferencesOpen),
+    activeProviderCount:
+      Math.max(0, Number(guardState?.activeProviderCount) || 0),
+    panelVerified:
+      Boolean(guardState?.panelVerified),
+    providerAutomationEnabled:
+      Boolean(guardState?.providerAutomationEnabled),
+  }
+
+  lastFundingChoicesProviderPhaseGuardState = safeGuardState
+  lastFundingChoicesProviderPhaseBlockedReason =
+    getFundingChoicesProviderPhaseBlockedReason(safeGuardState)
+}
+
 function getFundingChoicesProviderLabelCoordinateElementId(element) {
   return String(element?.id || element?.getAttribute?.('id') || '')
     .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
@@ -16204,6 +16269,17 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
 }
 
 function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
+  const guardPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+  setFundingChoicesProviderPhaseGuardDiagnostics({
+    attempted: fundingChoicesProviderPhase1Attempted,
+    running: fundingChoicesProviderPhase1Running,
+    preferencesOpen: lastFundingChoicesProviderPreferenceOpened,
+    activeProviderCount: lastFundingChoicesActiveProviderToggleCount,
+    panelVerified: Boolean(guardPanel),
+    providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
+  })
+
   if (
     fundingChoicesProviderPhase1Attempted ||
     fundingChoicesProviderPhase1Running ||
@@ -17056,6 +17132,10 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateAfterActiveCount,
     providerLabelCoordinateInvocationState:
       lastFundingChoicesProviderLabelCoordinateInvocationState,
+    providerPhaseBlockedReason:
+      lastFundingChoicesProviderPhaseBlockedReason,
+    providerPhaseGuardState:
+      lastFundingChoicesProviderPhaseGuardState,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
@@ -17235,6 +17315,10 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateAfterActiveCount,
     providerLabelCoordinateInvocationState:
       lastFundingChoicesProviderLabelCoordinateInvocationState,
+    providerPhaseBlockedReason:
+      lastFundingChoicesProviderPhaseBlockedReason,
+    providerPhaseGuardState:
+      lastFundingChoicesProviderPhaseGuardState,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
@@ -17965,6 +18049,14 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     document
 
   lastFundingChoicesProviderPreferenceOpened = opened
+  setFundingChoicesProviderPhaseGuardDiagnostics({
+    attempted: fundingChoicesProviderPhase1Attempted,
+    running: fundingChoicesProviderPhase1Running,
+    preferencesOpen: opened,
+    activeProviderCount: lastFundingChoicesActiveProviderToggleCount,
+    panelVerified: opened,
+    providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
+  })
   if (
     !opened ||
     Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) !== 0
@@ -18941,6 +19033,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderLabelCoordinateBeforeActiveCount = 0
     lastFundingChoicesProviderLabelCoordinateAfterActiveCount = 0
     lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
+    lastFundingChoicesProviderPhaseBlockedReason = ''
+    lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderPreferenceTextMatch = ''
     lastFundingChoicesProviderPreferenceClickableTargetTag = ''
     lastFundingChoicesProviderPreferenceClickMethod = ''
