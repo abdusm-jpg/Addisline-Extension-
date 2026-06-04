@@ -98,6 +98,8 @@ let lastFundingChoicesProviderLabelCoordinateReason = ''
 let lastFundingChoicesProviderLabelCoordinateBeforeActiveCount = 0
 let lastFundingChoicesProviderLabelCoordinateAfterActiveCount = 0
 let lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
+let lastFundingChoicesProviderLabelCoordinateExecutionStep = ''
+let lastFundingChoicesProviderLabelCoordinateLastError = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderPhaseLastError = null
@@ -4151,6 +4153,18 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerLabelCoordinateAfterActiveCount) || 0),
             providerLabelCoordinateInvocationState:
               String(fundingChoicesControlDiagnostics.providerLabelCoordinateInvocationState || '').slice(0, 40),
+            providerLabelCoordinateExecutionStep:
+              String(fundingChoicesControlDiagnostics.providerLabelCoordinateExecutionStep || '').slice(0, 60),
+            providerLabelCoordinateLastError:
+              fundingChoicesControlDiagnostics.providerLabelCoordinateLastError &&
+              typeof fundingChoicesControlDiagnostics.providerLabelCoordinateLastError === 'object'
+                ? {
+                    message:
+                      String(fundingChoicesControlDiagnostics.providerLabelCoordinateLastError.message || '').slice(0, 160),
+                    stackFirstLine:
+                      String(fundingChoicesControlDiagnostics.providerLabelCoordinateLastError.stackFirstLine || '').slice(0, 160),
+                  }
+                : null,
             providerPhaseBlockedReason:
               String(fundingChoicesControlDiagnostics.providerPhaseBlockedReason || '').slice(0, 80),
             providerPhaseGuardState:
@@ -11611,6 +11625,24 @@ function setFundingChoicesProviderLabelCoordinateInvocationState(state) {
     String(state || 'function_not_reached').slice(0, 40)
 }
 
+function setFundingChoicesProviderLabelCoordinateExecutionStep(step) {
+  lastFundingChoicesProviderLabelCoordinateExecutionStep =
+    String(step || '').slice(0, 60)
+}
+
+function recordFundingChoicesProviderLabelCoordinateError(error) {
+  lastFundingChoicesProviderLabelCoordinateExecutionStep =
+    'exception'
+  lastFundingChoicesProviderLabelCoordinateLastError = {
+    message:
+      String(error?.message || error || '').slice(0, 160),
+    stackFirstLine:
+      String(error?.stack || '')
+        .split('\n')[0]
+        .slice(0, 160),
+  }
+}
+
 function getFundingChoicesProviderCountLifecycleDelta(atMs, order) {
   const entryAtMs =
     Number(lastFundingChoicesProviderCountLifecycle.providerPreferencesVisibleEntryAtMs) || 0
@@ -11841,6 +11873,10 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderLabelCoordinateAfterActiveCount,
     providerLabelCoordinateInvocationState:
       lastFundingChoicesProviderLabelCoordinateInvocationState,
+    providerLabelCoordinateExecutionStep:
+      lastFundingChoicesProviderLabelCoordinateExecutionStep,
+    providerLabelCoordinateLastError:
+      lastFundingChoicesProviderLabelCoordinateLastError,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -16709,228 +16745,247 @@ function getFundingChoicesProviderActiveCountFromDocument(providerPanel) {
 }
 
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
-  setFundingChoicesProviderLabelCoordinateInvocationState('invoked')
-  setFundingChoicesNetworkPhase('provider_state_change')
-  const providerPanel =
-    getVisibleFundingChoicesProviderPreferencesPanel(root)
+  try {
+    setFundingChoicesProviderLabelCoordinateInvocationState('invoked')
+    setFundingChoicesProviderLabelCoordinateExecutionStep('before_enter_trace')
+    setFundingChoicesNetworkPhase('provider_state_change')
+    const providerPanel =
+      getVisibleFundingChoicesProviderPreferencesPanel(root)
 
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_label_coordinate_enter',
-    status: 'ran',
-    found: providerPanel ? 1 : 0,
-    scanned: 0,
-  })
-
-  if (
-    !providerPanel ||
-    !isFundingChoicesProviderPreferencesVisuallyVerified(providerPanel)
-  ) {
     appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_target_missing',
-      status: 'skipped',
-      reason: 'provider_panel_not_verified',
-      found: 0,
+      strategy: 'fc.provider_label_coordinate_enter',
+      status: 'ran',
+      found: providerPanel ? 1 : 0,
       scanned: 0,
     })
-    return false
-  }
+    setFundingChoicesProviderLabelCoordinateExecutionStep('enter_trace_written')
 
-  const startedAt =
-    Date.now()
-  const providerInputs =
-    getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
-  const activeInputs =
-    providerInputs
-      .filter(isFundingChoicesProviderInputActiveForPhase1)
-  const activeLegitimateInterestInputs =
-    activeInputs.filter(isFundingChoicesProviderLegitimateInterestInput)
-  setFundingChoicesProviderLabelCoordinateCounts(activeInputs.length, activeInputs.length)
-
-  lastFundingChoicesProviderPreferenceOpened = true
-  lastFundingChoicesProviderToggleCount = providerInputs.length
-  setFundingChoicesActiveProviderToggleCount(
-    activeInputs.length,
-    'handleFundingChoicesVisibleProviderTogglesPhase1.active_inputs',
-    'fc.provider_label_coordinate_enter'
-  )
-  lastFundingChoicesProviderInspectedCount = providerInputs.length
-  lastFundingChoicesProviderActiveFoundCount = activeInputs.length
-  lastFundingChoicesProviderTimeBudgetExceeded = false
-
-  if (FUNDING_CHOICES_PROVIDER_OWNER_DIAGNOSTIC_ONLY) {
-    setFundingChoicesProviderLabelCoordinateInvocationState('blocked_by_feature_flag')
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_target_missing',
-      status: 'skipped',
-      reason: 'provider_owner_diagnostic_only',
-      found: 0,
-      scanned: activeInputs.length,
-      elapsedMs: Date.now() - startedAt,
-    })
-    if (activeInputs[0]) {
-      getFundingChoicesProviderFirstActiveToggleDiagnostic(providerPanel)
+    if (
+      !providerPanel ||
+      !isFundingChoicesProviderPreferencesVisuallyVerified(providerPanel)
+    ) {
+      setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_target_missing',
+        status: 'skipped',
+        reason: 'provider_panel_not_verified',
+        found: 0,
+        scanned: 0,
+      })
+      return false
     }
 
-    lastFundingChoicesProviderToggleMethod =
-      activeInputs.length > 0
-        ? 'read-only-diagnostic'
-        : ''
+    const startedAt =
+      Date.now()
+    const providerInputs =
+      getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
+    const activeInputs =
+      providerInputs
+        .filter(isFundingChoicesProviderInputActiveForPhase1)
+    const activeLegitimateInterestInputs =
+      activeInputs.filter(isFundingChoicesProviderLegitimateInterestInput)
+    setFundingChoicesProviderLabelCoordinateCounts(activeInputs.length, activeInputs.length)
 
-    return false
-  }
-
-  const input =
-    activeLegitimateInterestInputs[0] || null
-  const label =
-    getFundingChoicesProviderLegitimateInterestLabel(input)
-
-  if (!input || !label) {
+    lastFundingChoicesProviderPreferenceOpened = true
+    lastFundingChoicesProviderToggleCount = providerInputs.length
     setFundingChoicesActiveProviderToggleCount(
       activeInputs.length,
-      'handleFundingChoicesVisibleProviderTogglesPhase1.missing_target',
-      'fc.provider_label_coordinate_target_missing'
+      'handleFundingChoicesVisibleProviderTogglesPhase1.active_inputs',
+      'fc.provider_label_coordinate_enter'
     )
-    setFundingChoicesProviderLabelCoordinateDiagnostic(
-      false,
-      'provider_label_coordinate_missing_target'
-    )
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_target_missing',
-      status: 'skipped',
-      reason: 'provider_label_coordinate_missing_target',
-      found: 0,
-      scanned: activeInputs.length,
-      elapsedMs: Date.now() - startedAt,
-    })
-    return false
-  }
+    lastFundingChoicesProviderInspectedCount = providerInputs.length
+    lastFundingChoicesProviderActiveFoundCount = activeInputs.length
+    lastFundingChoicesProviderTimeBudgetExceeded = false
 
-  if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
-    lastFundingChoicesProviderTimeBudgetExceeded = true
-    setFundingChoicesProviderLabelCoordinateDiagnostic(
-      false,
-      'budget_capped'
-    )
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_target_missing',
-      status: 'skipped',
-      reason: 'budget_capped',
-      found: 0,
-      scanned: activeInputs.length,
-      elapsedMs: Date.now() - startedAt,
-    })
-    return false
-  }
+    if (FUNDING_CHOICES_PROVIDER_OWNER_DIAGNOSTIC_ONLY) {
+      setFundingChoicesProviderLabelCoordinateInvocationState('blocked_by_feature_flag')
+      setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_target_missing',
+        status: 'skipped',
+        reason: 'provider_owner_diagnostic_only',
+        found: 0,
+        scanned: activeInputs.length,
+        elapsedMs: Date.now() - startedAt,
+      })
+      if (activeInputs[0]) {
+        getFundingChoicesProviderFirstActiveToggleDiagnostic(providerPanel)
+      }
 
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_label_coordinate_target_found',
-    status: 'found',
-    reason: [
-      `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
-      `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
-    ].join(','),
-    found: 1,
-    scanned: activeInputs.length,
-    elapsedMs: Date.now() - startedAt,
-  })
+      lastFundingChoicesProviderToggleMethod =
+        activeInputs.length > 0
+          ? 'read-only-diagnostic'
+          : ''
 
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_label_coordinate_target',
-    status: 'found',
-    reason: [
-      `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
-      `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
-    ].join(','),
-    found: 1,
-    scanned: activeInputs.length,
-    elapsedMs: Date.now() - startedAt,
-  })
+      return false
+    }
 
-  const activeBefore =
-    activeInputs.length
-  const clicked =
-    dispatchFundingChoicesProviderLabelCoordinateClick(label, providerPanel)
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_label_coordinate_click_dispatched',
-    status: clicked ? 'clicked' : 'failed',
-    reason: clicked
-      ? ''
-      : lastFundingChoicesProviderLabelCoordinateReason ||
-        'provider_label_coordinate_click_failed',
-    found: clicked ? 1 : 0,
-    scanned: 1,
-    elapsedMs: Date.now() - startedAt,
-  })
+    setFundingChoicesProviderLabelCoordinateExecutionStep('target_lookup')
+    const input =
+      activeLegitimateInterestInputs[0] || null
+    const label =
+      getFundingChoicesProviderLegitimateInterestLabel(input)
 
-  if (!clicked) {
-    const activeAfterFailedClick =
-      getFundingChoicesProviderActiveCountFromDocument(providerPanel)
-    setFundingChoicesActiveProviderToggleCount(
-      activeAfterFailedClick,
-      'handleFundingChoicesVisibleProviderTogglesPhase1.click_failed_recount',
-      'fc.provider_label_coordinate_click_dispatched'
-    )
-    setFundingChoicesProviderLabelCoordinateCounts(
-      activeBefore,
-      lastFundingChoicesActiveProviderToggleCount
-    )
-    if (!lastFundingChoicesProviderLabelCoordinateReason) {
+    if (!input || !label) {
+      setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+      setFundingChoicesActiveProviderToggleCount(
+        activeInputs.length,
+        'handleFundingChoicesVisibleProviderTogglesPhase1.missing_target',
+        'fc.provider_label_coordinate_target_missing'
+      )
       setFundingChoicesProviderLabelCoordinateDiagnostic(
         false,
         'provider_label_coordinate_missing_target'
       )
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_target_missing',
+        status: 'skipped',
+        reason: 'provider_label_coordinate_missing_target',
+        found: 0,
+        scanned: activeInputs.length,
+        elapsedMs: Date.now() - startedAt,
+      })
+      return false
     }
-    return false
-  }
 
-  waitForFundingChoicesProviderMicroDelay()
+    if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
+      lastFundingChoicesProviderTimeBudgetExceeded = true
+      setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+      setFundingChoicesProviderLabelCoordinateDiagnostic(
+        false,
+        'budget_capped'
+      )
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_target_missing',
+        status: 'skipped',
+        reason: 'budget_capped',
+        found: 0,
+        scanned: activeInputs.length,
+        elapsedMs: Date.now() - startedAt,
+      })
+      return false
+    }
 
-  const activeAfter =
-    getFundingChoicesProviderActiveCountFromDocument(providerPanel)
-  setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeAfter)
-
-  setFundingChoicesActiveProviderToggleCount(
-    activeAfter,
-    'handleFundingChoicesVisibleProviderTogglesPhase1.recount',
-    'fc.provider_label_coordinate_recount'
-  )
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_label_coordinate_recount',
-    status: 'ran',
-    reason: `before:${activeBefore},after:${activeAfter}`,
-    found: activeBefore > activeAfter ? activeBefore - activeAfter : 0,
-    scanned: activeBefore,
-    elapsedMs: Date.now() - startedAt,
-  })
-
-  if (activeAfter === activeBefore - 1) {
-    lastFundingChoicesProviderClickedCount = 1
-    lastFundingChoicesProviderToggleMethod = 'label-coordinate-click'
-    setFundingChoicesProviderLabelCoordinateDiagnostic(true, 'success')
+    setFundingChoicesProviderLabelCoordinateExecutionStep('target_found')
     appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_success',
-      status: 'handled',
-      reason: `before:${activeBefore},after:${activeAfter}`,
+      strategy: 'fc.provider_label_coordinate_target_found',
+      status: 'found',
+      reason: [
+        `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
+        `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
+      ].join(','),
       found: 1,
+      scanned: activeInputs.length,
+      elapsedMs: Date.now() - startedAt,
+    })
+
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_label_coordinate_target',
+      status: 'found',
+      reason: [
+        `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
+        `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
+      ].join(','),
+      found: 1,
+      scanned: activeInputs.length,
+      elapsedMs: Date.now() - startedAt,
+    })
+
+    const activeBefore =
+      activeInputs.length
+    setFundingChoicesProviderLabelCoordinateExecutionStep('click_dispatch')
+    const clicked =
+      dispatchFundingChoicesProviderLabelCoordinateClick(label, providerPanel)
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_label_coordinate_click_dispatched',
+      status: clicked ? 'clicked' : 'failed',
+      reason: clicked
+        ? ''
+        : lastFundingChoicesProviderLabelCoordinateReason ||
+          'provider_label_coordinate_click_failed',
+      found: clicked ? 1 : 0,
+      scanned: 1,
+      elapsedMs: Date.now() - startedAt,
+    })
+
+    if (!clicked) {
+      setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
+      const activeAfterFailedClick =
+        getFundingChoicesProviderActiveCountFromDocument(providerPanel)
+      setFundingChoicesActiveProviderToggleCount(
+        activeAfterFailedClick,
+        'handleFundingChoicesVisibleProviderTogglesPhase1.click_failed_recount',
+        'fc.provider_label_coordinate_click_dispatched'
+      )
+      setFundingChoicesProviderLabelCoordinateCounts(
+        activeBefore,
+        lastFundingChoicesActiveProviderToggleCount
+      )
+      if (!lastFundingChoicesProviderLabelCoordinateReason) {
+        setFundingChoicesProviderLabelCoordinateDiagnostic(
+          false,
+          'provider_label_coordinate_missing_target'
+        )
+      }
+      setFundingChoicesProviderLabelCoordinateExecutionStep('no_change')
+      return false
+    }
+
+    waitForFundingChoicesProviderMicroDelay()
+
+    setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
+    const activeAfter =
+      getFundingChoicesProviderActiveCountFromDocument(providerPanel)
+    setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeAfter)
+
+    setFundingChoicesActiveProviderToggleCount(
+      activeAfter,
+      'handleFundingChoicesVisibleProviderTogglesPhase1.recount',
+      'fc.provider_label_coordinate_recount'
+    )
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_label_coordinate_recount',
+      status: 'ran',
+      reason: `before:${activeBefore},after:${activeAfter}`,
+      found: activeBefore > activeAfter ? activeBefore - activeAfter : 0,
       scanned: activeBefore,
       elapsedMs: Date.now() - startedAt,
     })
-    return true
-  }
 
-  setFundingChoicesProviderLabelCoordinateDiagnostic(
-    true,
-    'provider_label_coordinate_no_change'
-  )
-  appendLastDiagnosticDecisionStep({
-    strategy: 'fc.provider_label_coordinate_no_change',
-    status: 'skipped',
-    reason: `before:${activeBefore},after:${activeAfter}`,
-    found: 0,
-    scanned: activeBefore,
-    elapsedMs: Date.now() - startedAt,
-  })
-  return false
+    if (activeAfter === activeBefore - 1) {
+      lastFundingChoicesProviderClickedCount = 1
+      lastFundingChoicesProviderToggleMethod = 'label-coordinate-click'
+      setFundingChoicesProviderLabelCoordinateDiagnostic(true, 'success')
+      setFundingChoicesProviderLabelCoordinateExecutionStep('success')
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_success',
+        status: 'handled',
+        reason: `before:${activeBefore},after:${activeAfter}`,
+        found: 1,
+        scanned: activeBefore,
+        elapsedMs: Date.now() - startedAt,
+      })
+      return true
+    }
+
+    setFundingChoicesProviderLabelCoordinateDiagnostic(
+      true,
+      'provider_label_coordinate_no_change'
+    )
+    setFundingChoicesProviderLabelCoordinateExecutionStep('no_change')
+    appendLastDiagnosticDecisionStep({
+      strategy: 'fc.provider_label_coordinate_no_change',
+      status: 'skipped',
+      reason: `before:${activeBefore},after:${activeAfter}`,
+      found: 0,
+      scanned: activeBefore,
+      elapsedMs: Date.now() - startedAt,
+    })
+    return false
+  } catch (error) {
+    recordFundingChoicesProviderLabelCoordinateError(error)
+    return false
+  }
 }
 
 function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
@@ -17989,6 +18044,10 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateAfterActiveCount,
     providerLabelCoordinateInvocationState:
       lastFundingChoicesProviderLabelCoordinateInvocationState,
+    providerLabelCoordinateExecutionStep:
+      lastFundingChoicesProviderLabelCoordinateExecutionStep,
+    providerLabelCoordinateLastError:
+      lastFundingChoicesProviderLabelCoordinateLastError,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18204,6 +18263,10 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateAfterActiveCount,
     providerLabelCoordinateInvocationState:
       lastFundingChoicesProviderLabelCoordinateInvocationState,
+    providerLabelCoordinateExecutionStep:
+      lastFundingChoicesProviderLabelCoordinateExecutionStep,
+    providerLabelCoordinateLastError:
+      lastFundingChoicesProviderLabelCoordinateLastError,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -19992,6 +20055,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderLabelCoordinateBeforeActiveCount = 0
     lastFundingChoicesProviderLabelCoordinateAfterActiveCount = 0
     lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
+    lastFundingChoicesProviderLabelCoordinateExecutionStep = ''
+    lastFundingChoicesProviderLabelCoordinateLastError = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderPhaseLastError = null
