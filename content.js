@@ -4221,6 +4221,10 @@ function recordCurrentSiteDiagnostic({
               sanitizeFundingChoicesProviderActiveInputsCurrentScan(
                 fundingChoicesControlDiagnostics.providerActiveInputsCurrentScan
               ),
+            providerClickTargetHierarchy:
+              sanitizeFundingChoicesProviderClickTargetHierarchy(
+                fundingChoicesControlDiagnostics.providerClickTargetHierarchy
+              ),
             providerCountSummary:
               fundingChoicesControlDiagnostics.providerCountSummary &&
               typeof fundingChoicesControlDiagnostics.providerCountSummary === 'object'
@@ -14080,6 +14084,128 @@ function getFundingChoicesProviderOwnerElementDiagnostic(element) {
   }
 }
 
+function getFundingChoicesProviderClickTargetElementDiagnostic(element) {
+  if (!element) return null
+
+  const style =
+    safeGetComputedStyle(element)
+
+  return {
+    tag:
+      String(element.tagName || '').toLowerCase().slice(0, 40),
+    class:
+      getFundingChoicesProviderDiagnosticClass(element),
+    role:
+      String(element.getAttribute?.('role') || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    tabindex:
+      String(element.getAttribute?.('tabindex') ?? '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    ariaLabel:
+      String(element.getAttribute?.('aria-label') || '').slice(0, 160),
+    cursor:
+      String(style?.cursor || '').slice(0, 60),
+    pointerEvents:
+      String(style?.pointerEvents || '').slice(0, 60),
+  }
+}
+
+function findFundingChoicesProviderAncestor(input, predicate) {
+  let current =
+    input || null
+
+  while (current && current !== document.documentElement) {
+    if (predicate(current)) {
+      return current
+    }
+
+    current = current.parentElement
+  }
+
+  return null
+}
+
+function getFundingChoicesProviderClickTargetHierarchy(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (!providerPanel) return null
+
+  const startedAt =
+    Date.now()
+  const providerInputs =
+    getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
+  const input =
+    providerInputs
+      .filter(isFundingChoicesProviderInputActiveForPhase1)
+      .filter(isFundingChoicesProviderLegitimateInterestInput)[0] ||
+    null
+
+  if (!input) return null
+
+  const label =
+    getFundingChoicesProviderLegitimateInterestLabel(input)
+  const slider =
+    safeClosest(input, '.fc-preference-slider')
+  const row =
+    getFundingChoicesProviderFirstActiveRow(input, label, slider)
+  const nearestClickableAncestor =
+    findFundingChoicesProviderAncestor(input, (element) =>
+      Boolean(
+        element !== input &&
+          (
+            safeMatches(element, 'button, a, label, [role="button"], [role="switch"], [role="checkbox"], [tabindex]') ||
+            typeof element.onclick === 'function' ||
+            safeGetComputedStyle(element)?.cursor === 'pointer'
+          )
+      )
+    )
+  const nearestRoleButton =
+    findFundingChoicesProviderAncestor(input, (element) =>
+      element !== input &&
+      String(element.getAttribute?.('role') || '').toLowerCase() === 'button'
+    )
+  const nearestTabindex =
+    findFundingChoicesProviderAncestor(input, (element) =>
+      element !== input &&
+      element.hasAttribute?.('tabindex')
+    )
+  const nearestOnclick =
+    findFundingChoicesProviderAncestor(input, (element) =>
+      element !== input &&
+      (
+        typeof element.onclick === 'function' ||
+        element.hasAttribute?.('onclick')
+      )
+    )
+  const nearestPointerCursor =
+    findFundingChoicesProviderAncestor(input, (element) =>
+      element !== input &&
+      safeGetComputedStyle(element)?.cursor === 'pointer'
+    )
+
+  return {
+    label:
+      getFundingChoicesProviderClickTargetElementDiagnostic(label),
+    row:
+      getFundingChoicesProviderClickTargetElementDiagnostic(row),
+    nearestClickableAncestor:
+      getFundingChoicesProviderClickTargetElementDiagnostic(
+        nearestClickableAncestor
+      ),
+    nearestRoleButton:
+      getFundingChoicesProviderClickTargetElementDiagnostic(nearestRoleButton),
+    nearestTabindex:
+      getFundingChoicesProviderClickTargetElementDiagnostic(nearestTabindex),
+    nearestOnclick:
+      getFundingChoicesProviderClickTargetElementDiagnostic(nearestOnclick),
+    nearestPointerCursor:
+      getFundingChoicesProviderClickTargetElementDiagnostic(
+        nearestPointerCursor
+      ),
+  }
+}
+
 function getFundingChoicesProviderClosestComponentRoot(input, row, providerPanel) {
   let current =
     row?.parentElement ||
@@ -16564,6 +16690,55 @@ function sanitizeFundingChoicesProviderActiveInputsCurrentScan(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderClickTargetElement(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    tag:
+      String(summary.tag || '').slice(0, 40),
+    class:
+      String(summary.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    role:
+      String(summary.role || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    tabindex:
+      String(summary.tabindex || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    ariaLabel:
+      String(summary.ariaLabel || '').slice(0, 160),
+    cursor:
+      String(summary.cursor || '').slice(0, 60),
+    pointerEvents:
+      String(summary.pointerEvents || '').slice(0, 60),
+  }
+}
+
+function sanitizeFundingChoicesProviderClickTargetHierarchy(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    label:
+      sanitizeFundingChoicesProviderClickTargetElement(summary.label),
+    row:
+      sanitizeFundingChoicesProviderClickTargetElement(summary.row),
+    nearestClickableAncestor:
+      sanitizeFundingChoicesProviderClickTargetElement(
+        summary.nearestClickableAncestor
+      ),
+    nearestRoleButton:
+      sanitizeFundingChoicesProviderClickTargetElement(summary.nearestRoleButton),
+    nearestTabindex:
+      sanitizeFundingChoicesProviderClickTargetElement(summary.nearestTabindex),
+    nearestOnclick:
+      sanitizeFundingChoicesProviderClickTargetElement(summary.nearestOnclick),
+    nearestPointerCursor:
+      sanitizeFundingChoicesProviderClickTargetElement(
+        summary.nearestPointerCursor
+      ),
+  }
+}
+
 function sanitizeFundingChoicesProviderFirstActiveRowAttrs(attrs) {
   if (!attrs || typeof attrs !== 'object') return null
 
@@ -18002,6 +18177,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       )
   const providerFirstActiveToggleDiagnostic =
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+  const providerClickTargetHierarchy =
+    getFundingChoicesProviderClickTargetHierarchy(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -18142,6 +18319,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     fundingChoicesGlobalState:
       fundingChoicesGlobalStateDiagnostic,
     ...(providerFirstActiveToggleDiagnostic || {}),
+    providerClickTargetHierarchy,
     preferenceToggleActions,
     controls,
   }
@@ -18221,6 +18399,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       .map(getFundingChoicesLightweightControlDiagnostic)
   const providerFirstActiveToggleDiagnostic =
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+  const providerClickTargetHierarchy =
+    getFundingChoicesProviderClickTargetHierarchy(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -18287,6 +18467,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderCountLifecycle,
     providerActiveInputsCurrentScan:
       lastFundingChoicesProviderActiveInputsCurrentScan,
+    providerClickTargetHierarchy,
     providerCountSummary:
       getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:

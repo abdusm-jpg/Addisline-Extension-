@@ -3201,6 +3201,57 @@ function formatProviderActiveInputsCurrentScan(summary) {
   ].join('\n')
 }
 
+function formatProviderClickTargetHierarchyElement(label, summary) {
+  const element =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    `${label}:`,
+    `tag:${String(element?.tag || 'none').slice(0, 40)}`,
+    `class:${String(element?.class || 'none').slice(0, 120)}`,
+    `role:${String(element?.role || 'none').slice(0, 60)}`,
+    `tabindex:${String(element?.tabindex || 'none').slice(0, 60)}`,
+    `aria-label:${String(element?.ariaLabel || 'none').slice(0, 120)}`,
+    `cursor:${String(element?.cursor || 'none').slice(0, 60)}`,
+    `pointer-events:${String(element?.pointerEvents || 'none').slice(0, 60)}`,
+  ].join(' ')
+}
+
+function formatProviderClickTargetHierarchy(summary) {
+  const hierarchy =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'providerClickTargetHierarchy:',
+    formatProviderClickTargetHierarchyElement('label', hierarchy?.label),
+    formatProviderClickTargetHierarchyElement('row', hierarchy?.row),
+    formatProviderClickTargetHierarchyElement(
+      'nearestClickableAncestor',
+      hierarchy?.nearestClickableAncestor
+    ),
+    formatProviderClickTargetHierarchyElement(
+      'nearestRoleButton',
+      hierarchy?.nearestRoleButton
+    ),
+    formatProviderClickTargetHierarchyElement(
+      'nearestTabindex',
+      hierarchy?.nearestTabindex
+    ),
+    formatProviderClickTargetHierarchyElement(
+      'nearestOnclick',
+      hierarchy?.nearestOnclick
+    ),
+    formatProviderClickTargetHierarchyElement(
+      'nearestPointerCursor',
+      hierarchy?.nearestPointerCursor
+    ),
+  ].join('\n')
+}
+
 function formatProviderCountDiagnosticsCopySection(diagnostic) {
   const summary =
     diagnostic?.fundingChoicesControlDiagnostics
@@ -3216,6 +3267,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderFirstThreeActiveEvaluations(
       summary.providerFirstThreeActiveEvaluations
     ),
+    formatProviderClickTargetHierarchy(summary.providerClickTargetHierarchy),
     formatProviderCountLifecycle(summary.providerCountLifecycle),
     formatProviderActiveInputsCurrentScan(
       summary.providerActiveInputsCurrentScan
@@ -3541,6 +3593,7 @@ function formatFundingChoicesControls(summary) {
         'consentPressed',
         summary.consentPressed
       ),
+      formatProviderClickTargetHierarchy(summary.providerClickTargetHierarchy),
       formatProviderCountBreakdown(summary.providerCountBreakdown),
       formatProviderCountSources(summary.providerCountSources),
       formatProviderFirstThreeActiveEvaluations(
