@@ -3098,6 +3098,60 @@ function formatProviderFirstThreeActiveEvaluations(evaluations) {
   ].join('\n')
 }
 
+function formatProviderCountLifecycle(summary) {
+  const lifecycle =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'providerCountLifecycle:',
+    `lastWrittenValue:${Math.max(0, Number(lifecycle?.lastWrittenValue) || 0)}`,
+    `lastWrittenSource:${String(lifecycle?.lastWrittenSource || 'none').slice(0, 120)}`,
+    `lastWrittenTraceStep:${String(lifecycle?.lastWrittenTraceStep || 'none').slice(0, 120)}`,
+    `lastWrittenOrder:${Math.max(0, Number(lifecycle?.lastWrittenOrder) || 0)}`,
+    `guardReadValue:${Math.max(0, Number(lifecycle?.guardReadValue) || 0)}`,
+    `guardReadSource:${String(lifecycle?.guardReadSource || 'none').slice(0, 120)}`,
+    `guardReadOrder:${Math.max(0, Number(lifecycle?.guardReadOrder) || 0)}`,
+    `providerPreferencesVisibleEntryOrder:${Math.max(0, Number(lifecycle?.providerPreferencesVisibleEntryOrder) || 0)}`,
+    `visibleEntryDeltaOrder:${lifecycle?.visibleEntryDeltaOrder === null || lifecycle?.visibleEntryDeltaOrder === undefined ? 'none' : Number(lifecycle.visibleEntryDeltaOrder) || 0}`,
+    `visibleEntryDeltaMs:${lifecycle?.visibleEntryDeltaMs === null || lifecycle?.visibleEntryDeltaMs === undefined ? 'none' : Number(lifecycle.visibleEntryDeltaMs) || 0}`,
+  ].join(' ')
+}
+
+function formatProviderActiveInputsCurrentScan(summary) {
+  const scan =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+  const samples =
+    Array.isArray(scan?.samples)
+      ? scan.samples
+          .filter((sample) =>
+            sample && typeof sample === 'object'
+          )
+          .slice(0, 3)
+      : []
+
+  return [
+    [
+      'providerActiveInputsCurrentScan:',
+      `selector:${String(scan?.selector || 'input.gvl-vendor[aria-pressed="true"]').slice(0, 120)}`,
+      `count:${Math.max(0, Number(scan?.count) || 0)}`,
+    ].join(' '),
+    samples.length > 0
+      ? samples.map((sample, index) => [
+          `${index + 1}. data-id:${String(sample.dataId || 'none').slice(0, 80)}`,
+          `id:${String(sample.id || 'none').slice(0, 100)}`,
+          `checked:${Boolean(sample.checked)}`,
+          `ariaPressed:${String(sample.ariaPressed || 'none').slice(0, 40)}`,
+          `connected:${Boolean(sample.connected)}`,
+          `class:${String(sample.class || 'none').slice(0, 100)}`,
+        ].join(' ')).join('\n')
+      : 'providerActiveInputsCurrentScanSamples: none',
+  ].join('\n')
+}
+
 function formatProviderStateOwnershipCopySection(diagnostic) {
   const summary =
     diagnostic?.fundingChoicesControlDiagnostics
@@ -3414,6 +3468,10 @@ function formatFundingChoicesControls(summary) {
       formatProviderCountSources(summary.providerCountSources),
       formatProviderFirstThreeActiveEvaluations(
         summary.providerFirstThreeActiveEvaluations
+      ),
+      formatProviderCountLifecycle(summary.providerCountLifecycle),
+      formatProviderActiveInputsCurrentScan(
+        summary.providerActiveInputsCurrentScan
       ),
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,

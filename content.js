@@ -104,6 +104,27 @@ let lastFundingChoicesProviderPhaseLastError = null
 let lastFundingChoicesProviderCountSources = null
 let lastFundingChoicesProviderFirstThreeActiveEvaluations = []
 let lastFundingChoicesProviderAutomationGuardReason = ''
+let fundingChoicesProviderCountLifecycleOrder = 0
+let lastFundingChoicesProviderCountLifecycle = {
+  lastWrittenValue: 0,
+  lastWrittenSource: 'initial',
+  lastWrittenTraceStep: 'initial',
+  lastWrittenAtMs: 0,
+  lastWrittenOrder: 0,
+  guardReadValue: 0,
+  guardReadSource: '',
+  guardReadAtMs: 0,
+  guardReadOrder: 0,
+  providerPreferencesVisibleEntryAtMs: 0,
+  providerPreferencesVisibleEntryOrder: 0,
+  visibleEntryDeltaMs: null,
+  visibleEntryDeltaOrder: null,
+}
+let lastFundingChoicesProviderActiveInputsCurrentScan = {
+  selector: 'input.gvl-vendor[aria-pressed="true"]',
+  count: 0,
+  samples: [],
+}
 let lastFundingChoicesProviderPreferenceTextMatch = ''
 let lastFundingChoicesProviderPreferenceClickableTargetTag = ''
 let lastFundingChoicesProviderPreferenceClickMethod = ''
@@ -4168,6 +4189,14 @@ function recordCurrentSiteDiagnostic({
               ),
             providerAutomationGuardReason:
               String(fundingChoicesControlDiagnostics.providerAutomationGuardReason || '').slice(0, 120),
+            providerCountLifecycle:
+              sanitizeFundingChoicesProviderCountLifecycle(
+                fundingChoicesControlDiagnostics.providerCountLifecycle
+              ),
+            providerActiveInputsCurrentScan:
+              sanitizeFundingChoicesProviderActiveInputsCurrentScan(
+                fundingChoicesControlDiagnostics.providerActiveInputsCurrentScan
+              ),
             legitimateInterestPressed:
               sanitizeFundingChoicesProviderPressedDiagnostic(
                 fundingChoicesControlDiagnostics.legitimateInterestPressed
@@ -11558,6 +11587,127 @@ function setFundingChoicesProviderLabelCoordinateInvocationState(state) {
     String(state || 'function_not_reached').slice(0, 40)
 }
 
+function getFundingChoicesProviderCountLifecycleDelta(atMs, order) {
+  const entryAtMs =
+    Number(lastFundingChoicesProviderCountLifecycle.providerPreferencesVisibleEntryAtMs) || 0
+  const entryOrder =
+    Number(lastFundingChoicesProviderCountLifecycle.providerPreferencesVisibleEntryOrder) || 0
+
+  return {
+    visibleEntryDeltaMs:
+      entryAtMs > 0 && atMs > 0
+        ? atMs - entryAtMs
+        : null,
+    visibleEntryDeltaOrder:
+      entryOrder > 0 && order > 0
+        ? order - entryOrder
+        : null,
+  }
+}
+
+function setFundingChoicesActiveProviderToggleCount(
+  value,
+  source,
+  traceStep = ''
+) {
+  const normalizedValue =
+    Math.max(0, Number(value) || 0)
+  const writtenAtMs =
+    Date.now()
+  const writtenOrder =
+    ++fundingChoicesProviderCountLifecycleOrder
+  const delta =
+    getFundingChoicesProviderCountLifecycleDelta(writtenAtMs, writtenOrder)
+
+  lastFundingChoicesActiveProviderToggleCount =
+    normalizedValue
+  lastFundingChoicesProviderCountLifecycle = {
+    ...lastFundingChoicesProviderCountLifecycle,
+    lastWrittenValue:
+      normalizedValue,
+    lastWrittenSource:
+      String(source || 'unknown').slice(0, 120),
+    lastWrittenTraceStep:
+      String(traceStep || '').slice(0, 120),
+    lastWrittenAtMs:
+      writtenAtMs,
+    lastWrittenOrder:
+      writtenOrder,
+    ...delta,
+  }
+}
+
+function markFundingChoicesProviderPreferencesVisibleEntryLifecycle() {
+  const entryAtMs =
+    Date.now()
+  const entryOrder =
+    ++fundingChoicesProviderCountLifecycleOrder
+
+  lastFundingChoicesProviderCountLifecycle = {
+    ...lastFundingChoicesProviderCountLifecycle,
+    providerPreferencesVisibleEntryAtMs:
+      entryAtMs,
+    providerPreferencesVisibleEntryOrder:
+      entryOrder,
+    visibleEntryDeltaMs:
+      null,
+    visibleEntryDeltaOrder:
+      null,
+  }
+}
+
+function collectFundingChoicesProviderActiveInputsCurrentScan() {
+  const selector =
+    'input.gvl-vendor[aria-pressed="true"]'
+  const inputs =
+    safeQuerySelectorAll(document, selector)
+
+  return {
+    selector,
+    count:
+      inputs.length,
+    samples:
+      inputs.slice(0, 3).map((input) => ({
+        dataId:
+          String(input?.getAttribute?.('data-id') || '').slice(0, 80),
+        id:
+          getFundingChoicesProviderDiagnosticId(input),
+        checked:
+          Boolean(input?.checked),
+        ariaPressed:
+          String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
+        class:
+          getFundingChoicesProviderDiagnosticClass(input),
+        connected:
+          Boolean(input?.isConnected),
+      })),
+  }
+}
+
+function recordFundingChoicesProviderGuardCountRead(value, source) {
+  const readAtMs =
+    Date.now()
+  const readOrder =
+    ++fundingChoicesProviderCountLifecycleOrder
+  const delta =
+    getFundingChoicesProviderCountLifecycleDelta(readAtMs, readOrder)
+
+  lastFundingChoicesProviderActiveInputsCurrentScan =
+    collectFundingChoicesProviderActiveInputsCurrentScan()
+  lastFundingChoicesProviderCountLifecycle = {
+    ...lastFundingChoicesProviderCountLifecycle,
+    guardReadValue:
+      Math.max(0, Number(value) || 0),
+    guardReadSource:
+      String(source || 'unknown').slice(0, 120),
+    guardReadAtMs:
+      readAtMs,
+    guardReadOrder:
+      readOrder,
+    ...delta,
+  }
+}
+
 function getFundingChoicesProviderPhaseBlockedReason(guardState) {
   if (!guardState || typeof guardState !== 'object') {
     return 'unknown_guard'
@@ -11596,6 +11746,10 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
       Boolean(guardState?.providerAutomationEnabled),
   }
 
+  recordFundingChoicesProviderGuardCountRead(
+    safeGuardState.activeProviderCount,
+    'setFundingChoicesProviderPhaseGuardDiagnostics'
+  )
   lastFundingChoicesProviderPhaseGuardState = safeGuardState
   lastFundingChoicesProviderPhaseBlockedReason =
     getFundingChoicesProviderPhaseBlockedReason(safeGuardState)
@@ -11629,6 +11783,10 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderFirstThreeActiveEvaluations,
     providerAutomationGuardReason:
       lastFundingChoicesProviderAutomationGuardReason,
+    providerCountLifecycle:
+      lastFundingChoicesProviderCountLifecycle,
+    providerActiveInputsCurrentScan:
+      lastFundingChoicesProviderActiveInputsCurrentScan,
   }
 }
 
@@ -11950,7 +12108,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
   if (scope === 'provider') {
     lastFundingChoicesProviderToggleCount = inputs.length
-    lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+    setFundingChoicesActiveProviderToggleCount(
+      activeInputs.length,
+      'handleFundingChoicesPreferenceCategoryToggles.initial_active',
+      preferenceTrace
+    )
   } else {
     lastFundingChoicesMainRequiredActiveBefore = activeInputs.length
   }
@@ -12382,7 +12544,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   }
 
   if (scope === 'provider') {
-    lastFundingChoicesActiveProviderToggleCount = remainingActive.length
+    setFundingChoicesActiveProviderToggleCount(
+      remainingActive.length,
+      'handleFundingChoicesPreferenceCategoryToggles.remaining_active',
+      disableTrace
+    )
   } else {
     lastFundingChoicesMainRequiredActiveAfter =
       mainPanelTransitionedToProvider
@@ -16217,6 +16383,77 @@ function sanitizeFundingChoicesProviderActiveEvaluations(evaluations) {
     .filter(Boolean)
 }
 
+function sanitizeFundingChoicesProviderCountLifecycle(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    lastWrittenValue:
+      Math.max(0, Number(summary.lastWrittenValue) || 0),
+    lastWrittenSource:
+      String(summary.lastWrittenSource || '').slice(0, 120),
+    lastWrittenTraceStep:
+      String(summary.lastWrittenTraceStep || '').slice(0, 120),
+    lastWrittenAtMs:
+      Math.max(0, Number(summary.lastWrittenAtMs) || 0),
+    lastWrittenOrder:
+      Math.max(0, Number(summary.lastWrittenOrder) || 0),
+    guardReadValue:
+      Math.max(0, Number(summary.guardReadValue) || 0),
+    guardReadSource:
+      String(summary.guardReadSource || '').slice(0, 120),
+    guardReadAtMs:
+      Math.max(0, Number(summary.guardReadAtMs) || 0),
+    guardReadOrder:
+      Math.max(0, Number(summary.guardReadOrder) || 0),
+    providerPreferencesVisibleEntryAtMs:
+      Math.max(0, Number(summary.providerPreferencesVisibleEntryAtMs) || 0),
+    providerPreferencesVisibleEntryOrder:
+      Math.max(0, Number(summary.providerPreferencesVisibleEntryOrder) || 0),
+    visibleEntryDeltaMs:
+      summary.visibleEntryDeltaMs === null ||
+      summary.visibleEntryDeltaMs === undefined
+        ? null
+        : Number(summary.visibleEntryDeltaMs) || 0,
+    visibleEntryDeltaOrder:
+      summary.visibleEntryDeltaOrder === null ||
+      summary.visibleEntryDeltaOrder === undefined
+        ? null
+        : Number(summary.visibleEntryDeltaOrder) || 0,
+  }
+}
+
+function sanitizeFundingChoicesProviderActiveInputsCurrentScan(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    selector:
+      String(summary.selector || '').slice(0, 120),
+    count:
+      Math.max(0, Number(summary.count) || 0),
+    samples:
+      (Array.isArray(summary.samples) ? summary.samples : [])
+        .filter((sample) =>
+          sample && typeof sample === 'object'
+        )
+        .slice(0, 3)
+        .map((sample) => ({
+          dataId:
+            String(sample.dataId || '').slice(0, 80),
+          id:
+            String(sample.id || '').slice(0, 120),
+          checked:
+            Boolean(sample.checked),
+          ariaPressed:
+            String(sample.ariaPressed || '').slice(0, 40),
+          class:
+            String(sample.class || '')
+              .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+          connected:
+            Boolean(sample.connected),
+        })),
+  }
+}
+
 function sanitizeFundingChoicesProviderFirstActiveRowAttrs(attrs) {
   if (!attrs || typeof attrs !== 'object') return null
 
@@ -16327,7 +16564,11 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
   ) {
     lastFundingChoicesProviderPreferenceOpened = false
     lastFundingChoicesProviderToggleCount = 0
-    lastFundingChoicesActiveProviderToggleCount = 0
+    setFundingChoicesActiveProviderToggleCount(
+      0,
+      'refreshFundingChoicesProviderPanelDiagnostics.panel_not_verified',
+      'fc.provider_panel_refresh'
+    )
     lastFundingChoicesProviderInspectedCount = 0
     lastFundingChoicesProviderActiveFoundCount = 0
     return false
@@ -16349,7 +16590,11 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
 
   lastFundingChoicesProviderPreferenceOpened = true
   lastFundingChoicesProviderToggleCount = providerInputs.length
-  lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+  setFundingChoicesActiveProviderToggleCount(
+    activeInputs.length,
+    'refreshFundingChoicesProviderPanelDiagnostics.active_inputs',
+    'fc.provider_panel_refresh'
+  )
   lastFundingChoicesProviderInspectedCount = providerInputs.length
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
 
@@ -16429,7 +16674,11 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
   lastFundingChoicesProviderPreferenceOpened = true
   lastFundingChoicesProviderToggleCount = providerInputs.length
-  lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+  setFundingChoicesActiveProviderToggleCount(
+    activeInputs.length,
+    'handleFundingChoicesVisibleProviderTogglesPhase1.active_inputs',
+    'fc.provider_label_coordinate_enter'
+  )
   lastFundingChoicesProviderInspectedCount = providerInputs.length
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
   lastFundingChoicesProviderTimeBudgetExceeded = false
@@ -16462,7 +16711,11 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     getFundingChoicesProviderLegitimateInterestLabel(input)
 
   if (!input || !label) {
-    lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+    setFundingChoicesActiveProviderToggleCount(
+      activeInputs.length,
+      'handleFundingChoicesVisibleProviderTogglesPhase1.missing_target',
+      'fc.provider_label_coordinate_target_missing'
+    )
     setFundingChoicesProviderLabelCoordinateDiagnostic(
       false,
       'provider_label_coordinate_missing_target'
@@ -16536,8 +16789,13 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   })
 
   if (!clicked) {
-    lastFundingChoicesActiveProviderToggleCount =
+    const activeAfterFailedClick =
       getFundingChoicesProviderActiveCountFromDocument(providerPanel)
+    setFundingChoicesActiveProviderToggleCount(
+      activeAfterFailedClick,
+      'handleFundingChoicesVisibleProviderTogglesPhase1.click_failed_recount',
+      'fc.provider_label_coordinate_click_dispatched'
+    )
     setFundingChoicesProviderLabelCoordinateCounts(
       activeBefore,
       lastFundingChoicesActiveProviderToggleCount
@@ -16557,7 +16815,11 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     getFundingChoicesProviderActiveCountFromDocument(providerPanel)
   setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeAfter)
 
-  lastFundingChoicesActiveProviderToggleCount = activeAfter
+  setFundingChoicesActiveProviderToggleCount(
+    activeAfter,
+    'handleFundingChoicesVisibleProviderTogglesPhase1.recount',
+    'fc.provider_label_coordinate_recount'
+  )
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.provider_label_coordinate_recount',
     status: 'ran',
@@ -16857,7 +17119,11 @@ function handleFundingChoicesProviderPanelToggles(root) {
     )
 
   lastFundingChoicesProviderToggleCount = inputs.length
-  lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+  setFundingChoicesActiveProviderToggleCount(
+    activeInputs.length,
+    'handleFundingChoicesProviderToggles.initial_active',
+    'fc.provider_toggles'
+  )
   lastFundingChoicesProviderInspectedCount = inputs.length
   lastFundingChoicesProviderActiveFoundCount = activeInputs.length
   lastFundingChoicesProviderTimeBudgetExceeded = false
@@ -16967,7 +17233,11 @@ function handleFundingChoicesProviderPanelToggles(root) {
       isFundingChoicesProviderToggleOnScreen(input, root)
     )
 
-  lastFundingChoicesActiveProviderToggleCount = remainingActiveVisible.length
+  setFundingChoicesActiveProviderToggleCount(
+    remainingActiveVisible.length,
+    'handleFundingChoicesProviderToggles.remaining_active_visible',
+    'fc.disable_provider_toggles'
+  )
 
   appendLastDiagnosticDecisionStep({
     strategy: 'fc.disable_provider_toggles',
@@ -17653,6 +17923,10 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderFirstThreeActiveEvaluations,
     providerAutomationGuardReason:
       lastFundingChoicesProviderAutomationGuardReason,
+    providerCountLifecycle:
+      lastFundingChoicesProviderCountLifecycle,
+    providerActiveInputsCurrentScan:
+      lastFundingChoicesProviderActiveInputsCurrentScan,
     legitimateInterestPressed:
       providerConsentBreakdownDiagnostic.legitimateInterestPressed,
     consentPressed:
@@ -17858,6 +18132,10 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderFirstThreeActiveEvaluations,
     providerAutomationGuardReason:
       lastFundingChoicesProviderAutomationGuardReason,
+    providerCountLifecycle:
+      lastFundingChoicesProviderCountLifecycle,
+    providerActiveInputsCurrentScan:
+      lastFundingChoicesProviderActiveInputsCurrentScan,
     legitimateInterestPressed:
       providerConsentBreakdownDiagnostic.legitimateInterestPressed,
     consentPressed:
@@ -18593,6 +18871,7 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     root ||
     document
 
+  markFundingChoicesProviderPreferencesVisibleEntryLifecycle()
   lastFundingChoicesProviderPreferenceOpened = opened
   setFundingChoicesProviderPhaseGuardDiagnostics({
     attempted: fundingChoicesProviderPhase1Attempted,
@@ -19604,7 +19883,11 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesMainToggleMethod = ''
     lastFundingChoicesProviderPreferenceOpened = false
     lastFundingChoicesProviderToggleCount = 0
-    lastFundingChoicesActiveProviderToggleCount = 0
+    setFundingChoicesActiveProviderToggleCount(
+      0,
+      'completeFundingChoicesManageOptionsFlow.reset',
+      'fc.reset_provider_diagnostics'
+    )
     lastFundingChoicesProviderInspectedCount = 0
     lastFundingChoicesProviderActiveFoundCount = 0
     lastFundingChoicesProviderClickedCount = 0
@@ -19621,6 +19904,22 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderCountSources = null
     lastFundingChoicesProviderFirstThreeActiveEvaluations = []
     lastFundingChoicesProviderAutomationGuardReason = ''
+    lastFundingChoicesProviderCountLifecycle = {
+      ...lastFundingChoicesProviderCountLifecycle,
+      guardReadValue: 0,
+      guardReadSource: '',
+      guardReadAtMs: 0,
+      guardReadOrder: 0,
+      providerPreferencesVisibleEntryAtMs: 0,
+      providerPreferencesVisibleEntryOrder: 0,
+      visibleEntryDeltaMs: null,
+      visibleEntryDeltaOrder: null,
+    }
+    lastFundingChoicesProviderActiveInputsCurrentScan = {
+      selector: 'input.gvl-vendor[aria-pressed="true"]',
+      count: 0,
+      samples: [],
+    }
     lastFundingChoicesProviderPreferenceTextMatch = ''
     lastFundingChoicesProviderPreferenceClickableTargetTag = ''
     lastFundingChoicesProviderPreferenceClickMethod = ''
