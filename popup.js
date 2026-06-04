@@ -989,6 +989,12 @@ function buildDiagnosticCopyReport() {
       ),
     ],
     [
+      'Provider count diagnostics',
+      formatProviderCountDiagnosticsCopySection(
+        latestCurrentSiteDiagnostic
+      ),
+    ],
+    [
       'Funding Choices global state',
       formatFundingChoicesGlobalStateCopySection(
         latestCurrentSiteDiagnostic
@@ -2962,6 +2968,43 @@ function getProviderDiagnosticsExported(summary) {
   )
 }
 
+function getProviderCountDiagnosticsExported(summary) {
+  return Boolean(
+    summary &&
+    typeof summary === 'object' &&
+    'providerCountLifecycle' in summary &&
+    'providerActiveInputsCurrentScan' in summary &&
+    'providerCountSources' in summary &&
+    'providerFirstThreeActiveEvaluations' in summary
+  )
+}
+
+function formatProviderCountSummary(summary) {
+  const countSummary =
+    summary?.providerCountSummary &&
+    typeof summary.providerCountSummary === 'object'
+      ? summary.providerCountSummary
+      : null
+  const lifecycle =
+    summary?.providerCountLifecycle &&
+    typeof summary.providerCountLifecycle === 'object'
+      ? summary.providerCountLifecycle
+      : null
+  const currentScan =
+    summary?.providerActiveInputsCurrentScan &&
+    typeof summary.providerActiveInputsCurrentScan === 'object'
+      ? summary.providerActiveInputsCurrentScan
+      : null
+
+  return [
+    'providerCountSummary:',
+    `guardReadValue:${Math.max(0, Number(countSummary?.guardReadValue ?? lifecycle?.guardReadValue) || 0)}`,
+    `currentScanCount:${Math.max(0, Number(countSummary?.currentScanCount ?? currentScan?.count) || 0)}`,
+    `activeProviderToggleCount:${Math.max(0, Number(countSummary?.activeProviderToggleCount ?? summary?.activeProviderToggleCount) || 0)}`,
+    `providerActiveFoundCount:${Math.max(0, Number(countSummary?.providerActiveFoundCount ?? summary?.providerActiveFoundCount) || 0)}`,
+  ].join(' ')
+}
+
 function formatProviderDiagnosticsExportSummary(summary) {
   const guardState =
     summary?.providerPhaseGuardState &&
@@ -2971,6 +3014,8 @@ function formatProviderDiagnosticsExportSummary(summary) {
 
   return [
     `providerDiagnosticsExported:${getProviderDiagnosticsExported(summary)}`,
+    `providerCountDiagnosticsExported:${getProviderCountDiagnosticsExported(summary)}`,
+    formatProviderCountSummary(summary),
     `providerPhaseBlockedReason:${String(summary?.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
     `providerLabelCoordinateInvocationState:${String(summary?.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
     `providerAutomationGuardReason:${String(summary?.providerAutomationGuardReason || 'none').slice(0, 120)}`,
@@ -3149,6 +3194,28 @@ function formatProviderActiveInputsCurrentScan(summary) {
           `class:${String(sample.class || 'none').slice(0, 100)}`,
         ].join(' ')).join('\n')
       : 'providerActiveInputsCurrentScanSamples: none',
+  ].join('\n')
+}
+
+function formatProviderCountDiagnosticsCopySection(diagnostic) {
+  const summary =
+    diagnostic?.fundingChoicesControlDiagnostics
+
+  if (!summary || typeof summary !== 'object') {
+    return 'Sin datos'
+  }
+
+  return [
+    `providerCountDiagnosticsExported:${getProviderCountDiagnosticsExported(summary)}`,
+    formatProviderCountSummary(summary),
+    formatProviderCountSources(summary.providerCountSources),
+    formatProviderFirstThreeActiveEvaluations(
+      summary.providerFirstThreeActiveEvaluations
+    ),
+    formatProviderCountLifecycle(summary.providerCountLifecycle),
+    formatProviderActiveInputsCurrentScan(
+      summary.providerActiveInputsCurrentScan
+    ),
   ].join('\n')
 }
 
@@ -3346,6 +3413,8 @@ function formatFundingChoicesControls(summary) {
           .slice(0, 10)
       : []
   const lines = [
+    `providerCountDiagnosticsExported: ${getProviderCountDiagnosticsExported(summary)}`,
+    formatProviderCountSummary(summary),
     formatFundingChoicesGlobalStateCopySection({
       fundingChoicesControlDiagnostics: summary,
     }),

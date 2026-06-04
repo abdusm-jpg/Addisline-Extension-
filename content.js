@@ -4197,6 +4197,20 @@ function recordCurrentSiteDiagnostic({
               sanitizeFundingChoicesProviderActiveInputsCurrentScan(
                 fundingChoicesControlDiagnostics.providerActiveInputsCurrentScan
               ),
+            providerCountSummary:
+              fundingChoicesControlDiagnostics.providerCountSummary &&
+              typeof fundingChoicesControlDiagnostics.providerCountSummary === 'object'
+                ? {
+                    guardReadValue:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.guardReadValue) || 0),
+                    currentScanCount:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.currentScanCount) || 0),
+                    activeProviderToggleCount:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.activeProviderToggleCount) || 0),
+                    providerActiveFoundCount:
+                      Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.providerActiveFoundCount) || 0),
+                  }
+                : null,
             legitimateInterestPressed:
               sanitizeFundingChoicesProviderPressedDiagnostic(
                 fundingChoicesControlDiagnostics.legitimateInterestPressed
@@ -11708,6 +11722,25 @@ function recordFundingChoicesProviderGuardCountRead(value, source) {
   }
 }
 
+function getFundingChoicesProviderCountSummaryDiagnostic() {
+  return {
+    guardReadValue:
+      Math.max(
+        0,
+        Number(lastFundingChoicesProviderCountLifecycle?.guardReadValue) || 0
+      ),
+    currentScanCount:
+      Math.max(
+        0,
+        Number(lastFundingChoicesProviderActiveInputsCurrentScan?.count) || 0
+      ),
+    activeProviderToggleCount:
+      Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
+    providerActiveFoundCount:
+      Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0),
+  }
+}
+
 function getFundingChoicesProviderPhaseBlockedReason(guardState) {
   if (!guardState || typeof guardState !== 'object') {
     return 'unknown_guard'
@@ -17927,6 +17960,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderCountLifecycle,
     providerActiveInputsCurrentScan:
       lastFundingChoicesProviderActiveInputsCurrentScan,
+    providerCountSummary:
+      getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
       providerConsentBreakdownDiagnostic.legitimateInterestPressed,
     consentPressed:
@@ -18136,6 +18171,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderCountLifecycle,
     providerActiveInputsCurrentScan:
       lastFundingChoicesProviderActiveInputsCurrentScan,
+    providerCountSummary:
+      getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
       providerConsentBreakdownDiagnostic.legitimateInterestPressed,
     consentPressed:
