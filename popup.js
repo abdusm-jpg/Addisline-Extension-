@@ -1795,6 +1795,25 @@ function formatCurrentSiteDecisionTrace(decisionTrace) {
   ].join('\n')
 }
 
+function formatScanLifecycleTimeoutTrace(trace) {
+  if (!trace || typeof trace !== 'object') {
+    return ''
+  }
+
+  return [
+    'scanLifecycleTimeoutTrace:',
+    `url: ${String(trace.url || 'none').slice(0, 180)}`,
+    `readyState: ${String(trace.readyState || 'none').slice(0, 40)}`,
+    `elapsedSinceContentScriptStartMs: ${Math.max(0, Number(trace.elapsedSinceContentScriptStartMs) || 0)}`,
+    `fcRootSelectorExists: ${Boolean(trace.fcRootSelectorExists)}`,
+    `fcConsentRootExists: ${Boolean(trace.fcConsentRootExists)}`,
+    `fundingChoicesTextHintExists: ${Boolean(trace.fundingChoicesTextHintExists)}`,
+    `mutationScanCount: ${Math.max(0, Number(trace.mutationScanCount) || 0)}`,
+    `lastScanState: ${String(trace.lastScanState || 'none').slice(0, 80)}`,
+    `lastScanReason: ${String(trace.lastScanReason || 'none').slice(0, 120)}`,
+  ].join('\n')
+}
+
 function formatCurrentSiteRejectCandidates(candidates) {
   const safeCandidates =
     Array.isArray(candidates)
@@ -3747,7 +3766,12 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       diagnostic.lateDiagnosticSnapshot
     )
   currentSiteDiagnosticTrace.innerText =
-    formatCurrentSiteDecisionTrace(diagnostic.decisionTrace)
+    [
+      formatCurrentSiteDecisionTrace(diagnostic.decisionTrace),
+      formatScanLifecycleTimeoutTrace(diagnostic.scanLifecycleTimeoutTrace),
+    ]
+      .filter(Boolean)
+      .join('\n')
 }
 
 function renderIssueReports(issueReports) {

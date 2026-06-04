@@ -33,6 +33,8 @@ let lastScanAt = 0
 let pageScanCount = 0
 let observerMutationScanCount = 0
 let scanBudgetExhausted = false
+let lastScanLifecycleState = 'initialized'
+let lastScanLifecycleReason = 'content_script_loaded'
 let rejectFlowCompleted = false
 let delayedLateScanScheduled = false
 let lateCMPMutationWakeupUsed = false
@@ -4591,9 +4593,58 @@ function isDiagnosticLifecycleStillActive(diagnostic) {
   )
 }
 
+function textContainsFundingChoicesLifecyclePhrase() {
+  const bodyText =
+    String(
+      document.body?.innerText ||
+        document.body?.textContent ||
+        ''
+    )
+      .toLowerCase()
+      .slice(0, 200000)
+  const phrases = [
+    'gestionar opciones',
+    'gestionar opcions',
+    'preferencies de proveidors',
+    'preferències de proveïdors',
+  ]
+
+  return phrases.some((phrase) =>
+    bodyText.includes(phrase)
+  )
+}
+
+function collectScanLifecycleTimeoutTrace(elapsedMs) {
+  const fcRootSelector =
+    '.fc-dialog, .fc-consent-root, .fc-data-preferences-dialog, [class*="funding" i], [id*="funding" i]'
+
+  return {
+    url:
+      String(window.location.href || '').slice(0, 500),
+    readyState:
+      String(document.readyState || '').slice(0, 40),
+    elapsedSinceContentScriptStartMs:
+      Math.max(0, Number(elapsedMs) || 0),
+    fcRootSelectorExists:
+      Boolean(document.querySelector(fcRootSelector)),
+    fcConsentRootExists:
+      Boolean(document.querySelector('.fc-consent-root')),
+    fundingChoicesTextHintExists:
+      textContainsFundingChoicesLifecyclePhrase(),
+    mutationScanCount:
+      Math.max(0, Number(observerMutationScanCount) || 0),
+    lastScanState:
+      String(lastScanLifecycleState || '').slice(0, 80),
+    lastScanReason:
+      String(lastScanLifecycleReason || '').slice(0, 120),
+  }
+}
+
 function finalizeStuckDiagnosticLifecycle(reason = 'scan_lifecycle_timeout') {
   const elapsedMs =
     Math.max(0, Date.now() - diagnosticLifecycleStartedAt)
+  const scanLifecycleTimeoutTrace =
+    collectScanLifecycleTimeoutTrace(elapsedMs)
 
   safeStorageGet({
     [CURRENT_SITE_DIAGNOSTIC_KEY]: null,
@@ -4613,6 +4664,7 @@ function finalizeStuckDiagnosticLifecycle(reason = 'scan_lifecycle_timeout') {
         blockedReason: 'scan_not_finalized',
         elapsedMs,
         decisionTrace: lastDiagnosticDecisionTrace,
+        scanLifecycleTimeoutTrace,
         lastUpdatedAt: new Date().toISOString(),
       },
     })
@@ -24771,27 +24823,39 @@ function shouldDeferScanForLoading() {
 
 function canRunPageScan(source = 'scan') {
   if (!isPageActiveForAutomation()) {
+    lastScanLifecycleState = 'blocked'
+    lastScanLifecycleReason = 'page_not_active'
     return false
   }
 
   if (lateBannerRecoveryScanActive) {
     lateBannerRecoveryScanActive = false
     pageScanCount += 1
+    lastScanLifecycleState = 'running'
+    lastScanLifecycleReason = 'late_banner_recovery_scan'
     return true
   }
 
   if (lateHydrationRecheckActive) {
     lateHydrationRecheckActive = false
     pageScanCount += 1
+    lastScanLifecycleState = 'running'
+    lastScanLifecycleReason = 'late_hydration_recheck'
     return true
   }
 
   if (scanBudgetExhausted || rejectFlowCompleted) {
+    lastScanLifecycleState = 'blocked'
+    lastScanLifecycleReason = scanBudgetExhausted
+      ? 'scan_budget_exhausted'
+      : 'reject_flow_completed'
     return false
   }
 
   if (pageScanCount >= MAX_SCANS_PER_PAGE) {
     scanBudgetExhausted = true
+    lastScanLifecycleState = 'blocked'
+    lastScanLifecycleReason = 'max_scans_per_page'
     recordCurrentSiteDiagnostic({
       status: 'skipped',
       reason: 'scan_budget_exhausted',
@@ -24813,6 +24877,8 @@ function canRunPageScan(source = 'scan') {
   }
 
   pageScanCount += 1
+  lastScanLifecycleState = 'running'
+  lastScanLifecycleReason = source
   return true
 }
 
@@ -24822,6 +24888,8 @@ function scanPage() {
       return
     }
 
+    lastScanLifecycleState = 'scan_started'
+    lastScanLifecycleReason = 'scanPage'
     const decisionTrace =
       createDiagnosticDecisionTrace('scanPage')
     updateLastDiagnosticDecisionTrace(decisionTrace)
@@ -24838,6 +24906,8 @@ function scanPage() {
       getProtectionModeConfig()
 
     if (!shouldRunOnThisSite()) {
+      lastScanLifecycleState = 'finalized'
+      lastScanLifecycleReason = 'site_not_enabled'
       logInitialFlowSkipped('site_not_enabled_before_scan', {
         domain: getCurrentDomain(),
       })
@@ -24856,6 +24926,8 @@ function scanPage() {
     cleanupBannerSuppressions()
 
     if (attemptVisibleFundingChoicesManageVendorsNormalFlow(decisionTrace)) {
+      lastScanLifecycleState = 'fc_visible_provider_flow'
+      lastScanLifecycleReason = 'visible_provider_manage_vendors'
       if (
         lastDiagnosticDecisionTrace &&
         Array.isArray(lastDiagnosticDecisionTrace.steps)
@@ -24867,6 +24939,8 @@ function scanPage() {
     }
 
     if (shouldDeferScanForLoading()) {
+      lastScanLifecycleState = 'deferred'
+      lastScanLifecycleReason = 'page_loading'
       logInitialFlowSkipped('page_loading_deferred', {
         domain: getCurrentDomain(),
         readyState: document.readyState,
@@ -24895,6 +24969,11 @@ function scanPage() {
     lastScanDetectedControlCount =
       getDiagnosticControlTexts(candidates).length
     updateLastDiagnosticDecisionTrace(decisionTrace)
+    lastScanLifecycleState = 'candidate_scan_complete'
+    lastScanLifecycleReason =
+      candidates.length > 0
+        ? 'candidates_found'
+        : 'no_candidates_found'
 
     cookieDebugLog('cookie.scan.candidates', {
       count: candidates.length,
@@ -24974,6 +25053,8 @@ function scanPage() {
         }
 
         if (actionExecuted) {
+          lastScanLifecycleState = 'finalized'
+          lastScanLifecycleReason = 'candidate_reject_clicked'
           recordCurrentSiteDiagnostic({
             status: 'rejected',
             reason: 'candidate_reject_clicked',
@@ -25051,6 +25132,8 @@ function scanPage() {
     }
 
     if (!directRejectControl) {
+      lastScanLifecycleState = 'direct_scan_complete'
+      lastScanLifecycleReason = 'reject_candidate_not_found'
       recordCurrentSiteDiagnostic({
         status: 'skipped',
         reason: 'reject_candidate_not_found',
@@ -25111,6 +25194,8 @@ function scanPage() {
       directRejectCanProcess &&
       directRejectClicked
     ) {
+      lastScanLifecycleState = 'finalized'
+      lastScanLifecycleReason = 'direct_reject_clicked'
       recordCurrentSiteDiagnostic({
         status: 'rejected',
         reason: 'direct_reject_clicked',
@@ -25199,6 +25284,8 @@ function scanPage() {
     }
 
     if (attemptFundingChoicesManageOptionsFlow(candidates[0] || document, decisionTrace)) {
+      lastScanLifecycleState = 'fc_manage_options_attempted'
+      lastScanLifecycleReason = 'funding_choices_manage_options_flow'
       updateLastDiagnosticDecisionTrace(decisionTrace)
       return
     }
@@ -25223,6 +25310,8 @@ function scanPage() {
       ENABLE_LIGHTWEIGHT_SETTINGS_OPEN &&
       attemptLightweightSettingsOpen(candidates)
     ) {
+      lastScanLifecycleState = 'settings_opened'
+      lastScanLifecycleReason = 'lightweight_settings_open'
       addDiagnosticDecisionStep(decisionTrace, {
         strategy: 'settings.lightweight_open',
         status: 'found',
@@ -25249,6 +25338,8 @@ function scanPage() {
 
       if (noCMPScanCount >= MAX_NO_CMP_SCANS) {
         scanBudgetExhausted = true
+        lastScanLifecycleState = 'finalized'
+        lastScanLifecycleReason = 'no_cmp_after_bounded_scans'
         recordCurrentSiteDiagnostic({
           status: 'skipped',
           reason: 'no_cmp_after_bounded_scans',
@@ -25390,6 +25481,8 @@ function scanPage() {
         reason: 'no_safe_action',
         candidates,
       })
+      lastScanLifecycleState = 'finalized'
+      lastScanLifecycleReason = 'no_safe_action'
       updateAddislineTestReport({
         event: 'scanPage:no-safe-action',
         lastActionResult: 'no_safe_action',
@@ -25404,12 +25497,17 @@ function scanPage() {
           ? 'candidate_hidden'
           : 'no_candidates',
       })
+      lastScanLifecycleState = hiddenCandidate ? 'finalized' : 'scan_complete'
+      lastScanLifecycleReason = hiddenCandidate ? 'candidate_hidden' : 'no_candidates'
       if (hiddenCandidate) {
         scanBudgetExhausted = true
         stopObserver()
       }
     }
   } catch (error) {
+    lastScanLifecycleState = 'error'
+    lastScanLifecycleReason =
+      String(error?.message || 'scan_error').slice(0, 120)
     setLastError(error?.message || 'Error en content script')
     recordCurrentSiteDiagnostic({
       status: 'skipped',
