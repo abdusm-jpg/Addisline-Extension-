@@ -3232,6 +3232,8 @@ function formatFundingChoicesControls(summary) {
       `providerClickedCount: ${Math.max(0, Number(summary.providerClickedCount) || 0)}`,
       `providerTimeBudgetExceeded: ${Boolean(summary.providerTimeBudgetExceeded)}`,
       `providerToggleMethod: ${String(summary.providerToggleMethod || 'none').slice(0, 40)}`,
+      `providerLabelCoordinateTargetFound: ${Boolean(summary.providerLabelCoordinateTargetFound)}`,
+      `providerLabelCoordinateReason: ${String(summary.providerLabelCoordinateReason || 'none').slice(0, 80)}`,
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,

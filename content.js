@@ -93,6 +93,8 @@ let lastFundingChoicesProviderActiveFoundCount = 0
 let lastFundingChoicesProviderClickedCount = 0
 let lastFundingChoicesProviderTimeBudgetExceeded = false
 let lastFundingChoicesProviderToggleMethod = ''
+let lastFundingChoicesProviderLabelCoordinateTargetFound = false
+let lastFundingChoicesProviderLabelCoordinateReason = ''
 let lastFundingChoicesProviderPreferenceTextMatch = ''
 let lastFundingChoicesProviderPreferenceClickableTargetTag = ''
 let lastFundingChoicesProviderPreferenceClickMethod = ''
@@ -4107,6 +4109,10 @@ function recordCurrentSiteDiagnostic({
               Boolean(fundingChoicesControlDiagnostics.providerTimeBudgetExceeded),
             providerToggleMethod:
               String(fundingChoicesControlDiagnostics.providerToggleMethod || '').slice(0, 40),
+            providerLabelCoordinateTargetFound:
+              Boolean(fundingChoicesControlDiagnostics.providerLabelCoordinateTargetFound),
+            providerLabelCoordinateReason:
+              String(fundingChoicesControlDiagnostics.providerLabelCoordinateReason || '').slice(0, 120),
             providerPreferenceTextMatch:
               String(fundingChoicesControlDiagnostics.providerPreferenceTextMatch || '').slice(0, 90),
             providerPreferenceClickableTargetTag:
@@ -11466,6 +11472,18 @@ function isFundingChoicesProviderLegitimateInterestInput(input) {
   )
 }
 
+function setFundingChoicesProviderLabelCoordinateDiagnostic(found, reason = '') {
+  lastFundingChoicesProviderLabelCoordinateTargetFound =
+    Boolean(found)
+  lastFundingChoicesProviderLabelCoordinateReason =
+    String(reason || '').slice(0, 120)
+}
+
+function getFundingChoicesProviderLabelCoordinateElementId(element) {
+  return String(element?.id || element?.getAttribute?.('id') || '')
+    .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
+}
+
 function dispatchFundingChoicesProviderLabelCoordinateClick(label, root) {
   if (
     !shouldRunOnThisSite() ||
@@ -11474,6 +11492,10 @@ function dispatchFundingChoicesProviderLabelCoordinateClick(label, root) {
     processedActionElements.has(label) ||
     !canUsePageActionBudget('fundingChoicesProviderLabelCoordinateToggle')
   ) {
+    setFundingChoicesProviderLabelCoordinateDiagnostic(
+      false,
+      'provider_label_coordinate_missing_target'
+    )
     return false
   }
 
@@ -11481,6 +11503,10 @@ function dispatchFundingChoicesProviderLabelCoordinateClick(label, root) {
     label.getBoundingClientRect?.()
 
   if (!rect || rect.width <= 0 || rect.height <= 0) {
+    setFundingChoicesProviderLabelCoordinateDiagnostic(
+      false,
+      'provider_label_coordinate_missing_target'
+    )
     return false
   }
 
@@ -11494,6 +11520,7 @@ function dispatchFundingChoicesProviderLabelCoordinateClick(label, root) {
     window.screenY + clientY
 
   processedActionElements.add(label)
+  setFundingChoicesProviderLabelCoordinateDiagnostic(true, '')
 
   try {
     const eventView =
@@ -11541,6 +11568,10 @@ function dispatchFundingChoicesProviderLabelCoordinateClick(label, root) {
 
     return true
   } catch (error) {
+    setFundingChoicesProviderLabelCoordinateDiagnostic(
+      false,
+      'provider_label_coordinate_click_failed'
+    )
     log('Funding Choices provider label coordinate click failed:', error)
     return false
   }
@@ -15820,13 +15851,33 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
   if (!input || !label) {
     lastFundingChoicesActiveProviderToggleCount = activeInputs.length
+    setFundingChoicesProviderLabelCoordinateDiagnostic(
+      false,
+      'provider_label_coordinate_missing_target'
+    )
     return false
   }
 
   if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
     lastFundingChoicesProviderTimeBudgetExceeded = true
+    setFundingChoicesProviderLabelCoordinateDiagnostic(
+      false,
+      'budget_capped'
+    )
     return false
   }
+
+  appendLastDiagnosticDecisionStep({
+    strategy: 'fc.provider_label_coordinate_target',
+    status: 'found',
+    reason: [
+      `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
+      `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
+    ].join(','),
+    found: 1,
+    scanned: activeInputs.length,
+    elapsedMs: Date.now() - startedAt,
+  })
 
   const activeBefore =
     activeInputs.length
@@ -15836,6 +15887,12 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   if (!clicked) {
     lastFundingChoicesActiveProviderToggleCount =
       getFundingChoicesProviderActiveCountFromDocument(providerPanel)
+    if (!lastFundingChoicesProviderLabelCoordinateReason) {
+      setFundingChoicesProviderLabelCoordinateDiagnostic(
+        false,
+        'provider_label_coordinate_missing_target'
+      )
+    }
     return false
   }
 
@@ -15849,9 +15906,14 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
   if (activeAfter === activeBefore - 1) {
     lastFundingChoicesProviderClickedCount = 1
     lastFundingChoicesProviderToggleMethod = 'label-coordinate-click'
+    setFundingChoicesProviderLabelCoordinateDiagnostic(true, 'success')
     return true
   }
 
+  setFundingChoicesProviderLabelCoordinateDiagnostic(
+    true,
+    'provider_label_coordinate_no_change'
+  )
   return false
 }
 
@@ -16869,6 +16931,10 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerClickedCount: lastFundingChoicesProviderClickedCount,
     providerTimeBudgetExceeded: lastFundingChoicesProviderTimeBudgetExceeded,
     providerToggleMethod: lastFundingChoicesProviderToggleMethod,
+    providerLabelCoordinateTargetFound:
+      lastFundingChoicesProviderLabelCoordinateTargetFound,
+    providerLabelCoordinateReason:
+      lastFundingChoicesProviderLabelCoordinateReason,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
@@ -17038,6 +17104,10 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerClickedCount: lastFundingChoicesProviderClickedCount,
     providerTimeBudgetExceeded: lastFundingChoicesProviderTimeBudgetExceeded,
     providerToggleMethod: lastFundingChoicesProviderToggleMethod,
+    providerLabelCoordinateTargetFound:
+      lastFundingChoicesProviderLabelCoordinateTargetFound,
+    providerLabelCoordinateReason:
+      lastFundingChoicesProviderLabelCoordinateReason,
     providerPreferenceTextMatch: lastFundingChoicesProviderPreferenceTextMatch,
     providerPreferenceClickableTargetTag: lastFundingChoicesProviderPreferenceClickableTargetTag,
     providerPreferenceClickMethod: lastFundingChoicesProviderPreferenceClickMethod,
@@ -18733,6 +18803,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderClickedCount = 0
     lastFundingChoicesProviderTimeBudgetExceeded = false
     lastFundingChoicesProviderToggleMethod = ''
+    lastFundingChoicesProviderLabelCoordinateTargetFound = false
+    lastFundingChoicesProviderLabelCoordinateReason = ''
     lastFundingChoicesProviderPreferenceTextMatch = ''
     lastFundingChoicesProviderPreferenceClickableTargetTag = ''
     lastFundingChoicesProviderPreferenceClickMethod = ''
