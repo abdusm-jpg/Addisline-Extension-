@@ -11641,19 +11641,25 @@ function setFundingChoicesProviderActiveCountEntryDiagnostics(
   guardEntries,
   visibleEntries
 ) {
-  lastFundingChoicesProviderGuardCountEntries =
-    (Array.isArray(guardEntries) ? guardEntries : []).slice(0, 20)
-  lastFundingChoicesProviderVisibleActiveEntries =
+  const refreshedVisibleEntries =
     (Array.isArray(visibleEntries) ? visibleEntries : []).slice(0, 20)
+  const refreshedGuardEntries =
+    (Array.isArray(guardEntries) ? guardEntries : refreshedVisibleEntries)
+      .slice(0, 20)
+
+  lastFundingChoicesProviderGuardCountEntries =
+    refreshedGuardEntries
+  lastFundingChoicesProviderVisibleActiveEntries =
+    refreshedVisibleEntries
   lastFundingChoicesProviderGuardOnlyEntries =
     getFundingChoicesProviderActiveCountEntryDifference(
-      guardEntries,
-      visibleEntries
+      refreshedGuardEntries,
+      refreshedVisibleEntries
     )
   lastFundingChoicesProviderVisibleOnlyEntries =
     getFundingChoicesProviderActiveCountEntryDifference(
-      visibleEntries,
-      guardEntries
+      refreshedVisibleEntries,
+      refreshedGuardEntries
     )
 }
 
@@ -18167,7 +18173,7 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
       getFundingChoicesProviderActiveCountEntry(input, providerPanel)
     )
   setFundingChoicesProviderActiveCountEntryDiagnostics(
-    lastFundingChoicesProviderGuardCountEntries,
+    visibleActiveEntries,
     visibleActiveEntries
   )
   setFundingChoicesProvider15Snapshot(providerPanel, visibleActiveEntries, 'visible')
