@@ -101,6 +101,7 @@ let lastFundingChoicesProviderLabelCoordinateAfterActiveCount = 0
 let lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
 let lastFundingChoicesProviderLabelCoordinateExecutionStep = ''
 let lastFundingChoicesProviderLabelCoordinateLastError = null
+let lastFundingChoicesProviderSingleToggleTest = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4181,6 +4182,10 @@ function recordCurrentSiteDiagnostic({
                       String(fundingChoicesControlDiagnostics.providerLabelCoordinateLastError.stackFirstLine || '').slice(0, 160),
                   }
                 : null,
+            providerSingleToggleTest:
+              sanitizeFundingChoicesProviderSingleToggleTest(
+                fundingChoicesControlDiagnostics.providerSingleToggleTest
+              ),
             providerPhaseBlockedReason:
               String(fundingChoicesControlDiagnostics.providerPhaseBlockedReason || '').slice(0, 80),
             providerPhaseGuardState:
@@ -12049,6 +12054,21 @@ function setFundingChoicesProviderLabelCoordinateCounts(before, after) {
     Math.max(0, Number(after) || 0)
 }
 
+function setFundingChoicesProviderSingleToggleTestDiagnostic(summary = {}) {
+  lastFundingChoicesProviderSingleToggleTest = {
+    beforeCount:
+      Math.max(0, Number(summary.beforeCount) || 0),
+    afterCount:
+      Math.max(0, Number(summary.afterCount) || 0),
+    targetDataId:
+      String(summary.targetDataId || '').slice(0, 80),
+    targetLabel:
+      normalizeMatchText(summary.targetLabel || '').slice(0, 160),
+    success:
+      Boolean(summary.success),
+  }
+}
+
 function setFundingChoicesProviderLabelCoordinateInvocationState(state) {
   lastFundingChoicesProviderLabelCoordinateInvocationState =
     String(state || 'function_not_reached').slice(0, 40)
@@ -12420,6 +12440,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderLabelCoordinateExecutionStep,
     providerLabelCoordinateLastError:
       lastFundingChoicesProviderLabelCoordinateLastError,
+    providerSingleToggleTest:
+      lastFundingChoicesProviderSingleToggleTest,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18099,6 +18121,23 @@ function sanitizeFundingChoicesProviderGuardValueTrace(trace) {
     }))
 }
 
+function sanitizeFundingChoicesProviderSingleToggleTest(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    beforeCount:
+      Math.max(0, Number(summary.beforeCount) || 0),
+    afterCount:
+      Math.max(0, Number(summary.afterCount) || 0),
+    targetDataId:
+      String(summary.targetDataId || '').slice(0, 80),
+    targetLabel:
+      String(summary.targetLabel || '').slice(0, 160),
+    success:
+      Boolean(summary.success),
+  }
+}
+
 function sanitizeFundingChoicesProviderToggleCountWriteTrace(trace) {
   return (Array.isArray(trace) ? trace : [])
     .filter((entry) =>
@@ -18508,6 +18547,17 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
     const activeBefore =
       activeInputs.length
+    const targetDataId =
+      String(input?.getAttribute?.('data-id') || '').slice(0, 80)
+    const targetLabel =
+      getFundingChoicesPreferenceToggleLabel(input, providerPanel)
+    setFundingChoicesProviderSingleToggleTestDiagnostic({
+      beforeCount: activeBefore,
+      afterCount: activeBefore,
+      targetDataId,
+      targetLabel,
+      success: false,
+    })
     setFundingChoicesProviderLabelCoordinateExecutionStep('click_dispatch')
     const clicked =
       dispatchFundingChoicesProviderLabelCoordinateClick(label, providerPanel)
@@ -18536,6 +18586,13 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         activeBefore,
         lastFundingChoicesActiveProviderToggleCount
       )
+      setFundingChoicesProviderSingleToggleTestDiagnostic({
+        beforeCount: activeBefore,
+        afterCount: lastFundingChoicesActiveProviderToggleCount,
+        targetDataId,
+        targetLabel,
+        success: false,
+      })
       if (!lastFundingChoicesProviderLabelCoordinateReason) {
         setFundingChoicesProviderLabelCoordinateDiagnostic(
           false,
@@ -18552,6 +18609,13 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     const activeAfter =
       getFundingChoicesProviderActiveCountFromDocument(providerPanel)
     setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeAfter)
+    setFundingChoicesProviderSingleToggleTestDiagnostic({
+      beforeCount: activeBefore,
+      afterCount: activeAfter,
+      targetDataId,
+      targetLabel,
+      success: activeAfter === activeBefore - 1,
+    })
 
     setFundingChoicesActiveProviderToggleCount(
       activeAfter,
@@ -19687,6 +19751,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateExecutionStep,
     providerLabelCoordinateLastError:
       lastFundingChoicesProviderLabelCoordinateLastError,
+    providerSingleToggleTest:
+      lastFundingChoicesProviderSingleToggleTest,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -19946,6 +20012,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateExecutionStep,
     providerLabelCoordinateLastError:
       lastFundingChoicesProviderLabelCoordinateLastError,
+    providerSingleToggleTest:
+      lastFundingChoicesProviderSingleToggleTest,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -21779,6 +21847,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_reached'
     lastFundingChoicesProviderLabelCoordinateExecutionStep = ''
     lastFundingChoicesProviderLabelCoordinateLastError = null
+    lastFundingChoicesProviderSingleToggleTest = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''

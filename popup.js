@@ -3405,6 +3405,24 @@ function formatProviderGuardValueTrace(trace) {
   ].join('\n')
 }
 
+function formatProviderSingleToggleTest(summary) {
+  const test =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!test) return 'providerSingleToggleTest: none'
+
+  return [
+    'providerSingleToggleTest:',
+    `beforeCount:${Math.max(0, Number(test.beforeCount) || 0)}`,
+    `afterCount:${Math.max(0, Number(test.afterCount) || 0)}`,
+    `targetDataId:${String(test.targetDataId || 'none').slice(0, 80)}`,
+    `targetLabel:${String(test.targetLabel || 'none').slice(0, 120)}`,
+    `success:${Boolean(test.success)}`,
+  ].join(' ')
+}
+
 function formatProviderToggleCountWriteTrace(trace) {
   const entries =
     Array.isArray(trace)
@@ -3961,6 +3979,7 @@ function formatFundingChoicesControls(summary) {
       `providerLabelCoordinateInvocationState: ${String(summary.providerLabelCoordinateInvocationState || 'none').slice(0, 40)}`,
       `providerLabelCoordinateExecutionStep: ${String(summary.providerLabelCoordinateExecutionStep || 'none').slice(0, 60)}`,
       `providerLabelCoordinateLastError: message:${String(summary.providerLabelCoordinateLastError?.message || 'none').slice(0, 120)} stack:${String(summary.providerLabelCoordinateLastError?.stackFirstLine || 'none').slice(0, 120)}`,
+      formatProviderSingleToggleTest(summary.providerSingleToggleTest),
       `providerPhaseBlockedReason: ${String(summary.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
       `providerPhaseGuardComputedCount: ${Math.max(0, Number(summary.providerPhaseGuardComputedCount ?? providerPhaseGuardState?.providerPhaseGuardComputedCount) || 0)}`,
       `providerPhaseGuardUsedCurrentScan: ${Boolean(summary.providerPhaseGuardUsedCurrentScan ?? providerPhaseGuardState?.providerPhaseGuardUsedCurrentScan)}`,
