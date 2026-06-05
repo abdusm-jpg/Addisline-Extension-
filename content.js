@@ -103,6 +103,7 @@ let lastFundingChoicesProviderLabelCoordinateExecutionStep = ''
 let lastFundingChoicesProviderLabelCoordinateLastError = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
+let lastFundingChoicesProviderGuardCountSource = ''
 let lastFundingChoicesProviderPhaseLastError = null
 let lastFundingChoicesProviderCountSources = null
 let lastFundingChoicesProviderFirstThreeActiveEvaluations = []
@@ -4187,6 +4188,8 @@ function recordCurrentSiteDiagnostic({
                       Math.max(0, Number(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerPhaseGuardComputedCount) || 0),
                     providerPhaseGuardUsedCurrentScan:
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerPhaseGuardUsedCurrentScan),
+                    providerGuardCountSource:
+                      String(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerGuardCountSource || '').slice(0, 80),
                     panelVerified:
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.panelVerified),
                     providerAutomationEnabled:
@@ -4197,6 +4200,8 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerPhaseGuardComputedCount) || 0),
             providerPhaseGuardUsedCurrentScan:
               Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardUsedCurrentScan),
+            providerGuardCountSource:
+              String(fundingChoicesControlDiagnostics.providerGuardCountSource || '').slice(0, 80),
             providerPhaseLastError:
               fundingChoicesControlDiagnostics.providerPhaseLastError &&
               typeof fundingChoicesControlDiagnostics.providerPhaseLastError === 'object'
@@ -4257,6 +4262,8 @@ function recordCurrentSiteDiagnostic({
                       Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.activeProviderToggleCount) || 0),
                     providerActiveFoundCount:
                       Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.providerActiveFoundCount) || 0),
+                    providerGuardCountSource:
+                      String(fundingChoicesControlDiagnostics.providerCountSummary.providerGuardCountSource || '').slice(0, 80),
                     providerActiveStateMethod:
                       String(fundingChoicesControlDiagnostics.providerCountSummary.providerActiveStateMethod || '').slice(0, 40),
                   }
@@ -11971,24 +11978,40 @@ function getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel) {
     return {
       count: 0,
       usedCurrentScan: false,
+      source: 'visible_provider_dialog',
     }
   }
 
-  const inputs =
-    safeQuerySelectorAll(providerPanel, 'input.gvl-vendor')
-  const activeInputs =
-    inputs.filter(isFundingChoicesProviderInputActiveForPhase1)
-  setFundingChoicesProviderActiveStateMethodFromInputs(inputs)
+  const comparisonDiagnostics =
+    collectFundingChoicesProviderInputComparisonDiagnostics(providerPanel)
+  const panelInputs =
+    getFundingChoicesStableProviderToggleInputs(providerPanel, Date.now())
+      .filter((input) => {
+        const entry =
+          getFundingChoicesProviderInputComparisonEntry(input, providerPanel)
+
+        return (
+          entry.visible &&
+          entry.insideProviderDialog &&
+          entry.insideVisibleProviderDialog
+        )
+      })
+  setFundingChoicesProviderActiveStateMethodFromInputs(panelInputs)
 
   return {
     count:
-      activeInputs.length,
+      Math.max(
+        0,
+        Number(comparisonDiagnostics.providerPanelVisibleInputs?.activeCount) || 0
+      ),
     usedCurrentScan:
       true,
+    source:
+      'visible_provider_dialog',
   }
 }
 
-function recordFundingChoicesProviderGuardCountRead(value, source) {
+function recordFundingChoicesProviderGuardCountRead(value, source, countSource = '') {
   const readAtMs =
     Date.now()
   const readOrder =
@@ -12004,6 +12027,8 @@ function recordFundingChoicesProviderGuardCountRead(value, source) {
       Math.max(0, Number(value) || 0),
     guardReadSource:
       String(source || 'unknown').slice(0, 120),
+    providerGuardCountSource:
+      String(countSource || lastFundingChoicesProviderGuardCountSource || '').slice(0, 80),
     guardReadAtMs:
       readAtMs,
     guardReadOrder:
@@ -12024,6 +12049,8 @@ function getFundingChoicesProviderCountSummaryDiagnostic() {
         0,
         Number(lastFundingChoicesProviderActiveInputsCurrentScan?.count) || 0
       ),
+    providerGuardCountSource:
+      lastFundingChoicesProviderGuardCountSource,
     activeProviderToggleCount:
       Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
     providerActiveFoundCount:
@@ -12069,6 +12096,9 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
       Math.max(0, Number(guardState?.providerPhaseGuardComputedCount) || 0),
     providerPhaseGuardUsedCurrentScan:
       Boolean(guardState?.providerPhaseGuardUsedCurrentScan),
+    providerGuardCountSource:
+      String(guardState?.providerGuardCountSource || 'visible_provider_dialog')
+        .slice(0, 80),
     panelVerified:
       Boolean(guardState?.panelVerified),
     providerAutomationEnabled:
@@ -12077,8 +12107,11 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
 
   recordFundingChoicesProviderGuardCountRead(
     safeGuardState.activeProviderCount,
-    'setFundingChoicesProviderPhaseGuardDiagnostics'
+    'setFundingChoicesProviderPhaseGuardDiagnostics',
+    safeGuardState.providerGuardCountSource
   )
+  lastFundingChoicesProviderGuardCountSource =
+    safeGuardState.providerGuardCountSource
   lastFundingChoicesProviderPhaseGuardState = safeGuardState
   lastFundingChoicesProviderPhaseGuardComputedCount =
     safeGuardState.providerPhaseGuardComputedCount
@@ -12116,6 +12149,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderPhaseGuardComputedCount,
     providerPhaseGuardUsedCurrentScan:
       lastFundingChoicesProviderPhaseGuardUsedCurrentScan,
+    providerGuardCountSource:
+      lastFundingChoicesProviderGuardCountSource,
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
     providerCountSources:
@@ -13287,7 +13322,7 @@ function getFundingChoicesProviderCountComputationDiagnostics(root) {
       activeProviderCount: {
         ...countSource,
         metricPath:
-          'providerPhaseGuardState.activeProviderCount <- lastFundingChoicesActiveProviderToggleCount',
+          'providerPhaseGuardState.activeProviderCount <- visible_provider_dialog active inputs',
         countResult:
           Number.isFinite(guardActiveProviderCount)
             ? Math.max(0, guardActiveProviderCount)
@@ -17588,6 +17623,8 @@ function sanitizeFundingChoicesProviderCountLifecycle(summary) {
       Math.max(0, Number(summary.guardReadValue) || 0),
     guardReadSource:
       String(summary.guardReadSource || '').slice(0, 120),
+    providerGuardCountSource:
+      String(summary.providerGuardCountSource || '').slice(0, 80),
     guardReadAtMs:
       Math.max(0, Number(summary.guardReadAtMs) || 0),
     guardReadOrder:
@@ -18347,6 +18384,7 @@ function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
     activeProviderCount: guardCount.count,
     providerPhaseGuardComputedCount: guardCount.count,
     providerPhaseGuardUsedCurrentScan: guardCount.usedCurrentScan,
+    providerGuardCountSource: guardCount.source,
     panelVerified: Boolean(guardPanel),
     providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
   })
@@ -19212,6 +19250,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
     providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
+    providerGuardCountSource: lastFundingChoicesProviderGuardCountSource,
     providerInspectedCount: lastFundingChoicesProviderInspectedCount,
     providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
     providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -19447,6 +19486,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
     providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
+    providerGuardCountSource: lastFundingChoicesProviderGuardCountSource,
     providerInspectedCount: lastFundingChoicesProviderInspectedCount,
     providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
     providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -20241,6 +20281,7 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     activeProviderCount: guardCount.count,
     providerPhaseGuardComputedCount: guardCount.count,
     providerPhaseGuardUsedCurrentScan: guardCount.usedCurrentScan,
+    providerGuardCountSource: guardCount.source,
     panelVerified: opened,
     providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
   })
@@ -20317,6 +20358,7 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         providerToggleCount: lastFundingChoicesProviderToggleCount,
         activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
         providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
+        providerGuardCountSource: lastFundingChoicesProviderGuardCountSource,
         providerInspectedCount: lastFundingChoicesProviderInspectedCount,
         providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
         providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -21267,6 +21309,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderLabelCoordinateLastError = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
+    lastFundingChoicesProviderGuardCountSource = ''
     lastFundingChoicesProviderPhaseLastError = null
     lastFundingChoicesProviderCountSources = null
     lastFundingChoicesProviderFirstThreeActiveEvaluations = []
@@ -21277,6 +21320,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
       ...lastFundingChoicesProviderCountLifecycle,
       guardReadValue: 0,
       guardReadSource: '',
+      providerGuardCountSource: '',
       guardReadAtMs: 0,
       guardReadOrder: 0,
       providerPreferencesVisibleEntryAtMs: 0,
