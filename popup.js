@@ -3279,6 +3279,42 @@ function formatProviderActiveInputsCurrentScan(summary) {
   ].join('\n')
 }
 
+function formatProviderInputComparison(label, summary) {
+  const comparison =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+  const entries =
+    Array.isArray(comparison?.entries)
+      ? comparison.entries
+          .filter((entry) =>
+            entry && typeof entry === 'object'
+          )
+          .slice(0, 20)
+      : []
+
+  return [
+    [
+      `${label}:`,
+      `selector:${String(comparison?.selector || 'none').slice(0, 220)}`,
+      `count:${Math.max(0, Number(comparison?.count) || 0)}`,
+      `activeCount:${Math.max(0, Number(comparison?.activeCount) || 0)}`,
+    ].join(' '),
+    entries.length > 0
+      ? entries.map((entry, index) => [
+          `${index + 1}. data-id:${String(entry.dataId || 'none').slice(0, 80)}`,
+          `checked:${Boolean(entry.checked)}`,
+          `ariaPressed:${String(entry.ariaPressed || 'none').slice(0, 40)}`,
+          `visible:${Boolean(entry.visible)}`,
+          `insideProviderDialog:${Boolean(entry.insideProviderDialog)}`,
+          `insideVisibleProviderDialog:${Boolean(entry.insideVisibleProviderDialog)}`,
+          `class:${String(entry.class || 'none').slice(0, 100)}`,
+          `label:${String(entry.labelText || 'none').slice(0, 120)}`,
+        ].join(' ')).join('\n')
+      : `${label}Entries: none`,
+  ].join('\n')
+}
+
 function formatProviderClickTargetHierarchyElement(label, summary) {
   const element =
     summary && typeof summary === 'object'
@@ -3468,6 +3504,14 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderCountLifecycle(summary.providerCountLifecycle),
     formatProviderActiveInputsCurrentScan(
       summary.providerActiveInputsCurrentScan
+    ),
+    formatProviderInputComparison(
+      'providerPanelVisibleInputs',
+      summary.providerPanelVisibleInputs
+    ),
+    formatProviderInputComparison(
+      'providerDocumentWideInputs',
+      summary.providerDocumentWideInputs
     ),
   ].join('\n')
 }
@@ -3802,6 +3846,14 @@ function formatFundingChoicesControls(summary) {
       formatProviderCountLifecycle(summary.providerCountLifecycle),
       formatProviderActiveInputsCurrentScan(
         summary.providerActiveInputsCurrentScan
+      ),
+      formatProviderInputComparison(
+        'providerPanelVisibleInputs',
+        summary.providerPanelVisibleInputs
+      ),
+      formatProviderInputComparison(
+        'providerDocumentWideInputs',
+        summary.providerDocumentWideInputs
       ),
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,

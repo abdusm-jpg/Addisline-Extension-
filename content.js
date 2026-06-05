@@ -4225,6 +4225,14 @@ function recordCurrentSiteDiagnostic({
               sanitizeFundingChoicesProviderActiveInputsCurrentScan(
                 fundingChoicesControlDiagnostics.providerActiveInputsCurrentScan
               ),
+            providerPanelVisibleInputs:
+              sanitizeFundingChoicesProviderInputComparison(
+                fundingChoicesControlDiagnostics.providerPanelVisibleInputs
+              ),
+            providerDocumentWideInputs:
+              sanitizeFundingChoicesProviderInputComparison(
+                fundingChoicesControlDiagnostics.providerDocumentWideInputs
+              ),
             providerClickTargetHierarchy:
               sanitizeFundingChoicesProviderClickTargetHierarchy(
                 fundingChoicesControlDiagnostics.providerClickTargetHierarchy
@@ -11444,6 +11452,105 @@ function setFundingChoicesProviderActiveStateMethodFromInputs(inputs) {
     getFundingChoicesProviderActiveStateMethod(inputs)
 }
 
+function getFundingChoicesProviderDialogForInput(input) {
+  return safeClosest(
+    input,
+    '.fc-dialog, .fc-data-preferences-dialog, .fc-consent-root, [role="dialog"], [aria-modal="true"]'
+  )
+}
+
+function getFundingChoicesProviderInputComparisonEntry(input, visibleProviderPanel) {
+  const providerDialog =
+    getFundingChoicesProviderDialogForInput(input)
+  const insideProviderDialog =
+    Boolean(
+      providerDialog &&
+        isFundingChoicesProviderPreferencesPanel(providerDialog)
+    )
+  const insideVisibleProviderDialog =
+    Boolean(
+      visibleProviderPanel &&
+        (
+          visibleProviderPanel.contains?.(input) ||
+          providerDialog === visibleProviderPanel
+        )
+    )
+  const labelRoot =
+    insideVisibleProviderDialog
+      ? visibleProviderPanel
+      : providerDialog || document
+
+  return {
+    dataId:
+      String(input?.getAttribute?.('data-id') || '').slice(0, 80),
+    checked:
+      Boolean(input?.checked),
+    ariaPressed:
+      String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
+    visible:
+      Boolean(
+        input &&
+          isFundingChoicesProviderToggleVisible(
+            input,
+            document
+          )
+      ),
+    insideProviderDialog,
+    insideVisibleProviderDialog,
+    class:
+      getFundingChoicesProviderDiagnosticClass(input),
+    labelText:
+      normalizeMatchText(
+        getFundingChoicesPreferenceToggleLabel(
+          input,
+          labelRoot
+        )
+      ).slice(0, 160),
+  }
+}
+
+function collectFundingChoicesProviderInputComparisonDiagnostics(root = document) {
+  const startedAt =
+    Date.now()
+  const visibleProviderPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(document)
+  const panelInputs =
+    visibleProviderPanel
+      ? getFundingChoicesStableProviderToggleInputs(visibleProviderPanel, startedAt)
+          .filter((input) =>
+            isFundingChoicesProviderToggleVisible(input, visibleProviderPanel)
+          )
+      : []
+  const documentInputs =
+    safeQuerySelectorAll(document, FUNDING_CHOICES_DOCUMENT_PROVIDER_INPUT_SELECTORS)
+  const mapEntry = (input) =>
+    getFundingChoicesProviderInputComparisonEntry(input, visibleProviderPanel)
+
+  return {
+    providerPanelVisibleInputs: {
+      selector:
+        FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS,
+      count:
+        panelInputs.length,
+      activeCount:
+        panelInputs.filter(isFundingChoicesProviderActiveToggle).length,
+      entries:
+        panelInputs.slice(0, 20).map(mapEntry),
+    },
+    providerDocumentWideInputs: {
+      selector:
+        FUNDING_CHOICES_DOCUMENT_PROVIDER_INPUT_SELECTORS,
+      count:
+        documentInputs.length,
+      activeCount:
+        documentInputs.filter(isFundingChoicesProviderActiveToggle).length,
+      entries:
+        documentInputs.slice(0, 20).map(mapEntry),
+    },
+  }
+}
+
 function getFundingChoicesPreferenceToggleRank(input, root) {
   const label =
     getFundingChoicesPreferenceToggleLabel(input, root)
@@ -17536,6 +17643,51 @@ function sanitizeFundingChoicesProviderActiveInputsCurrentScan(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderInputComparisonEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null
+
+  return {
+    dataId:
+      String(entry.dataId || '').slice(0, 80),
+    checked:
+      Boolean(entry.checked),
+    ariaPressed:
+      String(entry.ariaPressed || '').slice(0, 40),
+    visible:
+      Boolean(entry.visible),
+    insideProviderDialog:
+      Boolean(entry.insideProviderDialog),
+    insideVisibleProviderDialog:
+      Boolean(entry.insideVisibleProviderDialog),
+    class:
+      String(entry.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    labelText:
+      String(entry.labelText || '').slice(0, 160),
+  }
+}
+
+function sanitizeFundingChoicesProviderInputComparison(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    selector:
+      String(summary.selector || '').slice(0, 400),
+    count:
+      Math.max(0, Number(summary.count) || 0),
+    activeCount:
+      Math.max(0, Number(summary.activeCount) || 0),
+    entries:
+      (Array.isArray(summary.entries) ? summary.entries : [])
+        .filter((entry) =>
+          entry && typeof entry === 'object'
+        )
+        .slice(0, 20)
+        .map(sanitizeFundingChoicesProviderInputComparisonEntry)
+        .filter(Boolean),
+  }
+}
+
 function sanitizeFundingChoicesProviderClickTargetElement(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19030,6 +19182,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     getFundingChoicesProviderVisualStateDiagnostics(root)
   const providerCountComparison =
     getFundingChoicesProviderCountComparison(root)
+  const providerInputComparisonDiagnostics =
+    collectFundingChoicesProviderInputComparisonDiagnostics(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -19097,6 +19251,10 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderCountLifecycle,
     providerActiveInputsCurrentScan:
       lastFundingChoicesProviderActiveInputsCurrentScan,
+    providerPanelVisibleInputs:
+      providerInputComparisonDiagnostics.providerPanelVisibleInputs,
+    providerDocumentWideInputs:
+      providerInputComparisonDiagnostics.providerDocumentWideInputs,
     providerCountSummary:
       getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
@@ -19259,6 +19417,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     getFundingChoicesProviderVisualStateDiagnostics(root)
   const providerCountComparison =
     getFundingChoicesProviderCountComparison(root)
+  const providerInputComparisonDiagnostics =
+    collectFundingChoicesProviderInputComparisonDiagnostics(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -19326,6 +19486,10 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderCountLifecycle,
     providerActiveInputsCurrentScan:
       lastFundingChoicesProviderActiveInputsCurrentScan,
+    providerPanelVisibleInputs:
+      providerInputComparisonDiagnostics.providerPanelVisibleInputs,
+    providerDocumentWideInputs:
+      providerInputComparisonDiagnostics.providerDocumentWideInputs,
     providerClickTargetHierarchy,
     providerVisualStateDiagnostics,
     providerCountComparison,
