@@ -2432,6 +2432,7 @@ function formatProviderStateSnapshot(label, snapshot) {
     `ariaPressed:${String(snapshot.ariaPressed || 'none').slice(0, 30)}`,
     `ariaChecked:${String(snapshot.ariaChecked || 'none').slice(0, 30)}`,
     `activeState:${String(snapshot.activeState || 'none').slice(0, 30)}`,
+    `providerActiveStateMethod:${String(snapshot.providerActiveStateMethod || 'none').slice(0, 40)}`,
     `activeDetected:${Boolean(snapshot.activeDetected)}`,
     `visualChanged:${Boolean(snapshot.visualChangedFromOriginal)}`,
     `activeChanged:${Boolean(snapshot.activeDetectionChangedFromOriginal)}`,
@@ -2487,6 +2488,7 @@ function formatProviderManualToggleSnapshot(label, snapshot) {
     `checked:${Boolean(snapshot.checked)}`,
     `ariaPressed:${String(snapshot.ariaPressed || 'none').slice(0, 30)}`,
     `ariaChecked:${String(snapshot.ariaChecked || 'none').slice(0, 30)}`,
+    `providerActiveStateMethod:${String(snapshot.providerActiveStateMethod || 'none').slice(0, 40)}`,
     `activeDetected:${Boolean(snapshot.activeDetected)}`,
     `rowSignature:${String(snapshot.rowSignature || 'none').slice(0, 120)}`,
     `classList:${String(classList).slice(0, 220)}`,
@@ -3074,6 +3076,7 @@ function formatProviderCountSummary(summary) {
     `currentScanCount:${Math.max(0, Number(countSummary?.currentScanCount ?? currentScan?.count) || 0)}`,
     `activeProviderToggleCount:${Math.max(0, Number(countSummary?.activeProviderToggleCount ?? summary?.activeProviderToggleCount) || 0)}`,
     `providerActiveFoundCount:${Math.max(0, Number(countSummary?.providerActiveFoundCount ?? summary?.providerActiveFoundCount) || 0)}`,
+    `providerActiveStateMethod:${String(countSummary?.providerActiveStateMethod ?? summary?.providerActiveStateMethod ?? 'none').slice(0, 40)}`,
   ].join(' ')
 }
 
@@ -3149,6 +3152,7 @@ function formatProviderCountSource(label, source) {
     `selector:${String(summary?.selectorUsed || 'none').slice(0, 220)}`,
     `selectedSource:${String(summary?.selectedSource || 'none').slice(0, 80)}`,
     `activeCondition:${String(summary?.activeConditionUsed || 'none').slice(0, 140)}`,
+    `providerActiveStateMethod:${String(summary?.providerActiveStateMethod || 'none').slice(0, 40)}`,
     `selectedInputCount:${Math.max(0, Number(summary?.selectedInputCount) || 0)}`,
     `activeCountResult:${Math.max(0, Number(summary?.activeCountResult) || 0)}`,
     `storedResult:${Math.max(0, Number(summary?.storedResult) || 0)}`,
@@ -3194,6 +3198,7 @@ function formatProviderActiveEvaluation(evaluation, index) {
     `checked:${Boolean(summary?.checked)}`,
     `ariaPressed:${String(summary?.ariaPressed || 'none').slice(0, 40)}`,
     `countedAsActive:${Boolean(summary?.countedAsActive)}`,
+    `activeStateMethod:${String(summary?.activeStateMethod || 'none').slice(0, 40)}`,
     `reason:${String(summary?.reason || 'none').slice(0, 100)}`,
     `class:${String(summary?.class || 'none').slice(0, 100)}`,
   ].join(' ')
@@ -3257,7 +3262,8 @@ function formatProviderActiveInputsCurrentScan(summary) {
   return [
     [
       'providerActiveInputsCurrentScan:',
-      `selector:${String(scan?.selector || 'input.gvl-vendor[aria-pressed="true"]').slice(0, 120)}`,
+      `selector:${String(scan?.selector || 'input.gvl-vendor').slice(0, 120)}`,
+      `activeCondition:${String(scan?.activeCondition || 'checked -> sliderPosition -> ariaPressedFallback').slice(0, 120)}`,
       `count:${Math.max(0, Number(scan?.count) || 0)}`,
     ].join(' '),
     samples.length > 0
@@ -3757,6 +3763,7 @@ function formatFundingChoicesControls(summary) {
       `providerPreferenceOpened: ${Boolean(summary.providerPreferenceOpened)}`,
       `providerToggleCount: ${Math.max(0, Number(summary.providerToggleCount) || 0)}`,
       `activeProviderToggleCount: ${Math.max(0, Number(summary.activeProviderToggleCount) || 0)}`,
+      `providerActiveStateMethod: ${String(summary.providerActiveStateMethod || 'none').slice(0, 40)}`,
       `providerInspectedCount: ${Math.max(0, Number(summary.providerInspectedCount) || 0)}`,
       `providerActiveFoundCount: ${Math.max(0, Number(summary.providerActiveFoundCount) || 0)}`,
       `providerClickedCount: ${Math.max(0, Number(summary.providerClickedCount) || 0)}`,

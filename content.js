@@ -88,6 +88,7 @@ let lastFundingChoicesMainToggleMethod = ''
 let lastFundingChoicesProviderPreferenceOpened = false
 let lastFundingChoicesProviderToggleCount = 0
 let lastFundingChoicesActiveProviderToggleCount = 0
+let lastFundingChoicesProviderActiveStateMethod = 'checked'
 let lastFundingChoicesProviderInspectedCount = 0
 let lastFundingChoicesProviderActiveFoundCount = 0
 let lastFundingChoicesProviderClickedCount = 0
@@ -125,7 +126,8 @@ let lastFundingChoicesProviderCountLifecycle = {
   visibleEntryDeltaOrder: null,
 }
 let lastFundingChoicesProviderActiveInputsCurrentScan = {
-  selector: 'input.gvl-vendor[aria-pressed="true"]',
+  selector: 'input.gvl-vendor',
+  activeCondition: 'checked -> sliderPosition -> ariaPressedFallback',
   count: 0,
   samples: [],
 }
@@ -4133,6 +4135,8 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerToggleCount) || 0),
             activeProviderToggleCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.activeProviderToggleCount) || 0),
+            providerActiveStateMethod:
+              String(fundingChoicesControlDiagnostics.providerActiveStateMethod || '').slice(0, 40),
             providerInspectedCount:
               Math.max(0, Number(fundingChoicesControlDiagnostics.providerInspectedCount) || 0),
             providerActiveFoundCount:
@@ -4245,6 +4249,8 @@ function recordCurrentSiteDiagnostic({
                       Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.activeProviderToggleCount) || 0),
                     providerActiveFoundCount:
                       Math.max(0, Number(fundingChoicesControlDiagnostics.providerCountSummary.providerActiveFoundCount) || 0),
+                    providerActiveStateMethod:
+                      String(fundingChoicesControlDiagnostics.providerCountSummary.providerActiveStateMethod || '').slice(0, 40),
                   }
                 : null,
             legitimateInterestPressed:
@@ -11342,6 +11348,102 @@ function isFundingChoicesProviderAriaPressedToggleActive(input) {
   )
 }
 
+function getFundingChoicesProviderSliderPositionForInput(input) {
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  const slider =
+    safeClosest(input, '.fc-preference-slider') ||
+    (
+      label &&
+      safeQuerySelectorAll(label, '.fc-preference-slider')[0]
+    ) ||
+    null
+  const sliderEl =
+    (
+      slider &&
+      safeQuerySelectorAll(slider, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    (
+      label &&
+      safeQuerySelectorAll(label, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    null
+
+  return getFundingChoicesProviderSliderPositionDiagnostic(slider, sliderEl)
+}
+
+function getFundingChoicesProviderActiveStateDiagnostic(input) {
+  if (!input || !input.matches?.('input.gvl-vendor')) {
+    return {
+      active: false,
+      method: 'ariaPressedFallback',
+      reason: input ? 'not_input_gvl_vendor' : 'missing_input',
+    }
+  }
+
+  if (typeof input.checked === 'boolean') {
+    return {
+      active: Boolean(input.checked),
+      method: 'checked',
+      reason: input.checked ? 'checked_true' : 'checked_false',
+    }
+  }
+
+  const sliderPosition =
+    getFundingChoicesProviderSliderPositionForInput(input)
+
+  if (sliderPosition?.inferredState === 'on') {
+    return {
+      active: true,
+      method: 'sliderPosition',
+      reason: 'slider_position_on',
+    }
+  }
+
+  if (sliderPosition?.inferredState === 'off') {
+    return {
+      active: false,
+      method: 'sliderPosition',
+      reason: 'slider_position_off',
+    }
+  }
+
+  const ariaState =
+    getFundingChoicesProviderAriaPressedToggleState(input)
+
+  return {
+    active: ariaState === 'enabled',
+    method: 'ariaPressedFallback',
+    reason:
+      ariaState === 'enabled'
+        ? 'aria_pressed_true_fallback'
+        : ariaState === 'disabled'
+          ? 'aria_pressed_false_fallback'
+          : 'aria_pressed_unknown_fallback',
+  }
+}
+
+function isFundingChoicesProviderActiveToggle(input) {
+  return getFundingChoicesProviderActiveStateDiagnostic(input).active
+}
+
+function getFundingChoicesProviderActiveStateMethod(inputs) {
+  const methods =
+    (Array.isArray(inputs) ? inputs : [])
+      .map((input) =>
+        getFundingChoicesProviderActiveStateDiagnostic(input).method
+      )
+
+  if (methods.includes('checked')) return 'checked'
+  if (methods.includes('sliderPosition')) return 'sliderPosition'
+  return 'ariaPressedFallback'
+}
+
+function setFundingChoicesProviderActiveStateMethodFromInputs(inputs) {
+  lastFundingChoicesProviderActiveStateMethod =
+    getFundingChoicesProviderActiveStateMethod(inputs)
+}
+
 function getFundingChoicesPreferenceToggleRank(input, root) {
   const label =
     getFundingChoicesPreferenceToggleLabel(input, root)
@@ -11726,16 +11828,21 @@ function markFundingChoicesProviderPreferencesVisibleEntryLifecycle() {
 
 function collectFundingChoicesProviderActiveInputsCurrentScan() {
   const selector =
-    'input.gvl-vendor[aria-pressed="true"]'
+    'input.gvl-vendor'
   const inputs =
     safeQuerySelectorAll(document, selector)
+  const activeInputs =
+    inputs.filter(isFundingChoicesProviderActiveToggle)
+  setFundingChoicesProviderActiveStateMethodFromInputs(inputs)
 
   return {
     selector,
+    activeCondition:
+      'checked -> sliderPosition -> ariaPressedFallback',
     count:
-      inputs.length,
+      activeInputs.length,
     samples:
-      inputs.slice(0, 3).map((input) => ({
+      activeInputs.slice(0, 3).map((input) => ({
         dataId:
           String(input?.getAttribute?.('data-id') || '').slice(0, 80),
         id:
@@ -11761,11 +11868,14 @@ function getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel) {
   }
 
   const inputs =
-    safeQuerySelectorAll(providerPanel, 'input.gvl-vendor[aria-pressed="true"]')
+    safeQuerySelectorAll(providerPanel, 'input.gvl-vendor')
+  const activeInputs =
+    inputs.filter(isFundingChoicesProviderInputActiveForPhase1)
+  setFundingChoicesProviderActiveStateMethodFromInputs(inputs)
 
   return {
     count:
-      inputs.length,
+      activeInputs.length,
     usedCurrentScan:
       true,
   }
@@ -11811,6 +11921,8 @@ function getFundingChoicesProviderCountSummaryDiagnostic() {
       Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0),
     providerActiveFoundCount:
       Math.max(0, Number(lastFundingChoicesProviderActiveFoundCount) || 0),
+    providerActiveStateMethod:
+      lastFundingChoicesProviderActiveStateMethod,
   }
 }
 
@@ -12224,9 +12336,14 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       root
     )
   const activeInputs =
-    inputs.filter((input) =>
-      getFundingChoicesPreferenceToggleState(input) === 'enabled'
-    )
+    scope === 'provider'
+      ? inputs.filter(isFundingChoicesProviderActiveToggle)
+      : inputs.filter((input) =>
+          getFundingChoicesPreferenceToggleState(input) === 'enabled'
+        )
+  if (scope === 'provider') {
+    setFundingChoicesProviderActiveStateMethodFromInputs(inputs)
+  }
 
   if (scope === 'provider') {
     lastFundingChoicesProviderToggleCount = inputs.length
@@ -12261,7 +12378,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           diagnostic.scope = 'main'
         }
 
-        if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+        if (
+          scope === 'provider'
+            ? !isFundingChoicesProviderActiveToggle(input)
+            : getFundingChoicesPreferenceToggleState(input) !== 'enabled'
+        ) {
           diagnostic.skippedReason = 'inactive'
         }
 
@@ -12571,7 +12692,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       Boolean(currentInput?.checked)
     actionDiagnostic.activeAfter =
       !clickedInputRemoved &&
-      getFundingChoicesPreferenceToggleState(currentInput) === 'enabled'
+      (
+        scope === 'provider'
+          ? isFundingChoicesProviderActiveToggle(currentInput)
+          : getFundingChoicesPreferenceToggleState(currentInput) === 'enabled'
+      )
     actionDiagnostic.stillActive =
       actionDiagnostic.activeAfter
 
@@ -12936,18 +13061,12 @@ function getFundingChoicesProviderActiveEvaluationReason(input, countedAsActive)
   if (!input) return 'missing_input'
   if (!input.matches?.('input.gvl-vendor')) return 'not_input_gvl_vendor'
 
-  const state =
-    getFundingChoicesProviderAriaPressedToggleState(input)
+  const activeState =
+    getFundingChoicesProviderActiveStateDiagnostic(input)
 
-  if (state === 'enabled') {
-    return countedAsActive
-      ? 'aria_pressed_true'
-      : 'aria_pressed_true_not_counted'
-  }
-
-  if (state === 'disabled') return 'aria_pressed_false'
-
-  return 'aria_pressed_unknown'
+  return countedAsActive
+    ? activeState.reason
+    : `${activeState.reason}_not_counted`
 }
 
 function getFundingChoicesProviderActiveEvaluation(input, selectedInputs) {
@@ -12964,8 +13083,10 @@ function getFundingChoicesProviderActiveEvaluation(input, selectedInputs) {
   const countedAsActive =
     Boolean(
       inSelectedCountSet &&
-        isFundingChoicesProviderAriaPressedToggleActive(input)
+        isFundingChoicesProviderActiveToggle(input)
     )
+  const activeState =
+    getFundingChoicesProviderActiveStateDiagnostic(input)
 
   return {
     key:
@@ -12979,6 +13100,8 @@ function getFundingChoicesProviderActiveEvaluation(input, selectedInputs) {
     ariaPressed:
       String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
     countedAsActive,
+    activeStateMethod:
+      activeState.method,
     reason:
       getFundingChoicesProviderActiveEvaluationReason(input, countedAsActive),
     class:
@@ -13023,7 +13146,8 @@ function getFundingChoicesProviderCountComputationDiagnostics(root) {
         ? 'provider_panel_visible_inputs'
         : 'document_provider_inputs_fallback'
   const activeInputs =
-    selectedInputs.filter(isFundingChoicesProviderAriaPressedToggleActive)
+    selectedInputs.filter(isFundingChoicesProviderActiveToggle)
+  setFundingChoicesProviderActiveStateMethodFromInputs(selectedInputs)
   const evaluationInputs =
     uniqueElements([
       ...selectedInputs,
@@ -13034,13 +13158,15 @@ function getFundingChoicesProviderCountComputationDiagnostics(root) {
       ? FUNDING_CHOICES_DOCUMENT_PROVIDER_INPUT_SELECTORS
       : FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS
   const activeConditionUsed =
-    'input.matches("input.gvl-vendor") && aria-pressed === "true"'
+    'input.matches("input.gvl-vendor") && checked -> sliderPosition -> ariaPressedFallback'
   const guardActiveProviderCount =
     Number(lastFundingChoicesProviderPhaseGuardState?.activeProviderCount)
   const countSource = {
     selectorUsed,
     selectedSource,
     activeConditionUsed,
+    providerActiveStateMethod:
+      lastFundingChoicesProviderActiveStateMethod,
     selectedInputCount:
       selectedInputs.length,
     activeCountResult:
@@ -13348,6 +13474,8 @@ function getFundingChoicesProviderInputStateSnapshot(input) {
     getFundingChoicesProviderFirstActiveRow(input, label, slider)
   const activeState =
     getFundingChoicesProviderAriaPressedToggleState(input)
+  const providerActiveState =
+    getFundingChoicesProviderActiveStateDiagnostic(input)
   const inputVisual =
     getFundingChoicesProviderElementVisualSnapshot(input)
   const labelVisual =
@@ -13376,8 +13504,10 @@ function getFundingChoicesProviderInputStateSnapshot(input) {
       String(input.getAttribute?.('aria-checked') || '').slice(0, 40),
     activeState:
       String(activeState || 'unknown').slice(0, 40),
+    providerActiveStateMethod:
+      providerActiveState.method,
     activeDetected:
-      activeState === 'enabled',
+      providerActiveState.active,
     visualSignature:
       visualSignature.slice(0, 500),
     inputVisual,
@@ -13434,8 +13564,10 @@ function getFundingChoicesProviderManualToggleSnapshot(input, row) {
       getFundingChoicesProviderClassList(row),
     rowSignature:
       getFundingChoicesProviderManualRowSignature(row),
+    providerActiveStateMethod:
+      getFundingChoicesProviderActiveStateDiagnostic(input).method,
     activeDetected:
-      getFundingChoicesProviderAriaPressedToggleState(input) === 'enabled',
+      getFundingChoicesProviderActiveStateDiagnostic(input).active,
   }
 }
 
@@ -15979,7 +16111,7 @@ function getFundingChoicesProviderFirstActiveToggleDiagnostic(root) {
   const providerInputs =
     getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
   const input =
-    providerInputs.find(isFundingChoicesProviderAriaPressedToggleActive) || null
+    providerInputs.find(isFundingChoicesProviderActiveToggle) || null
 
   if (!input) return null
 
@@ -16342,6 +16474,8 @@ function sanitizeFundingChoicesProviderStateSnapshot(snapshot) {
       String(snapshot.ariaChecked || '').slice(0, 40),
     activeState:
       String(snapshot.activeState || '').slice(0, 40),
+    providerActiveStateMethod:
+      String(snapshot.providerActiveStateMethod || '').slice(0, 40),
     activeDetected:
       Boolean(snapshot.activeDetected),
     visualSignature:
@@ -16415,6 +16549,8 @@ function sanitizeFundingChoicesProviderManualToggleSnapshot(snapshot) {
         .slice(0, 20),
     rowSignature:
       String(snapshot.rowSignature || '').slice(0, 160),
+    providerActiveStateMethod:
+      String(snapshot.providerActiveStateMethod || '').slice(0, 40),
     activeDetected:
       Boolean(snapshot.activeDetected),
   }
@@ -17261,6 +17397,8 @@ function sanitizeFundingChoicesProviderCountSource(source) {
       String(source.selectedSource || '').slice(0, 80),
     activeConditionUsed:
       String(source.activeConditionUsed || '').slice(0, 160),
+    providerActiveStateMethod:
+      String(source.providerActiveStateMethod || '').slice(0, 40),
     selectedInputCount:
       Math.max(0, Number(source.selectedInputCount) || 0),
     activeCountResult:
@@ -17305,6 +17443,8 @@ function sanitizeFundingChoicesProviderActiveEvaluation(evaluation) {
       String(evaluation.ariaPressed || '').slice(0, 40),
     countedAsActive:
       Boolean(evaluation.countedAsActive),
+    activeStateMethod:
+      String(evaluation.activeStateMethod || '').slice(0, 40),
     reason:
       String(evaluation.reason || '').slice(0, 120),
     class:
@@ -17368,6 +17508,8 @@ function sanitizeFundingChoicesProviderActiveInputsCurrentScan(summary) {
   return {
     selector:
       String(summary.selector || '').slice(0, 120),
+    activeCondition:
+      String(summary.activeCondition || '').slice(0, 120),
     count:
       Math.max(0, Number(summary.count) || 0),
     samples:
@@ -17575,7 +17717,8 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
       ? visibleInputs
       : getDocumentFundingChoicesProviderToggleInputs(startedAt)
   const activeInputs =
-    providerInputs.filter(isFundingChoicesProviderAriaPressedToggleActive)
+    providerInputs.filter(isFundingChoicesProviderActiveToggle)
+  setFundingChoicesProviderActiveStateMethodFromInputs(providerInputs)
 
   lastFundingChoicesProviderPreferenceOpened = true
   lastFundingChoicesProviderToggleCount = providerInputs.length
@@ -17608,7 +17751,7 @@ function getFundingChoicesStableProviderToggleInputs(root, startedAt) {
 }
 
 function isFundingChoicesProviderInputActiveForPhase1(input) {
-  return isFundingChoicesProviderAriaPressedToggleActive(input)
+  return isFundingChoicesProviderActiveToggle(input)
 }
 
 function getFundingChoicesProviderActiveCountFromDocument(providerPanel) {
@@ -17661,6 +17804,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     const activeInputs =
       providerInputs
         .filter(isFundingChoicesProviderInputActiveForPhase1)
+    setFundingChoicesProviderActiveStateMethodFromInputs(providerInputs)
     const activeLegitimateInterestInputs =
       activeInputs.filter(isFundingChoicesProviderLegitimateInterestInput)
     setFundingChoicesProviderLabelCoordinateCounts(activeInputs.length, activeInputs.length)
@@ -18060,7 +18204,7 @@ function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
     fundingChoicesProviderPhase1Running ||
     Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) !== 0 ||
     !lastFundingChoicesProviderPreferenceOpened ||
-    lastFundingChoicesActiveProviderToggleCount <= 0
+    guardCount.count <= 0
   ) {
     setFundingChoicesProviderLabelCoordinateInvocationState('blocked_by_guard')
     return false
@@ -18071,7 +18215,7 @@ function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
 
   try {
     const activeBefore =
-      lastFundingChoicesActiveProviderToggleCount
+      guardCount.count
     const providerPhaseHandled =
       handleFundingChoicesVisibleProviderTogglesPhase1(root)
     const handledCount =
@@ -18102,9 +18246,8 @@ function handleFundingChoicesProviderPanelToggles(root) {
   const inputs =
     getBoundedFundingChoicesProviderToggleInputs(root, startedAt)
   const activeInputs =
-    inputs.filter((input) =>
-      getFundingChoicesPreferenceToggleState(input) === 'enabled'
-    )
+    inputs.filter(isFundingChoicesProviderActiveToggle)
+  setFundingChoicesProviderActiveStateMethodFromInputs(inputs)
   const prioritizedActiveInputs =
     [...activeInputs].sort((first, second) =>
       Number(isFundingChoicesProviderToggleOnScreen(second, root)) -
@@ -18117,7 +18260,7 @@ function handleFundingChoicesProviderPanelToggles(root) {
         const diagnostic =
           getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
         diagnostic.scope = 'provider'
-        if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+        if (!isFundingChoicesProviderActiveToggle(input)) {
           diagnostic.skippedReason = 'inactive'
         }
         return diagnostic
@@ -18191,7 +18334,7 @@ function handleFundingChoicesProviderPanelToggles(root) {
         break
       }
 
-      if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+      if (!isFundingChoicesProviderActiveToggle(input)) {
         break
       }
 
@@ -18212,7 +18355,7 @@ function handleFundingChoicesProviderPanelToggles(root) {
       diagnostic.checkedAfter =
         Boolean(input?.checked)
       diagnostic.activeAfter =
-        getFundingChoicesPreferenceToggleState(input) === 'enabled'
+        isFundingChoicesProviderActiveToggle(input)
       diagnostic.stillActive =
         diagnostic.activeAfter
 
@@ -18241,7 +18384,7 @@ function handleFundingChoicesProviderPanelToggles(root) {
 
   const remainingActiveVisible =
     inputs.filter((input) =>
-      getFundingChoicesPreferenceToggleState(input) === 'enabled' &&
+      isFundingChoicesProviderActiveToggle(input) &&
       isFundingChoicesProviderToggleOnScreen(input, root)
     )
 
@@ -18914,6 +19057,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
+    providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
     providerInspectedCount: lastFundingChoicesProviderInspectedCount,
     providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
     providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -19142,6 +19286,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
+    providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
     providerInspectedCount: lastFundingChoicesProviderInspectedCount,
     providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
     providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -20007,6 +20152,7 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
         providerToggleCount: lastFundingChoicesProviderToggleCount,
         activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
+        providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
         providerInspectedCount: lastFundingChoicesProviderInspectedCount,
         providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
         providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -20942,6 +21088,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
       'completeFundingChoicesManageOptionsFlow.reset',
       'fc.reset_provider_diagnostics'
     )
+    lastFundingChoicesProviderActiveStateMethod = 'checked'
     lastFundingChoicesProviderInspectedCount = 0
     lastFundingChoicesProviderActiveFoundCount = 0
     lastFundingChoicesProviderClickedCount = 0
@@ -20974,7 +21121,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
       visibleEntryDeltaOrder: null,
     }
     lastFundingChoicesProviderActiveInputsCurrentScan = {
-      selector: 'input.gvl-vendor[aria-pressed="true"]',
+      selector: 'input.gvl-vendor',
+      activeCondition: 'checked -> sliderPosition -> ariaPressedFallback',
       count: 0,
       samples: [],
     }
