@@ -4194,6 +4194,8 @@ function recordCurrentSiteDiagnostic({
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerPhaseGuardUsedCurrentScan),
                     providerGuardCountSource:
                       String(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerGuardCountSource || '').slice(0, 80),
+                    providerGuardUsesRefreshedPanelState:
+                      Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.providerGuardUsesRefreshedPanelState),
                     panelVerified:
                       Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardState.panelVerified),
                     providerAutomationEnabled:
@@ -4206,6 +4208,8 @@ function recordCurrentSiteDiagnostic({
               Boolean(fundingChoicesControlDiagnostics.providerPhaseGuardUsedCurrentScan),
             providerGuardCountSource:
               String(fundingChoicesControlDiagnostics.providerGuardCountSource || '').slice(0, 80),
+            providerGuardUsesRefreshedPanelState:
+              Boolean(fundingChoicesControlDiagnostics.providerGuardUsesRefreshedPanelState),
             providerPhaseLastError:
               fundingChoicesControlDiagnostics.providerPhaseLastError &&
               typeof fundingChoicesControlDiagnostics.providerPhaseLastError === 'object'
@@ -12059,45 +12063,29 @@ function getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel) {
       count: 0,
       usedCurrentScan: false,
       source: 'visible_provider_dialog',
+      usesRefreshedPanelState: true,
     }
   }
 
-  const comparisonDiagnostics =
-    collectFundingChoicesProviderInputComparisonDiagnostics(providerPanel)
-  const panelInputs =
-    getFundingChoicesStableProviderToggleInputs(providerPanel, Date.now())
-      .filter((input) => {
-        const entry =
-          getFundingChoicesProviderInputComparisonEntry(input, providerPanel)
-
-        return (
-          entry.visible &&
-          entry.insideProviderDialog &&
-          entry.insideVisibleProviderDialog
-        )
-      })
-  const guardActiveInputs =
-    panelInputs.filter(isFundingChoicesProviderInputActiveForPhase1)
   const guardEntries =
-    guardActiveInputs.map((input) =>
-      getFundingChoicesProviderActiveCountEntry(input, providerPanel)
-    )
+    lastFundingChoicesProviderVisibleActiveEntries.slice(0, 20)
   setFundingChoicesProviderActiveCountEntryDiagnostics(
     guardEntries,
     lastFundingChoicesProviderVisibleActiveEntries
   )
-  setFundingChoicesProviderActiveStateMethodFromInputs(panelInputs)
 
   return {
     count:
       Math.max(
         0,
-        Number(comparisonDiagnostics.providerPanelVisibleInputs?.activeCount) || 0
+        Number(lastFundingChoicesActiveProviderToggleCount) || 0
       ),
     usedCurrentScan:
       true,
     source:
       'visible_provider_dialog',
+    usesRefreshedPanelState:
+      true,
   }
 }
 
@@ -12189,6 +12177,8 @@ function setFundingChoicesProviderPhaseGuardDiagnostics(guardState) {
     providerGuardCountSource:
       String(guardState?.providerGuardCountSource || 'visible_provider_dialog')
         .slice(0, 80),
+    providerGuardUsesRefreshedPanelState:
+      Boolean(guardState?.providerGuardUsesRefreshedPanelState),
     panelVerified:
       Boolean(guardState?.panelVerified),
     providerAutomationEnabled:
@@ -12241,6 +12231,11 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderPhaseGuardUsedCurrentScan,
     providerGuardCountSource:
       lastFundingChoicesProviderGuardCountSource,
+    providerGuardUsesRefreshedPanelState:
+      Boolean(
+        lastFundingChoicesProviderPhaseGuardState
+          ?.providerGuardUsesRefreshedPanelState
+      ),
     providerPhaseLastError:
       lastFundingChoicesProviderPhaseLastError,
     providerCountSources:
@@ -18501,6 +18496,9 @@ function finishFundingChoicesProviderPhase1(root, providerPhaseHandled) {
 function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
   const guardPanel =
     getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+  if (guardPanel) {
+    refreshFundingChoicesProviderPanelDiagnostics(guardPanel)
+  }
   const guardCount =
     getFundingChoicesProviderPhaseGuardCurrentCount(guardPanel)
   setFundingChoicesProviderPhaseGuardDiagnostics({
@@ -18511,6 +18509,7 @@ function maybeRunFundingChoicesProviderPhase1AfterCount(root) {
     providerPhaseGuardComputedCount: guardCount.count,
     providerPhaseGuardUsedCurrentScan: guardCount.usedCurrentScan,
     providerGuardCountSource: guardCount.source,
+    providerGuardUsesRefreshedPanelState: guardCount.usesRefreshedPanelState,
     panelVerified: Boolean(guardPanel),
     providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
   })
@@ -19377,6 +19376,11 @@ function collectFundingChoicesControlDiagnostics(root) {
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
     providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
     providerGuardCountSource: lastFundingChoicesProviderGuardCountSource,
+    providerGuardUsesRefreshedPanelState:
+      Boolean(
+        lastFundingChoicesProviderPhaseGuardState
+          ?.providerGuardUsesRefreshedPanelState
+      ),
     providerInspectedCount: lastFundingChoicesProviderInspectedCount,
     providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
     providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -19621,6 +19625,11 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
     providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
     providerGuardCountSource: lastFundingChoicesProviderGuardCountSource,
+    providerGuardUsesRefreshedPanelState:
+      Boolean(
+        lastFundingChoicesProviderPhaseGuardState
+          ?.providerGuardUsesRefreshedPanelState
+      ),
     providerInspectedCount: lastFundingChoicesProviderInspectedCount,
     providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
     providerClickedCount: lastFundingChoicesProviderClickedCount,
@@ -20414,6 +20423,9 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
 
   markFundingChoicesProviderPreferencesVisibleEntryLifecycle()
   lastFundingChoicesProviderPreferenceOpened = opened
+  if (providerPanel) {
+    refreshFundingChoicesProviderPanelDiagnostics(providerPanel)
+  }
   const guardCount =
     getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel)
   setFundingChoicesProviderPhaseGuardDiagnostics({
@@ -20424,6 +20436,7 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
     providerPhaseGuardComputedCount: guardCount.count,
     providerPhaseGuardUsedCurrentScan: guardCount.usedCurrentScan,
     providerGuardCountSource: guardCount.source,
+    providerGuardUsesRefreshedPanelState: guardCount.usesRefreshedPanelState,
     panelVerified: opened,
     providerAutomationEnabled: ENABLE_FC_PROVIDER_AUTOMATION,
   })
@@ -20501,6 +20514,11 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
         providerActiveStateMethod: lastFundingChoicesProviderActiveStateMethod,
         providerGuardCountSource: lastFundingChoicesProviderGuardCountSource,
+        providerGuardUsesRefreshedPanelState:
+          Boolean(
+            lastFundingChoicesProviderPhaseGuardState
+              ?.providerGuardUsesRefreshedPanelState
+          ),
         providerInspectedCount: lastFundingChoicesProviderInspectedCount,
         providerActiveFoundCount: lastFundingChoicesProviderActiveFoundCount,
         providerClickedCount: lastFundingChoicesProviderClickedCount,
