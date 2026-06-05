@@ -111,6 +111,9 @@ let lastFundingChoicesProviderGuardCountEntries = []
 let lastFundingChoicesProviderVisibleActiveEntries = []
 let lastFundingChoicesProviderGuardOnlyEntries = []
 let lastFundingChoicesProviderVisibleOnlyEntries = []
+let lastFundingChoicesProvider15GuardSnapshot = null
+let lastFundingChoicesProvider15VisibleSnapshot = null
+let fundingChoicesProvider15SnapshotOrder = 0
 let lastFundingChoicesProviderAutomationGuardReason = ''
 let lastFundingChoicesProviderPhaseGuardComputedCount = 0
 let lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false
@@ -4261,6 +4264,18 @@ function recordCurrentSiteDiagnostic({
             visibleOnlyEntries:
               sanitizeFundingChoicesProviderActiveCountEntries(
                 fundingChoicesControlDiagnostics.visibleOnlyEntries
+              ),
+            provider15GuardSnapshot:
+              sanitizeFundingChoicesProvider15Snapshot(
+                fundingChoicesControlDiagnostics.provider15GuardSnapshot
+              ),
+            provider15VisibleSnapshot:
+              sanitizeFundingChoicesProvider15Snapshot(
+                fundingChoicesControlDiagnostics.provider15VisibleSnapshot
+              ),
+            provider15SnapshotOrder:
+              sanitizeFundingChoicesProvider15SnapshotOrder(
+                fundingChoicesControlDiagnostics.provider15SnapshotOrder
               ),
             providerClickTargetHierarchy:
               sanitizeFundingChoicesProviderClickTargetHierarchy(
@@ -11642,6 +11657,90 @@ function setFundingChoicesProviderActiveCountEntryDiagnostics(
     )
 }
 
+function getFundingChoicesProvider15Snapshot(providerPanel, entries, phase) {
+  const entry =
+    (Array.isArray(entries) ? entries : [])
+      .find((item) =>
+        String(item?.dataId || '') === '15'
+      ) || null
+  const candidates =
+    safeQuerySelectorAll(document, 'input.gvl-vendor')
+      .filter((input) =>
+        String(input?.getAttribute?.('data-id') || '') === '15'
+      )
+  const preferredInput =
+    candidates.find((input) => {
+      const comparisonEntry =
+        getFundingChoicesProviderInputComparisonEntry(input, providerPanel)
+
+      return (
+        comparisonEntry.insideVisibleProviderDialog &&
+        comparisonEntry.visible
+      )
+    }) ||
+    candidates.find((input) =>
+      providerPanel?.contains?.(input)
+    ) ||
+    candidates[0] ||
+    null
+  const comparisonEntry =
+    getFundingChoicesProviderInputComparisonEntry(preferredInput, providerPanel)
+
+  return {
+    phase:
+      String(phase || '').slice(0, 40),
+    order:
+      ++fundingChoicesProvider15SnapshotOrder,
+    atMs:
+      Date.now(),
+    entryPresent:
+      Boolean(entry),
+    entryChecked:
+      Boolean(entry?.checked),
+    checked:
+      Boolean(preferredInput?.checked),
+    ariaPressed:
+      String(preferredInput?.getAttribute?.('aria-pressed') || '').slice(0, 40),
+    connected:
+      Boolean(preferredInput?.isConnected),
+    visible:
+      Boolean(comparisonEntry.visible),
+    insideVisibleProviderDialog:
+      Boolean(comparisonEntry.insideVisibleProviderDialog),
+    candidateCount:
+      candidates.length,
+    labelText:
+      String(
+        entry?.labelText ||
+        comparisonEntry.labelText ||
+        ''
+      ).slice(0, 160),
+  }
+}
+
+function setFundingChoicesProvider15Snapshot(providerPanel, entries, phase) {
+  const snapshot =
+    getFundingChoicesProvider15Snapshot(providerPanel, entries, phase)
+
+  if (phase === 'guard') {
+    lastFundingChoicesProvider15GuardSnapshot = snapshot
+    return
+  }
+
+  if (phase === 'visible') {
+    lastFundingChoicesProvider15VisibleSnapshot = snapshot
+  }
+}
+
+function getFundingChoicesProvider15SnapshotOrderDiagnostic() {
+  return {
+    guard:
+      Math.max(0, Number(lastFundingChoicesProvider15GuardSnapshot?.order) || 0),
+    visible:
+      Math.max(0, Number(lastFundingChoicesProvider15VisibleSnapshot?.order) || 0),
+  }
+}
+
 function getFundingChoicesPreferenceToggleRank(input, root) {
   const label =
     getFundingChoicesPreferenceToggleLabel(input, root)
@@ -12073,6 +12172,7 @@ function getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel) {
     guardEntries,
     lastFundingChoicesProviderVisibleActiveEntries
   )
+  setFundingChoicesProvider15Snapshot(providerPanel, guardEntries, 'guard')
 
   return {
     count:
@@ -17838,6 +17938,48 @@ function sanitizeFundingChoicesProviderActiveCountEntries(entries) {
     .filter(Boolean)
 }
 
+function sanitizeFundingChoicesProvider15Snapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+
+  return {
+    phase:
+      String(snapshot.phase || '').slice(0, 40),
+    order:
+      Math.max(0, Number(snapshot.order) || 0),
+    atMs:
+      Math.max(0, Number(snapshot.atMs) || 0),
+    entryPresent:
+      Boolean(snapshot.entryPresent),
+    entryChecked:
+      Boolean(snapshot.entryChecked),
+    checked:
+      Boolean(snapshot.checked),
+    ariaPressed:
+      String(snapshot.ariaPressed || '').slice(0, 40),
+    connected:
+      Boolean(snapshot.connected),
+    visible:
+      Boolean(snapshot.visible),
+    insideVisibleProviderDialog:
+      Boolean(snapshot.insideVisibleProviderDialog),
+    candidateCount:
+      Math.max(0, Number(snapshot.candidateCount) || 0),
+    labelText:
+      String(snapshot.labelText || '').slice(0, 160),
+  }
+}
+
+function sanitizeFundingChoicesProvider15SnapshotOrder(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    guard:
+      Math.max(0, Number(summary.guard) || 0),
+    visible:
+      Math.max(0, Number(summary.visible) || 0),
+  }
+}
+
 function sanitizeFundingChoicesProviderClickTargetElement(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -18028,6 +18170,7 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
     lastFundingChoicesProviderGuardCountEntries,
     visibleActiveEntries
   )
+  setFundingChoicesProvider15Snapshot(providerPanel, visibleActiveEntries, 'visible')
   setFundingChoicesProviderActiveStateMethodFromInputs(providerInputs)
 
   lastFundingChoicesProviderPreferenceOpened = true
@@ -19432,6 +19575,12 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderGuardOnlyEntries,
     visibleOnlyEntries:
       lastFundingChoicesProviderVisibleOnlyEntries,
+    provider15GuardSnapshot:
+      lastFundingChoicesProvider15GuardSnapshot,
+    provider15VisibleSnapshot:
+      lastFundingChoicesProvider15VisibleSnapshot,
+    provider15SnapshotOrder:
+      getFundingChoicesProvider15SnapshotOrderDiagnostic(),
     providerCountSummary:
       getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
@@ -19681,6 +19830,12 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderGuardOnlyEntries,
     visibleOnlyEntries:
       lastFundingChoicesProviderVisibleOnlyEntries,
+    provider15GuardSnapshot:
+      lastFundingChoicesProvider15GuardSnapshot,
+    provider15VisibleSnapshot:
+      lastFundingChoicesProvider15VisibleSnapshot,
+    provider15SnapshotOrder:
+      getFundingChoicesProvider15SnapshotOrderDiagnostic(),
     providerClickTargetHierarchy,
     providerVisualStateDiagnostics,
     providerCountComparison,
@@ -21477,6 +21632,9 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderVisibleActiveEntries = []
     lastFundingChoicesProviderGuardOnlyEntries = []
     lastFundingChoicesProviderVisibleOnlyEntries = []
+    lastFundingChoicesProvider15GuardSnapshot = null
+    lastFundingChoicesProvider15VisibleSnapshot = null
+    fundingChoicesProvider15SnapshotOrder = 0
     lastFundingChoicesProviderAutomationGuardReason = ''
     lastFundingChoicesProviderPhaseGuardComputedCount = 0
     lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false

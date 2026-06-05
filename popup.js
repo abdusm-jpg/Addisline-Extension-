@@ -3344,6 +3344,43 @@ function formatProviderActiveCountEntries(label, entries) {
   ].join('\n')
 }
 
+function formatProvider15Snapshot(label, snapshot) {
+  const summary =
+    snapshot && typeof snapshot === 'object'
+      ? snapshot
+      : null
+
+  if (!summary) return `${label}: none`
+
+  return [
+    `${label}:`,
+    `phase:${String(summary.phase || 'none').slice(0, 40)}`,
+    `order:${Math.max(0, Number(summary.order) || 0)}`,
+    `entryPresent:${Boolean(summary.entryPresent)}`,
+    `entryChecked:${Boolean(summary.entryChecked)}`,
+    `checked:${Boolean(summary.checked)}`,
+    `ariaPressed:${String(summary.ariaPressed || 'none').slice(0, 40)}`,
+    `connected:${Boolean(summary.connected)}`,
+    `visible:${Boolean(summary.visible)}`,
+    `insideVisibleProviderDialog:${Boolean(summary.insideVisibleProviderDialog)}`,
+    `candidateCount:${Math.max(0, Number(summary.candidateCount) || 0)}`,
+    `label:${String(summary.labelText || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
+function formatProvider15SnapshotOrder(summary) {
+  const order =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  return [
+    'provider15SnapshotOrder:',
+    `guard:${Math.max(0, Number(order?.guard) || 0)}`,
+    `visible:${Math.max(0, Number(order?.visible) || 0)}`,
+  ].join(' ')
+}
+
 function formatProviderClickTargetHierarchyElement(label, summary) {
   const element =
     summary && typeof summary === 'object'
@@ -3558,6 +3595,15 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
       'visibleOnlyEntries',
       summary.visibleOnlyEntries
     ),
+    formatProvider15Snapshot(
+      'provider15GuardSnapshot',
+      summary.provider15GuardSnapshot
+    ),
+    formatProvider15Snapshot(
+      'provider15VisibleSnapshot',
+      summary.provider15VisibleSnapshot
+    ),
+    formatProvider15SnapshotOrder(summary.provider15SnapshotOrder),
   ].join('\n')
 }
 
@@ -3918,6 +3964,15 @@ function formatFundingChoicesControls(summary) {
         'visibleOnlyEntries',
         summary.visibleOnlyEntries
       ),
+      formatProvider15Snapshot(
+        'provider15GuardSnapshot',
+        summary.provider15GuardSnapshot
+      ),
+      formatProvider15Snapshot(
+        'provider15VisibleSnapshot',
+        summary.provider15VisibleSnapshot
+      ),
+      formatProvider15SnapshotOrder(summary.provider15SnapshotOrder),
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,
