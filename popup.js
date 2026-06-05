@@ -3399,6 +3399,48 @@ function formatProviderVisualStateDiagnostics(summary) {
   ].join('\n')
 }
 
+function formatProviderCountMismatch(mismatch, index) {
+  if (!mismatch || typeof mismatch !== 'object') {
+    return `providerCountMismatch${index + 1}: none`
+  }
+
+  return [
+    `providerCountMismatch${index + 1}:`,
+    `dataId:${String(mismatch.dataId || 'none').slice(0, 80)}`,
+    `inputId:${String(mismatch.inputId || 'none').slice(0, 80)}`,
+    `ariaPressed:${String(mismatch.ariaPressed || 'none').slice(0, 30)}`,
+    `checked:${Boolean(mismatch.checked)}`,
+    `sliderPosition:${String(mismatch.sliderPosition || 'none').slice(0, 20)}`,
+    `sliderRatio:${mismatch.sliderRelativeCenterRatio === null || mismatch.sliderRelativeCenterRatio === undefined ? 'none' : Number(mismatch.sliderRelativeCenterRatio).toFixed(3)}`,
+    `class:${String(mismatch.class || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
+function formatProviderCountComparison(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'providerCountComparison: none'
+  }
+
+  const mismatches =
+    Array.isArray(summary.mismatches)
+      ? summary.mismatches.slice(0, 10)
+      : []
+
+  return [
+    [
+      'providerCountComparison:',
+      `providerInputCount:${Math.max(0, Number(summary.providerInputCount) || 0)}`,
+      `activeByAriaPressed:${Math.max(0, Number(summary.activeByAriaPressed) || 0)}`,
+      `activeByChecked:${Math.max(0, Number(summary.activeByChecked) || 0)}`,
+      `activeBySliderPosition:${Math.max(0, Number(summary.activeBySliderPosition) || 0)}`,
+      `ariaCheckedMismatchCount:${Math.max(0, Number(summary.ariaCheckedMismatchCount) || 0)}`,
+    ].join(' '),
+    mismatches.length > 0
+      ? mismatches.map(formatProviderCountMismatch).join('\n')
+      : 'providerCountMismatches: none',
+  ].join('\n')
+}
+
 function formatProviderCountDiagnosticsCopySection(diagnostic) {
   const summary =
     diagnostic?.fundingChoicesControlDiagnostics
@@ -3416,6 +3458,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     ),
     formatProviderClickTargetHierarchy(summary.providerClickTargetHierarchy),
     formatProviderVisualStateDiagnostics(summary.providerVisualStateDiagnostics),
+    formatProviderCountComparison(summary.providerCountComparison),
     formatProviderCountLifecycle(summary.providerCountLifecycle),
     formatProviderActiveInputsCurrentScan(
       summary.providerActiveInputsCurrentScan
@@ -3743,6 +3786,7 @@ function formatFundingChoicesControls(summary) {
       ),
       formatProviderClickTargetHierarchy(summary.providerClickTargetHierarchy),
       formatProviderVisualStateDiagnostics(summary.providerVisualStateDiagnostics),
+      formatProviderCountComparison(summary.providerCountComparison),
       formatProviderCountBreakdown(summary.providerCountBreakdown),
       formatProviderCountSources(summary.providerCountSources),
       formatProviderFirstThreeActiveEvaluations(

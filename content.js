@@ -4229,6 +4229,10 @@ function recordCurrentSiteDiagnostic({
               sanitizeFundingChoicesProviderVisualStateDiagnostics(
                 fundingChoicesControlDiagnostics.providerVisualStateDiagnostics
               ),
+            providerCountComparison:
+              sanitizeFundingChoicesProviderCountComparison(
+                fundingChoicesControlDiagnostics.providerCountComparison
+              ),
             providerCountSummary:
               fundingChoicesControlDiagnostics.providerCountSummary &&
               typeof fundingChoicesControlDiagnostics.providerCountSummary === 'object'
@@ -15096,6 +15100,96 @@ function getFundingChoicesProviderVisualStateDiagnostics(root) {
   }
 }
 
+function getFundingChoicesProviderCountComparison(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(document)
+
+  if (!providerPanel) {
+    return {
+      providerInputCount: 0,
+      activeByAriaPressed: 0,
+      activeByChecked: 0,
+      activeBySliderPosition: 0,
+      ariaCheckedMismatchCount: 0,
+      mismatches: [],
+    }
+  }
+
+  const startedAt =
+    Date.now()
+  const providerInputs =
+    getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
+  let activeByAriaPressed = 0
+  let activeByChecked = 0
+  let activeBySliderPosition = 0
+  const mismatches = []
+
+  providerInputs.forEach((input) => {
+    const ariaPressed =
+      String(input?.getAttribute?.('aria-pressed') || '')
+    const ariaActive =
+      ariaPressed === 'true'
+    const checkedActive =
+      Boolean(input?.checked)
+    const label =
+      safeClosest(input, 'label.fc-preference-slider-container')
+    const slider =
+      safeClosest(input, '.fc-preference-slider')
+    const sliderEl =
+      (
+        slider &&
+        safeQuerySelectorAll(slider, 'span.fc-slider-el, .fc-slider-el')[0]
+      ) ||
+      (
+        label &&
+        safeQuerySelectorAll(label, 'span.fc-slider-el, .fc-slider-el')[0]
+      ) ||
+      null
+    const sliderPosition =
+      getFundingChoicesProviderSliderPositionDiagnostic(slider, sliderEl)
+    const sliderActive =
+      sliderPosition.inferredState === 'on'
+
+    if (ariaActive) activeByAriaPressed += 1
+    if (checkedActive) activeByChecked += 1
+    if (sliderActive) activeBySliderPosition += 1
+
+    if (ariaActive !== checkedActive && mismatches.length < 10) {
+      mismatches.push({
+        dataId:
+          String(input?.getAttribute?.('data-id') || '').slice(0, 80),
+        inputId:
+          getFundingChoicesProviderDiagnosticId(input),
+        ariaPressed:
+          ariaPressed.slice(0, 40),
+        checked:
+          checkedActive,
+        sliderPosition:
+          String(sliderPosition.inferredState || '').slice(0, 20),
+        sliderRelativeCenterRatio:
+          sliderPosition.relativeCenterRatio,
+        class:
+          getFundingChoicesProviderDiagnosticClass(input),
+      })
+    }
+  })
+
+  return {
+    providerInputCount:
+      providerInputs.length,
+    activeByAriaPressed,
+    activeByChecked,
+    activeBySliderPosition,
+    ariaCheckedMismatchCount:
+      providerInputs.filter((input) =>
+        (String(input?.getAttribute?.('aria-pressed') || '') === 'true') !==
+          Boolean(input?.checked)
+      ).length,
+    mismatches,
+  }
+}
+
 function collectFundingChoicesMessageListenerHints() {
   const hints = []
   const onMessageType =
@@ -16815,6 +16909,54 @@ function sanitizeFundingChoicesProviderVisualStateDiagnostics(summary) {
         .slice(0, 8),
     signalMatchingRenderedUi:
       String(summary.signalMatchingRenderedUi || '').slice(0, 120),
+  }
+}
+
+function sanitizeFundingChoicesProviderCountMismatch(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    dataId:
+      String(summary.dataId || '').slice(0, 80),
+    inputId:
+      String(summary.inputId || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+    ariaPressed:
+      String(summary.ariaPressed || '').slice(0, 40),
+    checked:
+      Boolean(summary.checked),
+    sliderPosition:
+      String(summary.sliderPosition || '').slice(0, 20),
+    sliderRelativeCenterRatio:
+      summary.sliderRelativeCenterRatio === null ||
+      summary.sliderRelativeCenterRatio === undefined
+        ? null
+        : Number(summary.sliderRelativeCenterRatio) || 0,
+    class:
+      String(summary.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+  }
+}
+
+function sanitizeFundingChoicesProviderCountComparison(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    providerInputCount:
+      Math.max(0, Number(summary.providerInputCount) || 0),
+    activeByAriaPressed:
+      Math.max(0, Number(summary.activeByAriaPressed) || 0),
+    activeByChecked:
+      Math.max(0, Number(summary.activeByChecked) || 0),
+    activeBySliderPosition:
+      Math.max(0, Number(summary.activeBySliderPosition) || 0),
+    ariaCheckedMismatchCount:
+      Math.max(0, Number(summary.ariaCheckedMismatchCount) || 0),
+    mismatches:
+      (Array.isArray(summary.mismatches) ? summary.mismatches : [])
+        .slice(0, 10)
+        .map(sanitizeFundingChoicesProviderCountMismatch)
+        .filter(Boolean),
   }
 }
 
@@ -18743,6 +18885,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     getFundingChoicesProviderClickTargetHierarchy(root)
   const providerVisualStateDiagnostics =
     getFundingChoicesProviderVisualStateDiagnostics(root)
+  const providerCountComparison =
+    getFundingChoicesProviderCountComparison(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -18885,6 +19029,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     ...(providerFirstActiveToggleDiagnostic || {}),
     providerClickTargetHierarchy,
     providerVisualStateDiagnostics,
+    providerCountComparison,
     preferenceToggleActions,
     controls,
   }
@@ -18968,6 +19113,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     getFundingChoicesProviderClickTargetHierarchy(root)
   const providerVisualStateDiagnostics =
     getFundingChoicesProviderVisualStateDiagnostics(root)
+  const providerCountComparison =
+    getFundingChoicesProviderCountComparison(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -19036,6 +19183,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderActiveInputsCurrentScan,
     providerClickTargetHierarchy,
     providerVisualStateDiagnostics,
+    providerCountComparison,
     providerCountSummary:
       getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
