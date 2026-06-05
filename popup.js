@@ -3324,6 +3324,81 @@ function formatProviderClickTargetHierarchy(summary) {
   ].join('\n')
 }
 
+function formatProviderVisualClassList(label, classList) {
+  const classes =
+    Array.isArray(classList) && classList.length > 0
+      ? classList.join('|')
+      : 'none'
+
+  return `${label}:${String(classes).slice(0, 220)}`
+}
+
+function formatProviderVisualStateDiagnostics(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'providerVisualStateDiagnostics: none'
+  }
+
+  const style =
+    summary.sliderComputedStyle &&
+    typeof summary.sliderComputedStyle === 'object'
+      ? summary.sliderComputedStyle
+      : null
+  const position =
+    summary.sliderPosition &&
+    typeof summary.sliderPosition === 'object'
+      ? summary.sliderPosition
+      : null
+  const votes =
+    summary.stateVotes &&
+    typeof summary.stateVotes === 'object'
+      ? summary.stateVotes
+      : null
+
+  return [
+    [
+      'providerVisualStateDiagnostics:',
+      `dataId:${String(summary.providerDataId || 'none').slice(0, 40)}`,
+      `found:${Boolean(summary.found)}`,
+      `checked:${Boolean(summary.checked)}`,
+      `ariaPressed:${String(summary.ariaPressed || 'none').slice(0, 40)}`,
+      `renderedStateInference:${String(summary.renderedStateInference || 'none').slice(0, 30)}`,
+      `signalMatchingRenderedUi:${String(summary.signalMatchingRenderedUi || 'none').slice(0, 120)}`,
+    ].join(' '),
+    [
+      'providerVisualStateVotes:',
+      `checked:${String(votes?.checked || 'none').slice(0, 20)}`,
+      `ariaPressed:${String(votes?.ariaPressed || 'none').slice(0, 20)}`,
+      `cssClass:${String(votes?.cssClass || 'none').slice(0, 20)}`,
+      `sliderPosition:${String(votes?.sliderPosition || 'none').slice(0, 20)}`,
+    ].join(' '),
+    [
+      'providerVisualSliderStyle:',
+      `display:${String(style?.display || 'none').slice(0, 30)}`,
+      `visibility:${String(style?.visibility || 'none').slice(0, 30)}`,
+      `opacity:${String(style?.opacity || 'none').slice(0, 30)}`,
+      `cursor:${String(style?.cursor || 'none').slice(0, 30)}`,
+      `pointerEvents:${String(style?.pointerEvents || 'none').slice(0, 30)}`,
+      `transform:${String(style?.transform || 'none').slice(0, 80)}`,
+      `left:${String(style?.left || 'none').slice(0, 30)}`,
+      `right:${String(style?.right || 'none').slice(0, 30)}`,
+      `marginLeft:${String(style?.marginLeft || 'none').slice(0, 30)}`,
+      `background:${String(style?.backgroundColor || 'none').slice(0, 50)}`,
+    ].join(' '),
+    [
+      'providerVisualSliderPosition:',
+      `available:${Boolean(position?.available)}`,
+      `relativeCenterRatio:${position?.relativeCenterRatio === null || position?.relativeCenterRatio === undefined ? 'none' : Number(position.relativeCenterRatio).toFixed(3)}`,
+      `inferredState:${String(position?.inferredState || 'none').slice(0, 20)}`,
+      `sliderRect:${String(position?.sliderRect || 'none').slice(0, 30)}`,
+      `sliderElRect:${String(position?.sliderElRect || 'none').slice(0, 30)}`,
+    ].join(' '),
+    formatProviderVisualClassList('sliderClassList', summary.sliderClassList),
+    formatProviderVisualClassList('sliderElClassList', summary.sliderElClassList),
+    formatProviderVisualClassList('labelClassList', summary.labelClassList),
+    formatProviderVisualClassList('parentRowClassList', summary.parentRowClassList),
+  ].join('\n')
+}
+
 function formatProviderCountDiagnosticsCopySection(diagnostic) {
   const summary =
     diagnostic?.fundingChoicesControlDiagnostics
@@ -3340,6 +3415,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
       summary.providerFirstThreeActiveEvaluations
     ),
     formatProviderClickTargetHierarchy(summary.providerClickTargetHierarchy),
+    formatProviderVisualStateDiagnostics(summary.providerVisualStateDiagnostics),
     formatProviderCountLifecycle(summary.providerCountLifecycle),
     formatProviderActiveInputsCurrentScan(
       summary.providerActiveInputsCurrentScan
@@ -3666,6 +3742,7 @@ function formatFundingChoicesControls(summary) {
         summary.consentPressed
       ),
       formatProviderClickTargetHierarchy(summary.providerClickTargetHierarchy),
+      formatProviderVisualStateDiagnostics(summary.providerVisualStateDiagnostics),
       formatProviderCountBreakdown(summary.providerCountBreakdown),
       formatProviderCountSources(summary.providerCountSources),
       formatProviderFirstThreeActiveEvaluations(

@@ -4225,6 +4225,10 @@ function recordCurrentSiteDiagnostic({
               sanitizeFundingChoicesProviderClickTargetHierarchy(
                 fundingChoicesControlDiagnostics.providerClickTargetHierarchy
               ),
+            providerVisualStateDiagnostics:
+              sanitizeFundingChoicesProviderVisualStateDiagnostics(
+                fundingChoicesControlDiagnostics.providerVisualStateDiagnostics
+              ),
             providerCountSummary:
               fundingChoicesControlDiagnostics.providerCountSummary &&
               typeof fundingChoicesControlDiagnostics.providerCountSummary === 'object'
@@ -14895,6 +14899,203 @@ function getFundingChoicesProviderVendor11Mapping(root) {
   }
 }
 
+function getFundingChoicesProviderVisualStyleSummary(element) {
+  const style =
+    safeGetComputedStyle(element)
+
+  return {
+    display:
+      String(style?.display || '').slice(0, 40),
+    visibility:
+      String(style?.visibility || '').slice(0, 40),
+    opacity:
+      String(style?.opacity || '').slice(0, 40),
+    cursor:
+      String(style?.cursor || '').slice(0, 40),
+    pointerEvents:
+      String(style?.pointerEvents || '').slice(0, 40),
+    transform:
+      String(style?.transform || '').slice(0, 120),
+    left:
+      String(style?.left || '').slice(0, 40),
+    right:
+      String(style?.right || '').slice(0, 40),
+    marginLeft:
+      String(style?.marginLeft || '').slice(0, 40),
+    backgroundColor:
+      String(style?.backgroundColor || '').slice(0, 60),
+  }
+}
+
+function getFundingChoicesProviderSliderPositionDiagnostic(slider, sliderEl) {
+  const sliderRect =
+    slider?.getBoundingClientRect?.()
+  const sliderElRect =
+    sliderEl?.getBoundingClientRect?.()
+
+  if (
+    !sliderRect ||
+    !sliderElRect ||
+    sliderRect.width <= 0 ||
+    sliderElRect.width <= 0
+  ) {
+    return {
+      available: false,
+      relativeCenterRatio: null,
+      inferredState: 'unknown',
+    }
+  }
+
+  const relativeCenterRatio =
+    (sliderElRect.left + sliderElRect.width / 2 - sliderRect.left) /
+      sliderRect.width
+
+  return {
+    available: true,
+    relativeCenterRatio:
+      Math.max(-1, Math.min(2, Number(relativeCenterRatio) || 0)),
+    sliderRect:
+      `${Math.round(sliderRect.width)}x${Math.round(sliderRect.height)}`,
+    sliderElRect:
+      `${Math.round(sliderElRect.width)}x${Math.round(sliderElRect.height)}`,
+    inferredState:
+      relativeCenterRatio > 0.5
+        ? 'on'
+        : 'off',
+  }
+}
+
+function inferFundingChoicesProviderClassVisualState(...elements) {
+  const classText =
+    elements
+      .map((element) => getFundingChoicesProviderDiagnosticClass(element))
+      .join(' ')
+      .toLowerCase()
+
+  if (/\b(on|active|enabled|selected|checked|true)\b/.test(classText)) {
+    return 'on'
+  }
+
+  if (/\b(off|inactive|disabled|unselected|unchecked|false)\b/.test(classText)) {
+    return 'off'
+  }
+
+  return 'unknown'
+}
+
+function getFundingChoicesProviderVisualStateDiagnostics(root) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root) ||
+    getVisibleFundingChoicesProviderPreferencesPanel(document)
+  const searchRoot =
+    providerPanel ||
+    getFundingChoicesRoot(root) ||
+    root ||
+    document
+  const input =
+    safeQuerySelectorAll(
+      searchRoot,
+      'input.fc-preference-legitimate-interest.gvl-vendor[data-id="11"]'
+    )[0] ||
+    safeQuerySelectorAll(
+      searchRoot,
+      'input.gvl-vendor[data-id="11"]'
+    ).find(isFundingChoicesProviderLegitimateInterestClassInput) ||
+    null
+  const label =
+    input
+      ? safeClosest(input, 'label.fc-preference-slider-container')
+      : null
+  const slider =
+    input
+      ? safeClosest(input, '.fc-preference-slider')
+      : null
+  const sliderEl =
+    (
+      slider &&
+      safeQuerySelectorAll(slider, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    (
+      label &&
+      safeQuerySelectorAll(label, 'span.fc-slider-el, .fc-slider-el')[0]
+    ) ||
+    null
+  const row =
+    input
+      ? getFundingChoicesProviderFirstActiveRow(input, label, slider)
+      : null
+  const checkedState =
+    input
+      ? Boolean(input.checked)
+        ? 'on'
+        : 'off'
+      : 'unknown'
+  const ariaPressed =
+    String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40)
+  const ariaPressedState =
+    ariaPressed === 'true'
+      ? 'on'
+      : ariaPressed === 'false'
+        ? 'off'
+        : 'unknown'
+  const classState =
+    inferFundingChoicesProviderClassVisualState(label, slider, sliderEl, row)
+  const sliderPosition =
+    getFundingChoicesProviderSliderPositionDiagnostic(slider, sliderEl)
+  const stateVotes = {
+    checked:
+      checkedState,
+    ariaPressed:
+      ariaPressedState,
+    cssClass:
+      classState,
+    sliderPosition:
+      sliderPosition.inferredState,
+  }
+  const offVotes =
+    Object.values(stateVotes).filter((value) => value === 'off').length
+  const onVotes =
+    Object.values(stateVotes).filter((value) => value === 'on').length
+  const renderedStateInference =
+    offVotes > onVotes
+      ? 'off'
+      : onVotes > offVotes
+        ? 'on'
+        : 'unknown'
+  const matchingSignals =
+    Object.entries(stateVotes)
+      .filter(([, value]) =>
+        renderedStateInference !== 'unknown' &&
+        value === renderedStateInference
+      )
+      .map(([key]) => key)
+
+  return {
+    providerDataId: '11',
+    found:
+      Boolean(input),
+    checked:
+      Boolean(input?.checked),
+    ariaPressed,
+    sliderComputedStyle:
+      getFundingChoicesProviderVisualStyleSummary(slider),
+    sliderClassList:
+      getFundingChoicesProviderClassList(slider),
+    sliderElClassList:
+      getFundingChoicesProviderClassList(sliderEl),
+    labelClassList:
+      getFundingChoicesProviderClassList(label),
+    parentRowClassList:
+      getFundingChoicesProviderClassList(row),
+    sliderPosition,
+    stateVotes,
+    renderedStateInference,
+    matchingSignals,
+    signalMatchingRenderedUi:
+      matchingSignals.join(',') || 'unknown',
+  }
+}
+
 function collectFundingChoicesMessageListenerHints() {
   const hints = []
   const onMessageType =
@@ -16509,6 +16710,111 @@ function sanitizeFundingChoicesProviderVendor11Mapping(mapping) {
               String(mapping.globalTcData.error || '').slice(0, 120),
           }
         : null,
+  }
+}
+
+function sanitizeFundingChoicesProviderVisualStyleSummary(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    display:
+      String(summary.display || '').slice(0, 40),
+    visibility:
+      String(summary.visibility || '').slice(0, 40),
+    opacity:
+      String(summary.opacity || '').slice(0, 40),
+    cursor:
+      String(summary.cursor || '').slice(0, 40),
+    pointerEvents:
+      String(summary.pointerEvents || '').slice(0, 40),
+    transform:
+      String(summary.transform || '').slice(0, 120),
+    left:
+      String(summary.left || '').slice(0, 40),
+    right:
+      String(summary.right || '').slice(0, 40),
+    marginLeft:
+      String(summary.marginLeft || '').slice(0, 40),
+    backgroundColor:
+      String(summary.backgroundColor || '').slice(0, 60),
+  }
+}
+
+function sanitizeFundingChoicesProviderVisualClassList(classList) {
+  return (Array.isArray(classList) ? classList : [])
+    .map((className) => String(className || '').slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 20)
+}
+
+function sanitizeFundingChoicesProviderSliderPosition(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    available:
+      Boolean(summary.available),
+    relativeCenterRatio:
+      summary.relativeCenterRatio === null ||
+      summary.relativeCenterRatio === undefined
+        ? null
+        : Number(summary.relativeCenterRatio) || 0,
+    sliderRect:
+      String(summary.sliderRect || '').slice(0, 40),
+    sliderElRect:
+      String(summary.sliderElRect || '').slice(0, 40),
+    inferredState:
+      String(summary.inferredState || '').slice(0, 20),
+  }
+}
+
+function sanitizeFundingChoicesProviderVisualStateDiagnostics(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    providerDataId:
+      String(summary.providerDataId || '').slice(0, 80),
+    found:
+      Boolean(summary.found),
+    checked:
+      Boolean(summary.checked),
+    ariaPressed:
+      String(summary.ariaPressed || '').slice(0, 40),
+    sliderComputedStyle:
+      sanitizeFundingChoicesProviderVisualStyleSummary(
+        summary.sliderComputedStyle
+      ),
+    sliderClassList:
+      sanitizeFundingChoicesProviderVisualClassList(summary.sliderClassList),
+    sliderElClassList:
+      sanitizeFundingChoicesProviderVisualClassList(summary.sliderElClassList),
+    labelClassList:
+      sanitizeFundingChoicesProviderVisualClassList(summary.labelClassList),
+    parentRowClassList:
+      sanitizeFundingChoicesProviderVisualClassList(summary.parentRowClassList),
+    sliderPosition:
+      sanitizeFundingChoicesProviderSliderPosition(summary.sliderPosition),
+    stateVotes:
+      summary.stateVotes && typeof summary.stateVotes === 'object'
+        ? {
+            checked:
+              String(summary.stateVotes.checked || '').slice(0, 20),
+            ariaPressed:
+              String(summary.stateVotes.ariaPressed || '').slice(0, 20),
+            cssClass:
+              String(summary.stateVotes.cssClass || '').slice(0, 20),
+            sliderPosition:
+              String(summary.stateVotes.sliderPosition || '').slice(0, 20),
+          }
+        : null,
+    renderedStateInference:
+      String(summary.renderedStateInference || '').slice(0, 20),
+    matchingSignals:
+      (Array.isArray(summary.matchingSignals) ? summary.matchingSignals : [])
+        .map((signal) => String(signal || '').slice(0, 40))
+        .filter(Boolean)
+        .slice(0, 8),
+    signalMatchingRenderedUi:
+      String(summary.signalMatchingRenderedUi || '').slice(0, 120),
   }
 }
 
@@ -18435,6 +18741,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
   const providerClickTargetHierarchy =
     getFundingChoicesProviderClickTargetHierarchy(root)
+  const providerVisualStateDiagnostics =
+    getFundingChoicesProviderVisualStateDiagnostics(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -18576,6 +18884,7 @@ function collectFundingChoicesControlDiagnostics(root) {
       fundingChoicesGlobalStateDiagnostic,
     ...(providerFirstActiveToggleDiagnostic || {}),
     providerClickTargetHierarchy,
+    providerVisualStateDiagnostics,
     preferenceToggleActions,
     controls,
   }
@@ -18657,6 +18966,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
   const providerClickTargetHierarchy =
     getFundingChoicesProviderClickTargetHierarchy(root)
+  const providerVisualStateDiagnostics =
+    getFundingChoicesProviderVisualStateDiagnostics(root)
   const providerConsentBreakdownDiagnostic =
     getFundingChoicesProviderConsentBreakdownDiagnostic(root)
   const providerCountComputationDiagnostic =
@@ -18724,6 +19035,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     providerActiveInputsCurrentScan:
       lastFundingChoicesProviderActiveInputsCurrentScan,
     providerClickTargetHierarchy,
+    providerVisualStateDiagnostics,
     providerCountSummary:
       getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
