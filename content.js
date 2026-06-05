@@ -107,6 +107,10 @@ let lastFundingChoicesProviderGuardCountSource = ''
 let lastFundingChoicesProviderPhaseLastError = null
 let lastFundingChoicesProviderCountSources = null
 let lastFundingChoicesProviderFirstThreeActiveEvaluations = []
+let lastFundingChoicesProviderGuardCountEntries = []
+let lastFundingChoicesProviderVisibleActiveEntries = []
+let lastFundingChoicesProviderGuardOnlyEntries = []
+let lastFundingChoicesProviderVisibleOnlyEntries = []
 let lastFundingChoicesProviderAutomationGuardReason = ''
 let lastFundingChoicesProviderPhaseGuardComputedCount = 0
 let lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false
@@ -4237,6 +4241,22 @@ function recordCurrentSiteDiagnostic({
             providerDocumentWideInputs:
               sanitizeFundingChoicesProviderInputComparison(
                 fundingChoicesControlDiagnostics.providerDocumentWideInputs
+              ),
+            providerGuardCountEntries:
+              sanitizeFundingChoicesProviderActiveCountEntries(
+                fundingChoicesControlDiagnostics.providerGuardCountEntries
+              ),
+            providerVisibleActiveEntries:
+              sanitizeFundingChoicesProviderActiveCountEntries(
+                fundingChoicesControlDiagnostics.providerVisibleActiveEntries
+              ),
+            guardOnlyEntries:
+              sanitizeFundingChoicesProviderActiveCountEntries(
+                fundingChoicesControlDiagnostics.guardOnlyEntries
+              ),
+            visibleOnlyEntries:
+              sanitizeFundingChoicesProviderActiveCountEntries(
+                fundingChoicesControlDiagnostics.visibleOnlyEntries
               ),
             providerClickTargetHierarchy:
               sanitizeFundingChoicesProviderClickTargetHierarchy(
@@ -11558,6 +11578,66 @@ function collectFundingChoicesProviderInputComparisonDiagnostics(root = document
   }
 }
 
+function getFundingChoicesProviderActiveCountEntry(input, providerPanel) {
+  const comparisonEntry =
+    getFundingChoicesProviderInputComparisonEntry(input, providerPanel)
+
+  return {
+    dataId:
+      comparisonEntry.dataId,
+    checked:
+      comparisonEntry.checked,
+    ariaPressed:
+      comparisonEntry.ariaPressed,
+    labelText:
+      comparisonEntry.labelText,
+    class:
+      comparisonEntry.class,
+  }
+}
+
+function getFundingChoicesProviderActiveCountEntryKey(entry) {
+  return [
+    String(entry?.dataId || '').slice(0, 80),
+    String(entry?.labelText || '').slice(0, 120),
+    String(entry?.class || '').slice(0, 120),
+  ].join('|')
+}
+
+function getFundingChoicesProviderActiveCountEntryDifference(first, second) {
+  const secondKeys =
+    new Set(
+      (Array.isArray(second) ? second : [])
+        .map(getFundingChoicesProviderActiveCountEntryKey)
+    )
+
+  return (Array.isArray(first) ? first : [])
+    .filter((entry) =>
+      !secondKeys.has(getFundingChoicesProviderActiveCountEntryKey(entry))
+    )
+    .slice(0, 20)
+}
+
+function setFundingChoicesProviderActiveCountEntryDiagnostics(
+  guardEntries,
+  visibleEntries
+) {
+  lastFundingChoicesProviderGuardCountEntries =
+    (Array.isArray(guardEntries) ? guardEntries : []).slice(0, 20)
+  lastFundingChoicesProviderVisibleActiveEntries =
+    (Array.isArray(visibleEntries) ? visibleEntries : []).slice(0, 20)
+  lastFundingChoicesProviderGuardOnlyEntries =
+    getFundingChoicesProviderActiveCountEntryDifference(
+      guardEntries,
+      visibleEntries
+    )
+  lastFundingChoicesProviderVisibleOnlyEntries =
+    getFundingChoicesProviderActiveCountEntryDifference(
+      visibleEntries,
+      guardEntries
+    )
+}
+
 function getFundingChoicesPreferenceToggleRank(input, root) {
   const label =
     getFundingChoicesPreferenceToggleLabel(input, root)
@@ -11996,6 +12076,16 @@ function getFundingChoicesProviderPhaseGuardCurrentCount(providerPanel) {
           entry.insideVisibleProviderDialog
         )
       })
+  const guardActiveInputs =
+    panelInputs.filter(isFundingChoicesProviderInputActiveForPhase1)
+  const guardEntries =
+    guardActiveInputs.map((input) =>
+      getFundingChoicesProviderActiveCountEntry(input, providerPanel)
+    )
+  setFundingChoicesProviderActiveCountEntryDiagnostics(
+    guardEntries,
+    lastFundingChoicesProviderVisibleActiveEntries
+  )
   setFundingChoicesProviderActiveStateMethodFromInputs(panelInputs)
 
   return {
@@ -17725,6 +17815,34 @@ function sanitizeFundingChoicesProviderInputComparison(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderActiveCountEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null
+
+  return {
+    dataId:
+      String(entry.dataId || '').slice(0, 80),
+    checked:
+      Boolean(entry.checked),
+    ariaPressed:
+      String(entry.ariaPressed || '').slice(0, 40),
+    labelText:
+      String(entry.labelText || '').slice(0, 160),
+    class:
+      String(entry.class || '')
+        .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR),
+  }
+}
+
+function sanitizeFundingChoicesProviderActiveCountEntries(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) =>
+      entry && typeof entry === 'object'
+    )
+    .slice(0, 20)
+    .map(sanitizeFundingChoicesProviderActiveCountEntry)
+    .filter(Boolean)
+}
+
 function sanitizeFundingChoicesProviderClickTargetElement(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -17907,6 +18025,14 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
       : getDocumentFundingChoicesProviderToggleInputs(startedAt)
   const activeInputs =
     providerInputs.filter(isFundingChoicesProviderActiveToggle)
+  const visibleActiveEntries =
+    activeInputs.map((input) =>
+      getFundingChoicesProviderActiveCountEntry(input, providerPanel)
+    )
+  setFundingChoicesProviderActiveCountEntryDiagnostics(
+    lastFundingChoicesProviderGuardCountEntries,
+    visibleActiveEntries
+  )
   setFundingChoicesProviderActiveStateMethodFromInputs(providerInputs)
 
   lastFundingChoicesProviderPreferenceOpened = true
@@ -19294,6 +19420,14 @@ function collectFundingChoicesControlDiagnostics(root) {
       providerInputComparisonDiagnostics.providerPanelVisibleInputs,
     providerDocumentWideInputs:
       providerInputComparisonDiagnostics.providerDocumentWideInputs,
+    providerGuardCountEntries:
+      lastFundingChoicesProviderGuardCountEntries,
+    providerVisibleActiveEntries:
+      lastFundingChoicesProviderVisibleActiveEntries,
+    guardOnlyEntries:
+      lastFundingChoicesProviderGuardOnlyEntries,
+    visibleOnlyEntries:
+      lastFundingChoicesProviderVisibleOnlyEntries,
     providerCountSummary:
       getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
@@ -19530,6 +19664,14 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       providerInputComparisonDiagnostics.providerPanelVisibleInputs,
     providerDocumentWideInputs:
       providerInputComparisonDiagnostics.providerDocumentWideInputs,
+    providerGuardCountEntries:
+      lastFundingChoicesProviderGuardCountEntries,
+    providerVisibleActiveEntries:
+      lastFundingChoicesProviderVisibleActiveEntries,
+    guardOnlyEntries:
+      lastFundingChoicesProviderGuardOnlyEntries,
+    visibleOnlyEntries:
+      lastFundingChoicesProviderVisibleOnlyEntries,
     providerClickTargetHierarchy,
     providerVisualStateDiagnostics,
     providerCountComparison,
@@ -21313,6 +21455,10 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderPhaseLastError = null
     lastFundingChoicesProviderCountSources = null
     lastFundingChoicesProviderFirstThreeActiveEvaluations = []
+    lastFundingChoicesProviderGuardCountEntries = []
+    lastFundingChoicesProviderVisibleActiveEntries = []
+    lastFundingChoicesProviderGuardOnlyEntries = []
+    lastFundingChoicesProviderVisibleOnlyEntries = []
     lastFundingChoicesProviderAutomationGuardReason = ''
     lastFundingChoicesProviderPhaseGuardComputedCount = 0
     lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false

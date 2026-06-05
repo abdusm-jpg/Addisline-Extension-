@@ -3318,6 +3318,30 @@ function formatProviderInputComparison(label, summary) {
   ].join('\n')
 }
 
+function formatProviderActiveCountEntries(label, entries) {
+  const list =
+    Array.isArray(entries)
+      ? entries
+          .filter((entry) =>
+            entry && typeof entry === 'object'
+          )
+          .slice(0, 20)
+      : []
+
+  return [
+    `${label}: count:${list.length}`,
+    list.length > 0
+      ? list.map((entry, index) => [
+          `${index + 1}. data-id:${String(entry.dataId || 'none').slice(0, 80)}`,
+          `checked:${Boolean(entry.checked)}`,
+          `ariaPressed:${String(entry.ariaPressed || 'none').slice(0, 40)}`,
+          `label:${String(entry.labelText || 'none').slice(0, 120)}`,
+          `class:${String(entry.class || 'none').slice(0, 100)}`,
+        ].join(' ')).join('\n')
+      : `${label}Entries: none`,
+  ].join('\n')
+}
+
 function formatProviderClickTargetHierarchyElement(label, summary) {
   const element =
     summary && typeof summary === 'object'
@@ -3515,6 +3539,22 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderInputComparison(
       'providerDocumentWideInputs',
       summary.providerDocumentWideInputs
+    ),
+    formatProviderActiveCountEntries(
+      'providerGuardCountEntries',
+      summary.providerGuardCountEntries
+    ),
+    formatProviderActiveCountEntries(
+      'providerVisibleActiveEntries',
+      summary.providerVisibleActiveEntries
+    ),
+    formatProviderActiveCountEntries(
+      'guardOnlyEntries',
+      summary.guardOnlyEntries
+    ),
+    formatProviderActiveCountEntries(
+      'visibleOnlyEntries',
+      summary.visibleOnlyEntries
     ),
   ].join('\n')
 }
@@ -3858,6 +3898,22 @@ function formatFundingChoicesControls(summary) {
       formatProviderInputComparison(
         'providerDocumentWideInputs',
         summary.providerDocumentWideInputs
+      ),
+      formatProviderActiveCountEntries(
+        'providerGuardCountEntries',
+        summary.providerGuardCountEntries
+      ),
+      formatProviderActiveCountEntries(
+        'providerVisibleActiveEntries',
+        summary.providerVisibleActiveEntries
+      ),
+      formatProviderActiveCountEntries(
+        'guardOnlyEntries',
+        summary.guardOnlyEntries
+      ),
+      formatProviderActiveCountEntries(
+        'visibleOnlyEntries',
+        summary.visibleOnlyEntries
       ),
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
