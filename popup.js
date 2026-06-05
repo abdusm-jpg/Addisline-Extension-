@@ -3405,6 +3405,30 @@ function formatProviderGuardValueTrace(trace) {
   ].join('\n')
 }
 
+function formatProviderToggleCountWriteTrace(trace) {
+  const entries =
+    Array.isArray(trace)
+      ? trace
+          .filter((entry) =>
+            entry && typeof entry === 'object'
+          )
+          .slice(-30)
+      : []
+
+  return [
+    `providerToggleCountWriteTrace: count:${entries.length}`,
+    entries.length > 0
+      ? entries.map((entry, index) => [
+          `${index + 1}. value:${Math.max(0, Number(entry.value) || 0)}`,
+          `raw:${String(entry.rawValue || 'none').slice(0, 60)}`,
+          `source:${String(entry.sourceFunction || 'none').slice(0, 100)}`,
+          `order:${Math.max(0, Number(entry.assignmentOrder) || 0)}`,
+          `step:${String(entry.callStackStep || 'none').slice(0, 140)}`,
+        ].join(' ')).join('\n')
+      : 'providerToggleCountWriteTraceEntries: none',
+  ].join('\n')
+}
+
 function formatProviderClickTargetHierarchyElement(label, summary) {
   const element =
     summary && typeof summary === 'object'
@@ -3629,6 +3653,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     ),
     formatProvider15SnapshotOrder(summary.provider15SnapshotOrder),
     formatProviderGuardValueTrace(summary.providerGuardValueTrace),
+    formatProviderToggleCountWriteTrace(summary.providerToggleCountWriteTrace),
   ].join('\n')
 }
 
@@ -3999,6 +4024,7 @@ function formatFundingChoicesControls(summary) {
       ),
       formatProvider15SnapshotOrder(summary.provider15SnapshotOrder),
       formatProviderGuardValueTrace(summary.providerGuardValueTrace),
+      formatProviderToggleCountWriteTrace(summary.providerToggleCountWriteTrace),
       `providerPreferenceTextMatch: ${String(summary.providerPreferenceTextMatch || 'none').slice(0, 60)}`,
       `providerPreferenceClickableTargetTag: ${String(summary.providerPreferenceClickableTargetTag || 'none').slice(0, 30)}`,
       `providerPreferenceClickMethod: ${String(summary.providerPreferenceClickMethod || 'none').slice(0, 30)}`,

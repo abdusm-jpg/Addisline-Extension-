@@ -116,6 +116,8 @@ let lastFundingChoicesProvider15VisibleSnapshot = null
 let fundingChoicesProvider15SnapshotOrder = 0
 let lastFundingChoicesProviderGuardValueTrace = []
 let fundingChoicesProviderGuardValueTraceOrder = 0
+let lastFundingChoicesProviderToggleCountWriteTrace = []
+let fundingChoicesProviderToggleCountWriteTraceOrder = 0
 let lastFundingChoicesProviderAutomationGuardReason = ''
 let lastFundingChoicesProviderPhaseGuardComputedCount = 0
 let lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false
@@ -4282,6 +4284,10 @@ function recordCurrentSiteDiagnostic({
             providerGuardValueTrace:
               sanitizeFundingChoicesProviderGuardValueTrace(
                 fundingChoicesControlDiagnostics.providerGuardValueTrace
+              ),
+            providerToggleCountWriteTrace:
+              sanitizeFundingChoicesProviderToggleCountWriteTrace(
+                fundingChoicesControlDiagnostics.providerToggleCountWriteTrace
               ),
             providerClickTargetHierarchy:
               sanitizeFundingChoicesProviderClickTargetHierarchy(
@@ -12106,6 +12112,28 @@ function recordFundingChoicesProviderGuardValueTrace(
   ].slice(-20)
 }
 
+function recordFundingChoicesProviderToggleCountWriteTrace(
+  value,
+  source,
+  traceStep
+) {
+  lastFundingChoicesProviderToggleCountWriteTrace = [
+    ...lastFundingChoicesProviderToggleCountWriteTrace,
+    {
+      value:
+        Math.max(0, Number(value) || 0),
+      rawValue:
+        String(value ?? '').slice(0, 80),
+      sourceFunction:
+        String(source || 'unknown').slice(0, 120),
+      assignmentOrder:
+        ++fundingChoicesProviderToggleCountWriteTraceOrder,
+      callStackStep:
+        String(traceStep || '').slice(0, 160),
+    },
+  ].slice(-30)
+}
+
 function setFundingChoicesActiveProviderToggleCount(
   value,
   source,
@@ -12120,6 +12148,11 @@ function setFundingChoicesActiveProviderToggleCount(
   const delta =
     getFundingChoicesProviderCountLifecycleDelta(writtenAtMs, writtenOrder)
 
+  recordFundingChoicesProviderToggleCountWriteTrace(
+    normalizedValue,
+    source,
+    traceStep
+  )
   lastFundingChoicesActiveProviderToggleCount =
     normalizedValue
   lastFundingChoicesProviderCountLifecycle = {
@@ -18066,6 +18099,26 @@ function sanitizeFundingChoicesProviderGuardValueTrace(trace) {
     }))
 }
 
+function sanitizeFundingChoicesProviderToggleCountWriteTrace(trace) {
+  return (Array.isArray(trace) ? trace : [])
+    .filter((entry) =>
+      entry && typeof entry === 'object'
+    )
+    .slice(-30)
+    .map((entry) => ({
+      value:
+        Math.max(0, Number(entry.value) || 0),
+      rawValue:
+        String(entry.rawValue || '').slice(0, 80),
+      sourceFunction:
+        String(entry.sourceFunction || '').slice(0, 120),
+      assignmentOrder:
+        Math.max(0, Number(entry.assignmentOrder) || 0),
+      callStackStep:
+        String(entry.callStackStep || '').slice(0, 160),
+    }))
+}
+
 function sanitizeFundingChoicesProviderClickTargetElement(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19674,6 +19727,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       getFundingChoicesProvider15SnapshotOrderDiagnostic(),
     providerGuardValueTrace:
       lastFundingChoicesProviderGuardValueTrace,
+    providerToggleCountWriteTrace:
+      lastFundingChoicesProviderToggleCountWriteTrace,
     providerCountSummary:
       getFundingChoicesProviderCountSummaryDiagnostic(),
     legitimateInterestPressed:
@@ -19931,6 +19986,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       getFundingChoicesProvider15SnapshotOrderDiagnostic(),
     providerGuardValueTrace:
       lastFundingChoicesProviderGuardValueTrace,
+    providerToggleCountWriteTrace:
+      lastFundingChoicesProviderToggleCountWriteTrace,
     providerClickTargetHierarchy,
     providerVisualStateDiagnostics,
     providerCountComparison,
@@ -21737,6 +21794,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     fundingChoicesProvider15SnapshotOrder = 0
     lastFundingChoicesProviderGuardValueTrace = []
     fundingChoicesProviderGuardValueTraceOrder = 0
+    lastFundingChoicesProviderToggleCountWriteTrace = []
+    fundingChoicesProviderToggleCountWriteTraceOrder = 0
     lastFundingChoicesProviderAutomationGuardReason = ''
     lastFundingChoicesProviderPhaseGuardComputedCount = 0
     lastFundingChoicesProviderPhaseGuardUsedCurrentScan = false
