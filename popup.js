@@ -3423,6 +3423,24 @@ function formatProviderSingleToggleTest(summary) {
   ].join(' ')
 }
 
+function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
+  const state =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!state) return 'providerSingleToggleTestExportState: none'
+
+  return [
+    'providerSingleToggleTestExportState:',
+    `objectCreated:${Boolean(state.objectCreated)}`,
+    `objectPopulated:${Boolean(state.objectPopulated)}`,
+    `objectAttachedToDiagnostics:${Boolean(state.objectAttachedToDiagnostics)}`,
+    `objectExportedToPopup:${Boolean(state.objectExportedToPopup)}`,
+    `objectExportedToCopyReport:${Boolean(copyReportExported || state.objectExportedToCopyReport)}`,
+  ].join(' ')
+}
+
 function formatProviderToggleCountWriteTrace(trace) {
   const entries =
     Array.isArray(trace)
@@ -3636,6 +3654,11 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderCountLifecycle(summary.providerCountLifecycle),
     formatProviderActiveInputsCurrentScan(
       summary.providerActiveInputsCurrentScan
+    ),
+    formatProviderSingleToggleTest(summary.providerSingleToggleTest),
+    formatProviderSingleToggleTestExportState(
+      summary.providerSingleToggleTestExportState,
+      true
     ),
     formatProviderInputComparison(
       'providerPanelVisibleInputs',
@@ -3980,6 +4003,10 @@ function formatFundingChoicesControls(summary) {
       `providerLabelCoordinateExecutionStep: ${String(summary.providerLabelCoordinateExecutionStep || 'none').slice(0, 60)}`,
       `providerLabelCoordinateLastError: message:${String(summary.providerLabelCoordinateLastError?.message || 'none').slice(0, 120)} stack:${String(summary.providerLabelCoordinateLastError?.stackFirstLine || 'none').slice(0, 120)}`,
       formatProviderSingleToggleTest(summary.providerSingleToggleTest),
+      formatProviderSingleToggleTestExportState(
+        summary.providerSingleToggleTestExportState,
+        true
+      ),
       `providerPhaseBlockedReason: ${String(summary.providerPhaseBlockedReason || 'none').slice(0, 80)}`,
       `providerPhaseGuardComputedCount: ${Math.max(0, Number(summary.providerPhaseGuardComputedCount ?? providerPhaseGuardState?.providerPhaseGuardComputedCount) || 0)}`,
       `providerPhaseGuardUsedCurrentScan: ${Boolean(summary.providerPhaseGuardUsedCurrentScan ?? providerPhaseGuardState?.providerPhaseGuardUsedCurrentScan)}`,

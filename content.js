@@ -102,6 +102,10 @@ let lastFundingChoicesProviderLabelCoordinateInvocationState = 'function_not_rea
 let lastFundingChoicesProviderLabelCoordinateExecutionStep = ''
 let lastFundingChoicesProviderLabelCoordinateLastError = null
 let lastFundingChoicesProviderSingleToggleTest = null
+let lastFundingChoicesProviderSingleToggleTestCreated = false
+let lastFundingChoicesProviderSingleToggleTestPopulated = false
+let lastFundingChoicesProviderSingleToggleTestAttached = false
+let lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4185,6 +4189,10 @@ function recordCurrentSiteDiagnostic({
             providerSingleToggleTest:
               sanitizeFundingChoicesProviderSingleToggleTest(
                 fundingChoicesControlDiagnostics.providerSingleToggleTest
+              ),
+            providerSingleToggleTestExportState:
+              sanitizeFundingChoicesProviderSingleToggleTestExportState(
+                fundingChoicesControlDiagnostics.providerSingleToggleTestExportState
               ),
             providerPhaseBlockedReason:
               String(fundingChoicesControlDiagnostics.providerPhaseBlockedReason || '').slice(0, 80),
@@ -12055,6 +12063,7 @@ function setFundingChoicesProviderLabelCoordinateCounts(before, after) {
 }
 
 function setFundingChoicesProviderSingleToggleTestDiagnostic(summary = {}) {
+  lastFundingChoicesProviderSingleToggleTestCreated = true
   lastFundingChoicesProviderSingleToggleTest = {
     beforeCount:
       Math.max(0, Number(summary.beforeCount) || 0),
@@ -12066,6 +12075,29 @@ function setFundingChoicesProviderSingleToggleTestDiagnostic(summary = {}) {
       normalizeMatchText(summary.targetLabel || '').slice(0, 160),
     success:
       Boolean(summary.success),
+  }
+  lastFundingChoicesProviderSingleToggleTestPopulated =
+    Boolean(
+      lastFundingChoicesProviderSingleToggleTest.targetDataId ||
+      lastFundingChoicesProviderSingleToggleTest.targetLabel ||
+      lastFundingChoicesProviderSingleToggleTest.beforeCount ||
+      lastFundingChoicesProviderSingleToggleTest.afterCount ||
+      lastFundingChoicesProviderSingleToggleTest.success
+    )
+}
+
+function getFundingChoicesProviderSingleToggleTestExportState() {
+  return {
+    objectCreated:
+      Boolean(lastFundingChoicesProviderSingleToggleTestCreated),
+    objectPopulated:
+      Boolean(lastFundingChoicesProviderSingleToggleTestPopulated),
+    objectAttachedToDiagnostics:
+      Boolean(lastFundingChoicesProviderSingleToggleTestAttached),
+    objectExportedToPopup:
+      Boolean(lastFundingChoicesProviderSingleToggleTestExportedToPopup),
+    objectExportedToCopyReport:
+      false,
   }
 }
 
@@ -18123,6 +18155,7 @@ function sanitizeFundingChoicesProviderGuardValueTrace(trace) {
 
 function sanitizeFundingChoicesProviderSingleToggleTest(summary) {
   if (!summary || typeof summary !== 'object') return null
+  lastFundingChoicesProviderSingleToggleTestExportedToPopup = true
 
   return {
     beforeCount:
@@ -18135,6 +18168,23 @@ function sanitizeFundingChoicesProviderSingleToggleTest(summary) {
       String(summary.targetLabel || '').slice(0, 160),
     success:
       Boolean(summary.success),
+  }
+}
+
+function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    objectCreated:
+      Boolean(summary.objectCreated),
+    objectPopulated:
+      Boolean(summary.objectPopulated),
+    objectAttachedToDiagnostics:
+      Boolean(summary.objectAttachedToDiagnostics),
+    objectExportedToPopup:
+      Boolean(summary.objectExportedToPopup),
+    objectExportedToCopyReport:
+      Boolean(summary.objectExportedToCopyReport),
   }
 }
 
@@ -19710,6 +19760,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
     collectFundingChoicesGlobalStateDiagnostics(root)
+  lastFundingChoicesProviderSingleToggleTestAttached =
+    Boolean(lastFundingChoicesProviderSingleToggleTest)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -19753,6 +19805,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateLastError,
     providerSingleToggleTest:
       lastFundingChoicesProviderSingleToggleTest,
+    providerSingleToggleTestExportState:
+      getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -19971,6 +20025,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
     collectFundingChoicesGlobalStateDiagnostics(root)
+  lastFundingChoicesProviderSingleToggleTestAttached =
+    Boolean(lastFundingChoicesProviderSingleToggleTest)
 
   lastFundingChoicesControlDiagnostics = {
     collectedAt: new Date().toISOString(),
@@ -20014,6 +20070,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateLastError,
     providerSingleToggleTest:
       lastFundingChoicesProviderSingleToggleTest,
+    providerSingleToggleTestExportState:
+      getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -21848,6 +21906,10 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderLabelCoordinateExecutionStep = ''
     lastFundingChoicesProviderLabelCoordinateLastError = null
     lastFundingChoicesProviderSingleToggleTest = null
+    lastFundingChoicesProviderSingleToggleTestCreated = false
+    lastFundingChoicesProviderSingleToggleTestPopulated = false
+    lastFundingChoicesProviderSingleToggleTestAttached = false
+    lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''
