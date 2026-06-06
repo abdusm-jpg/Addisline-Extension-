@@ -108,6 +108,7 @@ let lastFundingChoicesProviderSingleToggleTestAttached = false
 let lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
 let lastFundingChoicesProviderMultiToggleTest = null
 let lastFundingChoicesProviderFullToggleTest = null
+let lastFundingChoicesProviderFullToggleStopTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4199,6 +4200,10 @@ function recordCurrentSiteDiagnostic({
             providerFullToggleTest:
               sanitizeFundingChoicesProviderFullToggleTest(
                 fundingChoicesControlDiagnostics.providerFullToggleTest
+              ),
+            providerFullToggleStopTrace:
+              sanitizeFundingChoicesProviderFullToggleStopTrace(
+                fundingChoicesControlDiagnostics.providerFullToggleStopTrace
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12144,6 +12149,64 @@ function setFundingChoicesProviderFullToggleTestDiagnostic(summary = {}) {
   }
 }
 
+function getFundingChoicesProviderFullToggleNextCandidate(root, startedAt) {
+  const providerPanel =
+    getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (
+    !providerPanel ||
+    !isFundingChoicesProviderPreferencesVisuallyVerified(providerPanel)
+  ) {
+    return null
+  }
+
+  const nextInput =
+    getBoundedFundingChoicesProviderToggleInputs(providerPanel, startedAt)
+      .filter((input) =>
+        isFundingChoicesProviderToggleVisible(input, providerPanel)
+      )
+      .filter(isFundingChoicesProviderInputActiveForPhase1)
+      .filter(isFundingChoicesProviderLegitimateInterestInput)[0] || null
+
+  if (!nextInput) return null
+
+  return {
+    dataId:
+      String(nextInput?.getAttribute?.('data-id') || '').slice(0, 80),
+    label:
+      getFundingChoicesPreferenceToggleLabel(nextInput, providerPanel),
+  }
+}
+
+function setFundingChoicesProviderFullToggleStopTrace(summary = {}) {
+  const nextTarget =
+    summary.nextTargetCandidate &&
+    typeof summary.nextTargetCandidate === 'object'
+      ? summary.nextTargetCandidate
+      : null
+
+  lastFundingChoicesProviderFullToggleStopTrace = {
+    stopReasonSource:
+      String(summary.stopReasonSource || '').slice(0, 120),
+    budgetCapValue:
+      Math.max(0, Number(summary.budgetCapValue) || 0),
+    remainingActiveProviderCount:
+      Math.max(0, Number(summary.remainingActiveProviderCount) || 0),
+    nextTargetCandidate: nextTarget
+      ? {
+          dataId:
+            String(nextTarget.dataId || '').slice(0, 80),
+          label:
+            normalizeMatchText(nextTarget.label || '').slice(0, 160),
+        }
+      : null,
+    loopIterationIndex:
+      Math.max(0, Number(summary.loopIterationIndex) || 0),
+    terminationBranchTaken:
+      String(summary.terminationBranchTaken || '').slice(0, 120),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12536,6 +12599,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderMultiToggleTest,
     providerFullToggleTest:
       lastFundingChoicesProviderFullToggleTest,
+    providerFullToggleStopTrace:
+      lastFundingChoicesProviderFullToggleStopTrace,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18285,6 +18350,37 @@ function sanitizeFundingChoicesProviderFullToggleTest(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderFullToggleStopTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  const nextTarget =
+    summary.nextTargetCandidate &&
+    typeof summary.nextTargetCandidate === 'object'
+      ? summary.nextTargetCandidate
+      : null
+
+  return {
+    stopReasonSource:
+      String(summary.stopReasonSource || '').slice(0, 120),
+    budgetCapValue:
+      Math.max(0, Number(summary.budgetCapValue) || 0),
+    remainingActiveProviderCount:
+      Math.max(0, Number(summary.remainingActiveProviderCount) || 0),
+    nextTargetCandidate: nextTarget
+      ? {
+          dataId:
+            String(nextTarget.dataId || '').slice(0, 80),
+          label:
+            String(nextTarget.label || '').slice(0, 160),
+        }
+      : null,
+    loopIterationIndex:
+      Math.max(0, Number(summary.loopIterationIndex) || 0),
+    terminationBranchTaken:
+      String(summary.terminationBranchTaken || '').slice(0, 120),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -18673,6 +18769,15 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
         lastFundingChoicesProviderTimeBudgetExceeded = true
         stopReason = 'budget_capped'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_phase_budget_guard',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: currentActiveCount,
+          nextTargetCandidate:
+            getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken: 'budget_capped_before_target_lookup',
+        })
         setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
         setFundingChoicesProviderLabelCoordinateDiagnostic(false, stopReason)
         appendLastDiagnosticDecisionStep({
@@ -18691,6 +18796,14 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       if (!currentProviderPanel) {
         stopReason = 'provider_panel_closed'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_panel_lookup',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: currentActiveCount,
+          nextTargetCandidate: null,
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken: 'provider_panel_closed',
+        })
         setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
         appendLastDiagnosticDecisionStep({
           strategy: 'fc.provider_label_coordinate_target_missing',
@@ -18705,6 +18818,15 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       if (!isFundingChoicesProviderPreferencesVisuallyVerified(currentProviderPanel)) {
         stopReason = 'provider_panel_not_verified'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_panel_verification',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: currentActiveCount,
+          nextTargetCandidate:
+            getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken: 'provider_panel_not_verified',
+        })
         setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
         appendLastDiagnosticDecisionStep({
           strategy: 'fc.provider_label_coordinate_target_missing',
@@ -18749,6 +18871,15 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       if (!input || !label) {
         stopReason = 'provider_label_coordinate_missing_target'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_target_lookup',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: currentActiveCount,
+          nextTargetCandidate:
+            getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken: 'provider_label_coordinate_missing_target',
+        })
         setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
         setFundingChoicesProviderLabelCoordinateDiagnostic(false, stopReason)
         appendLastDiagnosticDecisionStep({
@@ -18844,6 +18975,17 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason =
           lastFundingChoicesProviderLabelCoordinateReason ||
           'provider_label_coordinate_click_failed'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_label_coordinate_click',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: currentActiveCount,
+          nextTargetCandidate: {
+            dataId: targetDataId,
+            label: targetLabel,
+          },
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken: 'provider_label_coordinate_click_failed',
+        })
         setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
         const activeAfterFailedClick =
           getFundingChoicesProviderActiveCountFromDocument(currentProviderPanel)
@@ -18880,6 +19022,14 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         !isFundingChoicesProviderPreferencesVisuallyVerified(refreshedProviderPanel)
       ) {
         stopReason = 'provider_panel_closed'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_panel_reacquire_after_click',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: activeBefore,
+          nextTargetCandidate: null,
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken: 'provider_panel_closed_after_click',
+        })
         currentActiveCount = activeBefore
         setFundingChoicesProviderLabelCoordinateCounts(activeBefore, currentActiveCount)
         if (!firstToggleRecorded) {
@@ -18911,6 +19061,15 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       if (!Number.isFinite(rawActiveAfter)) {
         stopReason = 'ambiguous_provider_state'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_recount',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: activeBefore,
+          nextTargetCandidate:
+            getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken: 'ambiguous_recount_non_finite',
+        })
         setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeBefore)
         if (!firstToggleRecorded) {
           setFundingChoicesProviderSingleToggleTestDiagnostic({
@@ -18955,6 +19114,18 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           activeAfter < activeBefore
             ? 'ambiguous_provider_state'
             : 'recount_did_not_decrease'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_recount_delta',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: activeAfter,
+          nextTargetCandidate:
+            getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
+          loopIterationIndex: successfulCount + 1,
+          terminationBranchTaken:
+            stopReason === 'ambiguous_provider_state'
+              ? 'ambiguous_recount_decreased_by_more_than_one'
+              : 'recount_did_not_decrease',
+        })
         setFundingChoicesProviderLabelCoordinateDiagnostic(
           true,
           stopReason === 'ambiguous_provider_state'
@@ -18989,6 +19160,14 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       if (activeAfter <= 0) {
         stopReason = 'active_provider_count_zero'
+        setFundingChoicesProviderFullToggleStopTrace({
+          stopReasonSource: 'provider_recount_zero',
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          remainingActiveProviderCount: activeAfter,
+          nextTargetCandidate: null,
+          loopIterationIndex: successfulCount,
+          terminationBranchTaken: 'active_provider_count_zero',
+        })
         break
       }
     }
@@ -18998,6 +19177,15 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         successfulCount > 0
           ? 'no_more_active_legitimate_interest_providers'
           : 'provider_label_coordinate_no_change'
+      setFundingChoicesProviderFullToggleStopTrace({
+        stopReasonSource: 'provider_loop_exhausted',
+        budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+        remainingActiveProviderCount: currentActiveCount,
+        nextTargetCandidate:
+          getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
+        loopIterationIndex: successfulCount + 1,
+        terminationBranchTaken: stopReason,
+      })
     }
 
     setFundingChoicesProviderMultiToggleTestDiagnostic({
@@ -19050,6 +19238,20 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       successfulCount: lastFundingChoicesProviderFullToggleTest?.successfulCount,
       targetDataIds: lastFundingChoicesProviderFullToggleTest?.targetDataIds,
       stopReason: 'unexpected_exception',
+    })
+    setFundingChoicesProviderFullToggleStopTrace({
+      stopReasonSource: 'provider_phase_exception',
+      budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+      remainingActiveProviderCount:
+        lastFundingChoicesProviderFullToggleTest?.endingCount ??
+        lastFundingChoicesActiveProviderToggleCount,
+      nextTargetCandidate: null,
+      loopIterationIndex:
+        Math.max(
+          0,
+          Number(lastFundingChoicesProviderFullToggleTest?.successfulCount) || 0
+        ) + 1,
+      terminationBranchTaken: 'unexpected_exception',
     })
     recordFundingChoicesProviderLabelCoordinateError(error)
     return false
@@ -20148,6 +20350,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderMultiToggleTest,
     providerFullToggleTest:
       lastFundingChoicesProviderFullToggleTest,
+    providerFullToggleStopTrace:
+      lastFundingChoicesProviderFullToggleStopTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20417,6 +20621,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderMultiToggleTest,
     providerFullToggleTest:
       lastFundingChoicesProviderFullToggleTest,
+    providerFullToggleStopTrace:
+      lastFundingChoicesProviderFullToggleStopTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -22259,6 +22465,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
     lastFundingChoicesProviderMultiToggleTest = null
     lastFundingChoicesProviderFullToggleTest = null
+    lastFundingChoicesProviderFullToggleStopTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''

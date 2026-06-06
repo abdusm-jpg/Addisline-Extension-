@@ -3476,6 +3476,32 @@ function formatProviderFullToggleTest(summary) {
   ].join(' ')
 }
 
+function formatProviderFullToggleStopTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerFullToggleStopTrace: none'
+
+  const nextTarget =
+    trace.nextTargetCandidate &&
+    typeof trace.nextTargetCandidate === 'object'
+      ? trace.nextTargetCandidate
+      : null
+
+  return [
+    'providerFullToggleStopTrace:',
+    `stopReasonSource:${String(trace.stopReasonSource || 'none').slice(0, 120)}`,
+    `budgetCapValue:${Math.max(0, Number(trace.budgetCapValue) || 0)}`,
+    `remainingActiveProviderCount:${Math.max(0, Number(trace.remainingActiveProviderCount) || 0)}`,
+    `nextTargetDataId:${String(nextTarget?.dataId || 'none').slice(0, 80)}`,
+    `nextTargetLabel:${String(nextTarget?.label || 'none').slice(0, 120)}`,
+    `loopIterationIndex:${Math.max(0, Number(trace.loopIterationIndex) || 0)}`,
+    `terminationBranchTaken:${String(trace.terminationBranchTaken || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3711,6 +3737,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderSingleToggleTest(summary.providerSingleToggleTest),
     formatProviderMultiToggleTest(summary.providerMultiToggleTest),
     formatProviderFullToggleTest(summary.providerFullToggleTest),
+    formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4060,6 +4087,7 @@ function formatFundingChoicesControls(summary) {
       formatProviderSingleToggleTest(summary.providerSingleToggleTest),
       formatProviderMultiToggleTest(summary.providerMultiToggleTest),
       formatProviderFullToggleTest(summary.providerFullToggleTest),
+      formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
