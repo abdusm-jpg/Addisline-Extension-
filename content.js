@@ -107,6 +107,7 @@ let lastFundingChoicesProviderSingleToggleTestPopulated = false
 let lastFundingChoicesProviderSingleToggleTestAttached = false
 let lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
 let lastFundingChoicesProviderMultiToggleTest = null
+let lastFundingChoicesProviderFullToggleTest = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4194,6 +4195,10 @@ function recordCurrentSiteDiagnostic({
             providerMultiToggleTest:
               sanitizeFundingChoicesProviderMultiToggleTest(
                 fundingChoicesControlDiagnostics.providerMultiToggleTest
+              ),
+            providerFullToggleTest:
+              sanitizeFundingChoicesProviderFullToggleTest(
+                fundingChoicesControlDiagnostics.providerFullToggleTest
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12118,6 +12123,27 @@ function setFundingChoicesProviderMultiToggleTestDiagnostic(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderFullToggleTestDiagnostic(summary = {}) {
+  lastFundingChoicesProviderFullToggleTest = {
+    startingCount:
+      Math.max(0, Number(summary.startingCount) || 0),
+    endingCount:
+      Math.max(0, Number(summary.endingCount) || 0),
+    attemptedCount:
+      Math.max(0, Number(summary.attemptedCount) || 0),
+    successfulCount:
+      Math.max(0, Number(summary.successfulCount) || 0),
+    targetDataIds:
+      (Array.isArray(summary.targetDataIds) ? summary.targetDataIds : [])
+        .slice(0, 100)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    stopReason:
+      String(summary.stopReason || '').slice(0, 80),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12508,6 +12534,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderSingleToggleTest,
     providerMultiToggleTest:
       lastFundingChoicesProviderMultiToggleTest,
+    providerFullToggleTest:
+      lastFundingChoicesProviderFullToggleTest,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18234,6 +18262,29 @@ function sanitizeFundingChoicesProviderMultiToggleTest(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderFullToggleTest(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    startingCount:
+      Math.max(0, Number(summary.startingCount) || 0),
+    endingCount:
+      Math.max(0, Number(summary.endingCount) || 0),
+    attemptedCount:
+      Math.max(0, Number(summary.attemptedCount) || 0),
+    successfulCount:
+      Math.max(0, Number(summary.successfulCount) || 0),
+    targetDataIds:
+      (Array.isArray(summary.targetDataIds) ? summary.targetDataIds : [])
+        .slice(0, 100)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    stopReason:
+      String(summary.stopReason || '').slice(0, 80),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -18588,17 +18639,20 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       return false
     }
 
-    const maxProviderClicks = 3
     const targetDataIds = []
     const targetLabels = []
+    const initialActiveLegitimateInterestCount =
+      activeInputs
+        .filter(isFundingChoicesProviderLegitimateInterestInput)
+        .length
     let attemptedCount = 0
     let successfulCount = 0
-    let currentActiveCount = activeInputs.length
+    let currentActiveCount = initialActiveLegitimateInterestCount
     let stopReason = ''
     let firstToggleRecorded = false
 
     setFundingChoicesProviderMultiToggleTestDiagnostic({
-      startingCount: activeInputs.length,
+      startingCount: initialActiveLegitimateInterestCount,
       endingCount: currentActiveCount,
       attemptedCount,
       successfulCount,
@@ -18606,8 +18660,16 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       targetLabels,
       stopReason: 'initialized',
     })
+    setFundingChoicesProviderFullToggleTestDiagnostic({
+      startingCount: initialActiveLegitimateInterestCount,
+      endingCount: currentActiveCount,
+      attemptedCount,
+      successfulCount,
+      targetDataIds,
+      stopReason: 'initialized',
+    })
 
-    while (successfulCount < maxProviderClicks) {
+    while (currentActiveCount > 0) {
       if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
         lastFundingChoicesProviderTimeBudgetExceeded = true
         stopReason = 'budget_capped'
@@ -18666,7 +18728,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       const currentActiveLegitimateInterestInputs =
         currentActiveInputs
           .filter(isFundingChoicesProviderLegitimateInterestInput)
-      currentActiveCount = currentActiveInputs.length
+      currentActiveCount = currentActiveLegitimateInterestInputs.length
 
       setFundingChoicesProviderActiveStateMethodFromInputs(currentProviderInputs)
       lastFundingChoicesProviderPreferenceOpened = true
@@ -18746,12 +18808,20 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       }
 
       setFundingChoicesProviderMultiToggleTestDiagnostic({
-        startingCount: activeInputs.length,
+        startingCount: initialActiveLegitimateInterestCount,
         endingCount: activeBefore,
         attemptedCount,
         successfulCount,
         targetDataIds,
         targetLabels,
+        stopReason: 'click_dispatch',
+      })
+      setFundingChoicesProviderFullToggleTestDiagnostic({
+        startingCount: initialActiveLegitimateInterestCount,
+        endingCount: activeBefore,
+        attemptedCount,
+        successfulCount,
+        targetDataIds,
         stopReason: 'click_dispatch',
       })
 
@@ -18826,8 +18896,18 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       }
 
       refreshFundingChoicesProviderPanelDiagnostics(refreshedProviderPanel)
+      const refreshedProviderInputs =
+        getBoundedFundingChoicesProviderToggleInputs(refreshedProviderPanel, startedAt)
+          .filter((refreshedInput) =>
+            isFundingChoicesProviderToggleVisible(refreshedInput, refreshedProviderPanel)
+          )
+      const refreshedActiveLegitimateInterestCount =
+        refreshedProviderInputs
+          .filter(isFundingChoicesProviderInputActiveForPhase1)
+          .filter(isFundingChoicesProviderLegitimateInterestInput)
+          .length
       const rawActiveAfter =
-        Number(lastFundingChoicesActiveProviderToggleCount)
+        Number(refreshedActiveLegitimateInterestCount)
 
       if (!Number.isFinite(rawActiveAfter)) {
         stopReason = 'ambiguous_provider_state'
@@ -18907,11 +18987,6 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         elapsedMs: Date.now() - startedAt,
       })
 
-      if (successfulCount >= maxProviderClicks) {
-        stopReason = 'max_providers_reached'
-        break
-      }
-
       if (activeAfter <= 0) {
         stopReason = 'active_provider_count_zero'
         break
@@ -18926,7 +19001,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     }
 
     setFundingChoicesProviderMultiToggleTestDiagnostic({
-      startingCount: activeInputs.length,
+      startingCount: initialActiveLegitimateInterestCount,
       endingCount: currentActiveCount,
       attemptedCount,
       successfulCount,
@@ -18934,10 +19009,18 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       targetLabels,
       stopReason,
     })
+    setFundingChoicesProviderFullToggleTestDiagnostic({
+      startingCount: initialActiveLegitimateInterestCount,
+      endingCount: currentActiveCount,
+      attemptedCount,
+      successfulCount,
+      targetDataIds,
+      stopReason,
+    })
 
     if (attemptedCount === 0 && !firstToggleRecorded) {
       setFundingChoicesProviderSingleToggleTestDiagnostic({
-        beforeCount: activeInputs.length,
+        beforeCount: initialActiveLegitimateInterestCount,
         afterCount: currentActiveCount,
         targetDataId: '',
         targetLabel: '',
@@ -18956,6 +19039,16 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       successfulCount: lastFundingChoicesProviderMultiToggleTest?.successfulCount,
       targetDataIds: lastFundingChoicesProviderMultiToggleTest?.targetDataIds,
       targetLabels: lastFundingChoicesProviderMultiToggleTest?.targetLabels,
+      stopReason: 'unexpected_exception',
+    })
+    setFundingChoicesProviderFullToggleTestDiagnostic({
+      startingCount: lastFundingChoicesProviderFullToggleTest?.startingCount,
+      endingCount:
+        lastFundingChoicesProviderFullToggleTest?.endingCount ??
+        lastFundingChoicesActiveProviderToggleCount,
+      attemptedCount: lastFundingChoicesProviderFullToggleTest?.attemptedCount,
+      successfulCount: lastFundingChoicesProviderFullToggleTest?.successfulCount,
+      targetDataIds: lastFundingChoicesProviderFullToggleTest?.targetDataIds,
       stopReason: 'unexpected_exception',
     })
     recordFundingChoicesProviderLabelCoordinateError(error)
@@ -20053,6 +20146,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderSingleToggleTest,
     providerMultiToggleTest:
       lastFundingChoicesProviderMultiToggleTest,
+    providerFullToggleTest:
+      lastFundingChoicesProviderFullToggleTest,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20320,6 +20415,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderSingleToggleTest,
     providerMultiToggleTest:
       lastFundingChoicesProviderMultiToggleTest,
+    providerFullToggleTest:
+      lastFundingChoicesProviderFullToggleTest,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -22161,6 +22258,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderSingleToggleTestAttached = false
     lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
     lastFundingChoicesProviderMultiToggleTest = null
+    lastFundingChoicesProviderFullToggleTest = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''

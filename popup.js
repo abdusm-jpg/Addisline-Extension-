@@ -3452,6 +3452,30 @@ function formatProviderMultiToggleTest(summary) {
   ].join(' ')
 }
 
+function formatProviderFullToggleTest(summary) {
+  const test =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!test) return 'providerFullToggleTest: none'
+
+  const targetDataIds =
+    Array.isArray(test.targetDataIds)
+      ? test.targetDataIds
+      : []
+
+  return [
+    'providerFullToggleTest:',
+    `startingCount:${Math.max(0, Number(test.startingCount) || 0)}`,
+    `endingCount:${Math.max(0, Number(test.endingCount) || 0)}`,
+    `attemptedCount:${Math.max(0, Number(test.attemptedCount) || 0)}`,
+    `successfulCount:${Math.max(0, Number(test.successfulCount) || 0)}`,
+    `targetDataIds:${targetDataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `stopReason:${String(test.stopReason || 'none').slice(0, 80)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3686,6 +3710,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     ),
     formatProviderSingleToggleTest(summary.providerSingleToggleTest),
     formatProviderMultiToggleTest(summary.providerMultiToggleTest),
+    formatProviderFullToggleTest(summary.providerFullToggleTest),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4034,6 +4059,7 @@ function formatFundingChoicesControls(summary) {
       `providerLabelCoordinateLastError: message:${String(summary.providerLabelCoordinateLastError?.message || 'none').slice(0, 120)} stack:${String(summary.providerLabelCoordinateLastError?.stackFirstLine || 'none').slice(0, 120)}`,
       formatProviderSingleToggleTest(summary.providerSingleToggleTest),
       formatProviderMultiToggleTest(summary.providerMultiToggleTest),
+      formatProviderFullToggleTest(summary.providerFullToggleTest),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
