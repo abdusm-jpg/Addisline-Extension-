@@ -3423,6 +3423,35 @@ function formatProviderSingleToggleTest(summary) {
   ].join(' ')
 }
 
+function formatProviderMultiToggleTest(summary) {
+  const test =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!test) return 'providerMultiToggleTest: none'
+
+  const targetDataIds =
+    Array.isArray(test.targetDataIds)
+      ? test.targetDataIds
+      : []
+  const targetLabels =
+    Array.isArray(test.targetLabels)
+      ? test.targetLabels
+      : []
+
+  return [
+    'providerMultiToggleTest:',
+    `startingCount:${Math.max(0, Number(test.startingCount) || 0)}`,
+    `endingCount:${Math.max(0, Number(test.endingCount) || 0)}`,
+    `attemptedCount:${Math.max(0, Number(test.attemptedCount) || 0)}`,
+    `successfulCount:${Math.max(0, Number(test.successfulCount) || 0)}`,
+    `targetDataIds:${targetDataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `targetLabels:${targetLabels.map((label) => String(label || 'none').slice(0, 120)).join('|') || 'none'}`,
+    `stopReason:${String(test.stopReason || 'none').slice(0, 80)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3656,6 +3685,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
       summary.providerActiveInputsCurrentScan
     ),
     formatProviderSingleToggleTest(summary.providerSingleToggleTest),
+    formatProviderMultiToggleTest(summary.providerMultiToggleTest),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4003,6 +4033,7 @@ function formatFundingChoicesControls(summary) {
       `providerLabelCoordinateExecutionStep: ${String(summary.providerLabelCoordinateExecutionStep || 'none').slice(0, 60)}`,
       `providerLabelCoordinateLastError: message:${String(summary.providerLabelCoordinateLastError?.message || 'none').slice(0, 120)} stack:${String(summary.providerLabelCoordinateLastError?.stackFirstLine || 'none').slice(0, 120)}`,
       formatProviderSingleToggleTest(summary.providerSingleToggleTest),
+      formatProviderMultiToggleTest(summary.providerMultiToggleTest),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true

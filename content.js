@@ -106,6 +106,7 @@ let lastFundingChoicesProviderSingleToggleTestCreated = false
 let lastFundingChoicesProviderSingleToggleTestPopulated = false
 let lastFundingChoicesProviderSingleToggleTestAttached = false
 let lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
+let lastFundingChoicesProviderMultiToggleTest = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4189,6 +4190,10 @@ function recordCurrentSiteDiagnostic({
             providerSingleToggleTest:
               sanitizeFundingChoicesProviderSingleToggleTest(
                 fundingChoicesControlDiagnostics.providerSingleToggleTest
+              ),
+            providerMultiToggleTest:
+              sanitizeFundingChoicesProviderMultiToggleTest(
+                fundingChoicesControlDiagnostics.providerMultiToggleTest
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12086,6 +12091,33 @@ function setFundingChoicesProviderSingleToggleTestDiagnostic(summary = {}) {
     )
 }
 
+function setFundingChoicesProviderMultiToggleTestDiagnostic(summary = {}) {
+  lastFundingChoicesProviderMultiToggleTest = {
+    startingCount:
+      Math.max(0, Number(summary.startingCount) || 0),
+    endingCount:
+      Math.max(0, Number(summary.endingCount) || 0),
+    attemptedCount:
+      Math.max(0, Number(summary.attemptedCount) || 0),
+    successfulCount:
+      Math.max(0, Number(summary.successfulCount) || 0),
+    targetDataIds:
+      (Array.isArray(summary.targetDataIds) ? summary.targetDataIds : [])
+        .slice(0, 3)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    targetLabels:
+      (Array.isArray(summary.targetLabels) ? summary.targetLabels : [])
+        .slice(0, 3)
+        .map((label) =>
+          normalizeMatchText(label || '').slice(0, 160)
+        ),
+    stopReason:
+      String(summary.stopReason || '').slice(0, 80),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12474,6 +12506,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderLabelCoordinateLastError,
     providerSingleToggleTest:
       lastFundingChoicesProviderSingleToggleTest,
+    providerMultiToggleTest:
+      lastFundingChoicesProviderMultiToggleTest,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18171,6 +18205,35 @@ function sanitizeFundingChoicesProviderSingleToggleTest(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderMultiToggleTest(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    startingCount:
+      Math.max(0, Number(summary.startingCount) || 0),
+    endingCount:
+      Math.max(0, Number(summary.endingCount) || 0),
+    attemptedCount:
+      Math.max(0, Number(summary.attemptedCount) || 0),
+    successfulCount:
+      Math.max(0, Number(summary.successfulCount) || 0),
+    targetDataIds:
+      (Array.isArray(summary.targetDataIds) ? summary.targetDataIds : [])
+        .slice(0, 3)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    targetLabels:
+      (Array.isArray(summary.targetLabels) ? summary.targetLabels : [])
+        .slice(0, 3)
+        .map((label) =>
+          String(label || '').slice(0, 160)
+        ),
+    stopReason:
+      String(summary.stopReason || '').slice(0, 80),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -18481,13 +18544,14 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     const startedAt =
       Date.now()
     const providerInputs =
-      getFundingChoicesStableProviderToggleInputs(providerPanel, startedAt)
+      getBoundedFundingChoicesProviderToggleInputs(providerPanel, startedAt)
+        .filter((input) =>
+          isFundingChoicesProviderToggleVisible(input, providerPanel)
+        )
     const activeInputs =
       providerInputs
         .filter(isFundingChoicesProviderInputActiveForPhase1)
     setFundingChoicesProviderActiveStateMethodFromInputs(providerInputs)
-    const activeLegitimateInterestInputs =
-      activeInputs.filter(isFundingChoicesProviderLegitimateInterestInput)
     setFundingChoicesProviderLabelCoordinateCounts(activeInputs.length, activeInputs.length)
 
     lastFundingChoicesProviderPreferenceOpened = true
@@ -18524,165 +18588,313 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       return false
     }
 
-    setFundingChoicesProviderLabelCoordinateExecutionStep('target_lookup')
-    const input =
-      activeLegitimateInterestInputs[0] || null
-    const label =
-      getFundingChoicesProviderLegitimateInterestLabel(input)
+    const maxProviderClicks = 3
+    const targetDataIds = []
+    const targetLabels = []
+    let attemptedCount = 0
+    let successfulCount = 0
+    let currentActiveCount = activeInputs.length
+    let stopReason = ''
+    let firstToggleRecorded = false
 
-    if (!input || !label) {
-      setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
-      setFundingChoicesActiveProviderToggleCount(
-        activeInputs.length,
-        'handleFundingChoicesVisibleProviderTogglesPhase1.missing_target',
-        'fc.provider_label_coordinate_target_missing'
-      )
-      setFundingChoicesProviderLabelCoordinateDiagnostic(
-        false,
-        'provider_label_coordinate_missing_target'
-      )
-      appendLastDiagnosticDecisionStep({
-        strategy: 'fc.provider_label_coordinate_target_missing',
-        status: 'skipped',
-        reason: 'provider_label_coordinate_missing_target',
-        found: 0,
-        scanned: activeInputs.length,
-        elapsedMs: Date.now() - startedAt,
-      })
-      return false
-    }
-
-    if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
-      lastFundingChoicesProviderTimeBudgetExceeded = true
-      setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
-      setFundingChoicesProviderLabelCoordinateDiagnostic(
-        false,
-        'budget_capped'
-      )
-      appendLastDiagnosticDecisionStep({
-        strategy: 'fc.provider_label_coordinate_target_missing',
-        status: 'skipped',
-        reason: 'budget_capped',
-        found: 0,
-        scanned: activeInputs.length,
-        elapsedMs: Date.now() - startedAt,
-      })
-      return false
-    }
-
-    setFundingChoicesProviderLabelCoordinateExecutionStep('target_found')
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_target_found',
-      status: 'found',
-      reason: [
-        `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
-        `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
-      ].join(','),
-      found: 1,
-      scanned: activeInputs.length,
-      elapsedMs: Date.now() - startedAt,
+    setFundingChoicesProviderMultiToggleTestDiagnostic({
+      startingCount: activeInputs.length,
+      endingCount: currentActiveCount,
+      attemptedCount,
+      successfulCount,
+      targetDataIds,
+      targetLabels,
+      stopReason: 'initialized',
     })
 
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_target',
-      status: 'found',
-      reason: [
-        `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
-        `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
-      ].join(','),
-      found: 1,
-      scanned: activeInputs.length,
-      elapsedMs: Date.now() - startedAt,
-    })
-
-    const activeBefore =
-      activeInputs.length
-    const targetDataId =
-      String(input?.getAttribute?.('data-id') || '').slice(0, 80)
-    const targetLabel =
-      getFundingChoicesPreferenceToggleLabel(input, providerPanel)
-    setFundingChoicesProviderSingleToggleTestDiagnostic({
-      beforeCount: activeBefore,
-      afterCount: activeBefore,
-      targetDataId,
-      targetLabel,
-      success: false,
-    })
-    setFundingChoicesProviderLabelCoordinateExecutionStep('click_dispatch')
-    const clicked =
-      dispatchFundingChoicesProviderLabelCoordinateClick(label, providerPanel)
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_click_dispatched',
-      status: clicked ? 'clicked' : 'failed',
-      reason: clicked
-        ? ''
-        : lastFundingChoicesProviderLabelCoordinateReason ||
-          'provider_label_coordinate_click_failed',
-      found: clicked ? 1 : 0,
-      scanned: 1,
-      elapsedMs: Date.now() - startedAt,
-    })
-
-    if (!clicked) {
-      setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
-      const activeAfterFailedClick =
-        getFundingChoicesProviderActiveCountFromDocument(providerPanel)
-      setFundingChoicesActiveProviderToggleCount(
-        activeAfterFailedClick,
-        'handleFundingChoicesVisibleProviderTogglesPhase1.click_failed_recount',
-        'fc.provider_label_coordinate_click_dispatched'
-      )
-      setFundingChoicesProviderLabelCoordinateCounts(
-        activeBefore,
-        lastFundingChoicesActiveProviderToggleCount
-      )
-      setFundingChoicesProviderSingleToggleTestDiagnostic({
-        beforeCount: activeBefore,
-        afterCount: lastFundingChoicesActiveProviderToggleCount,
-        targetDataId,
-        targetLabel,
-        success: false,
-      })
-      if (!lastFundingChoicesProviderLabelCoordinateReason) {
-        setFundingChoicesProviderLabelCoordinateDiagnostic(
-          false,
-          'provider_label_coordinate_missing_target'
-        )
+    while (successfulCount < maxProviderClicks) {
+      if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
+        lastFundingChoicesProviderTimeBudgetExceeded = true
+        stopReason = 'budget_capped'
+        setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+        setFundingChoicesProviderLabelCoordinateDiagnostic(false, stopReason)
+        appendLastDiagnosticDecisionStep({
+          strategy: 'fc.provider_label_coordinate_target_missing',
+          status: 'skipped',
+          reason: stopReason,
+          found: 0,
+          scanned: currentActiveCount,
+          elapsedMs: Date.now() - startedAt,
+        })
+        break
       }
-      setFundingChoicesProviderLabelCoordinateExecutionStep('no_change')
-      return false
-    }
 
-    waitForFundingChoicesProviderMicroDelay()
+      const currentProviderPanel =
+        getVisibleFundingChoicesProviderPreferencesPanel(root)
 
-    setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
-    const activeAfter =
-      getFundingChoicesProviderActiveCountFromDocument(providerPanel)
-    setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeAfter)
-    setFundingChoicesProviderSingleToggleTestDiagnostic({
-      beforeCount: activeBefore,
-      afterCount: activeAfter,
-      targetDataId,
-      targetLabel,
-      success: activeAfter === activeBefore - 1,
-    })
+      if (!currentProviderPanel) {
+        stopReason = 'provider_panel_closed'
+        setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+        appendLastDiagnosticDecisionStep({
+          strategy: 'fc.provider_label_coordinate_target_missing',
+          status: 'skipped',
+          reason: stopReason,
+          found: 0,
+          scanned: currentActiveCount,
+          elapsedMs: Date.now() - startedAt,
+        })
+        break
+      }
 
-    setFundingChoicesActiveProviderToggleCount(
-      activeAfter,
-      'handleFundingChoicesVisibleProviderTogglesPhase1.recount',
-      'fc.provider_label_coordinate_recount'
-    )
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_recount',
-      status: 'ran',
-      reason: `before:${activeBefore},after:${activeAfter}`,
-      found: activeBefore > activeAfter ? activeBefore - activeAfter : 0,
-      scanned: activeBefore,
-      elapsedMs: Date.now() - startedAt,
-    })
+      if (!isFundingChoicesProviderPreferencesVisuallyVerified(currentProviderPanel)) {
+        stopReason = 'provider_panel_not_verified'
+        setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+        appendLastDiagnosticDecisionStep({
+          strategy: 'fc.provider_label_coordinate_target_missing',
+          status: 'skipped',
+          reason: stopReason,
+          found: 0,
+          scanned: currentActiveCount,
+          elapsedMs: Date.now() - startedAt,
+        })
+        break
+      }
 
-    if (activeAfter === activeBefore - 1) {
-      lastFundingChoicesProviderClickedCount = 1
+      const currentProviderInputs =
+        getBoundedFundingChoicesProviderToggleInputs(currentProviderPanel, startedAt)
+          .filter((input) =>
+            isFundingChoicesProviderToggleVisible(input, currentProviderPanel)
+          )
+      const currentActiveInputs =
+        currentProviderInputs
+          .filter(isFundingChoicesProviderInputActiveForPhase1)
+      const currentActiveLegitimateInterestInputs =
+        currentActiveInputs
+          .filter(isFundingChoicesProviderLegitimateInterestInput)
+      currentActiveCount = currentActiveInputs.length
+
+      setFundingChoicesProviderActiveStateMethodFromInputs(currentProviderInputs)
+      lastFundingChoicesProviderPreferenceOpened = true
+      lastFundingChoicesProviderToggleCount = currentProviderInputs.length
+      lastFundingChoicesProviderInspectedCount = currentProviderInputs.length
+      lastFundingChoicesProviderActiveFoundCount = currentActiveCount
+      setFundingChoicesActiveProviderToggleCount(
+        currentActiveCount,
+        'handleFundingChoicesVisibleProviderTogglesPhase1.loop_active_inputs',
+        'fc.provider_label_coordinate_enter'
+      )
+
+      setFundingChoicesProviderLabelCoordinateExecutionStep('target_lookup')
+      const input =
+        currentActiveLegitimateInterestInputs[0] || null
+      const label =
+        getFundingChoicesProviderLegitimateInterestLabel(input)
+
+      if (!input || !label) {
+        stopReason = 'provider_label_coordinate_missing_target'
+        setFundingChoicesProviderLabelCoordinateExecutionStep('target_missing')
+        setFundingChoicesProviderLabelCoordinateDiagnostic(false, stopReason)
+        appendLastDiagnosticDecisionStep({
+          strategy: 'fc.provider_label_coordinate_target_missing',
+          status: 'skipped',
+          reason: stopReason,
+          found: 0,
+          scanned: currentActiveCount,
+          elapsedMs: Date.now() - startedAt,
+        })
+        break
+      }
+
+      setFundingChoicesProviderLabelCoordinateExecutionStep('target_found')
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_target_found',
+        status: 'found',
+        reason: [
+          `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
+          `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
+        ].join(','),
+        found: 1,
+        scanned: currentActiveCount,
+        elapsedMs: Date.now() - startedAt,
+      })
+
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_target',
+        status: 'found',
+        reason: [
+          `input:${getFundingChoicesProviderLabelCoordinateElementId(input) || 'none'}`,
+          `label:${getFundingChoicesProviderLabelCoordinateElementId(label) || 'none'}`,
+        ].join(','),
+        found: 1,
+        scanned: currentActiveCount,
+        elapsedMs: Date.now() - startedAt,
+      })
+
+      const activeBefore =
+        currentActiveCount
+      const targetDataId =
+        String(input?.getAttribute?.('data-id') || '').slice(0, 80)
+      const targetLabel =
+        getFundingChoicesPreferenceToggleLabel(input, currentProviderPanel)
+      targetDataIds.push(targetDataId)
+      targetLabels.push(targetLabel)
+      attemptedCount += 1
+
+      if (!firstToggleRecorded) {
+        setFundingChoicesProviderSingleToggleTestDiagnostic({
+          beforeCount: activeBefore,
+          afterCount: activeBefore,
+          targetDataId,
+          targetLabel,
+          success: false,
+        })
+      }
+
+      setFundingChoicesProviderMultiToggleTestDiagnostic({
+        startingCount: activeInputs.length,
+        endingCount: activeBefore,
+        attemptedCount,
+        successfulCount,
+        targetDataIds,
+        targetLabels,
+        stopReason: 'click_dispatch',
+      })
+
+      setFundingChoicesProviderLabelCoordinateExecutionStep('click_dispatch')
+      const clicked =
+        dispatchFundingChoicesProviderLabelCoordinateClick(label, currentProviderPanel)
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_click_dispatched',
+        status: clicked ? 'clicked' : 'failed',
+        reason: clicked
+          ? ''
+          : lastFundingChoicesProviderLabelCoordinateReason ||
+            'provider_label_coordinate_click_failed',
+        found: clicked ? 1 : 0,
+        scanned: 1,
+        elapsedMs: Date.now() - startedAt,
+      })
+
+      if (!clicked) {
+        stopReason =
+          lastFundingChoicesProviderLabelCoordinateReason ||
+          'provider_label_coordinate_click_failed'
+        setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
+        const activeAfterFailedClick =
+          getFundingChoicesProviderActiveCountFromDocument(currentProviderPanel)
+        setFundingChoicesActiveProviderToggleCount(
+          activeAfterFailedClick,
+          'handleFundingChoicesVisibleProviderTogglesPhase1.click_failed_recount',
+          'fc.provider_label_coordinate_click_dispatched'
+        )
+        setFundingChoicesProviderLabelCoordinateCounts(
+          activeBefore,
+          lastFundingChoicesActiveProviderToggleCount
+        )
+        if (!firstToggleRecorded) {
+          setFundingChoicesProviderSingleToggleTestDiagnostic({
+            beforeCount: activeBefore,
+            afterCount: lastFundingChoicesActiveProviderToggleCount,
+            targetDataId,
+            targetLabel,
+            success: false,
+          })
+          firstToggleRecorded = true
+        }
+        break
+      }
+
+      waitForFundingChoicesProviderMicroDelay()
+
+      setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
+      const refreshedProviderPanel =
+        getVisibleFundingChoicesProviderPreferencesPanel(root)
+
+      if (
+        !refreshedProviderPanel ||
+        !isFundingChoicesProviderPreferencesVisuallyVerified(refreshedProviderPanel)
+      ) {
+        stopReason = 'provider_panel_closed'
+        currentActiveCount = activeBefore
+        setFundingChoicesProviderLabelCoordinateCounts(activeBefore, currentActiveCount)
+        if (!firstToggleRecorded) {
+          setFundingChoicesProviderSingleToggleTestDiagnostic({
+            beforeCount: activeBefore,
+            afterCount: currentActiveCount,
+            targetDataId,
+            targetLabel,
+            success: false,
+          })
+          firstToggleRecorded = true
+        }
+        break
+      }
+
+      refreshFundingChoicesProviderPanelDiagnostics(refreshedProviderPanel)
+      const rawActiveAfter =
+        Number(lastFundingChoicesActiveProviderToggleCount)
+
+      if (!Number.isFinite(rawActiveAfter)) {
+        stopReason = 'ambiguous_provider_state'
+        setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeBefore)
+        if (!firstToggleRecorded) {
+          setFundingChoicesProviderSingleToggleTestDiagnostic({
+            beforeCount: activeBefore,
+            afterCount: activeBefore,
+            targetDataId,
+            targetLabel,
+            success: false,
+          })
+          firstToggleRecorded = true
+        }
+        break
+      }
+
+      const activeAfter =
+        Math.max(0, rawActiveAfter)
+      currentActiveCount = activeAfter
+      setFundingChoicesProviderLabelCoordinateCounts(activeBefore, activeAfter)
+
+      if (!firstToggleRecorded) {
+        setFundingChoicesProviderSingleToggleTestDiagnostic({
+          beforeCount: activeBefore,
+          afterCount: activeAfter,
+          targetDataId,
+          targetLabel,
+          success: activeAfter === activeBefore - 1,
+        })
+        firstToggleRecorded = true
+      }
+
+      appendLastDiagnosticDecisionStep({
+        strategy: 'fc.provider_label_coordinate_recount',
+        status: 'ran',
+        reason: `before:${activeBefore},after:${activeAfter}`,
+        found: activeBefore > activeAfter ? activeBefore - activeAfter : 0,
+        scanned: activeBefore,
+        elapsedMs: Date.now() - startedAt,
+      })
+
+      if (activeAfter !== activeBefore - 1) {
+        stopReason =
+          activeAfter < activeBefore
+            ? 'ambiguous_provider_state'
+            : 'recount_did_not_decrease'
+        setFundingChoicesProviderLabelCoordinateDiagnostic(
+          true,
+          stopReason === 'ambiguous_provider_state'
+            ? 'provider_label_coordinate_ambiguous_state'
+            : 'provider_label_coordinate_no_change'
+        )
+        setFundingChoicesProviderLabelCoordinateExecutionStep('no_change')
+        appendLastDiagnosticDecisionStep({
+          strategy: 'fc.provider_label_coordinate_no_change',
+          status: 'skipped',
+          reason: `before:${activeBefore},after:${activeAfter}`,
+          found: 0,
+          scanned: activeBefore,
+          elapsedMs: Date.now() - startedAt,
+        })
+        break
+      }
+
+      successfulCount += 1
+      lastFundingChoicesProviderClickedCount = successfulCount
       lastFundingChoicesProviderToggleMethod = 'label-coordinate-click'
       setFundingChoicesProviderLabelCoordinateDiagnostic(true, 'success')
       setFundingChoicesProviderLabelCoordinateExecutionStep('success')
@@ -18694,24 +18906,58 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         scanned: activeBefore,
         elapsedMs: Date.now() - startedAt,
       })
-      return true
+
+      if (successfulCount >= maxProviderClicks) {
+        stopReason = 'max_providers_reached'
+        break
+      }
+
+      if (activeAfter <= 0) {
+        stopReason = 'active_provider_count_zero'
+        break
+      }
     }
 
-    setFundingChoicesProviderLabelCoordinateDiagnostic(
-      true,
-      'provider_label_coordinate_no_change'
-    )
-    setFundingChoicesProviderLabelCoordinateExecutionStep('no_change')
-    appendLastDiagnosticDecisionStep({
-      strategy: 'fc.provider_label_coordinate_no_change',
-      status: 'skipped',
-      reason: `before:${activeBefore},after:${activeAfter}`,
-      found: 0,
-      scanned: activeBefore,
-      elapsedMs: Date.now() - startedAt,
+    if (!stopReason) {
+      stopReason =
+        successfulCount > 0
+          ? 'no_more_active_legitimate_interest_providers'
+          : 'provider_label_coordinate_no_change'
+    }
+
+    setFundingChoicesProviderMultiToggleTestDiagnostic({
+      startingCount: activeInputs.length,
+      endingCount: currentActiveCount,
+      attemptedCount,
+      successfulCount,
+      targetDataIds,
+      targetLabels,
+      stopReason,
     })
-    return false
+
+    if (attemptedCount === 0 && !firstToggleRecorded) {
+      setFundingChoicesProviderSingleToggleTestDiagnostic({
+        beforeCount: activeInputs.length,
+        afterCount: currentActiveCount,
+        targetDataId: '',
+        targetLabel: '',
+        success: false,
+      })
+    }
+
+    return successfulCount > 0
   } catch (error) {
+    setFundingChoicesProviderMultiToggleTestDiagnostic({
+      startingCount: lastFundingChoicesProviderMultiToggleTest?.startingCount,
+      endingCount:
+        lastFundingChoicesProviderMultiToggleTest?.endingCount ??
+        lastFundingChoicesActiveProviderToggleCount,
+      attemptedCount: lastFundingChoicesProviderMultiToggleTest?.attemptedCount,
+      successfulCount: lastFundingChoicesProviderMultiToggleTest?.successfulCount,
+      targetDataIds: lastFundingChoicesProviderMultiToggleTest?.targetDataIds,
+      targetLabels: lastFundingChoicesProviderMultiToggleTest?.targetLabels,
+      stopReason: 'unexpected_exception',
+    })
     recordFundingChoicesProviderLabelCoordinateError(error)
     return false
   }
@@ -19805,6 +20051,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateLastError,
     providerSingleToggleTest:
       lastFundingChoicesProviderSingleToggleTest,
+    providerMultiToggleTest:
+      lastFundingChoicesProviderMultiToggleTest,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20070,6 +20318,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderLabelCoordinateLastError,
     providerSingleToggleTest:
       lastFundingChoicesProviderSingleToggleTest,
+    providerMultiToggleTest:
+      lastFundingChoicesProviderMultiToggleTest,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -21910,6 +22160,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderSingleToggleTestPopulated = false
     lastFundingChoicesProviderSingleToggleTestAttached = false
     lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
+    lastFundingChoicesProviderMultiToggleTest = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''
