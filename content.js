@@ -109,6 +109,7 @@ let lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
 let lastFundingChoicesProviderMultiToggleTest = null
 let lastFundingChoicesProviderFullToggleTest = null
 let lastFundingChoicesProviderFullToggleStopTrace = null
+let lastFundingChoicesProviderBudgetGuardTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4204,6 +4205,10 @@ function recordCurrentSiteDiagnostic({
             providerFullToggleStopTrace:
               sanitizeFundingChoicesProviderFullToggleStopTrace(
                 fundingChoicesControlDiagnostics.providerFullToggleStopTrace
+              ),
+            providerBudgetGuardTrace:
+              sanitizeFundingChoicesProviderBudgetGuardTrace(
+                fundingChoicesControlDiagnostics.providerBudgetGuardTrace
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12207,6 +12212,23 @@ function setFundingChoicesProviderFullToggleStopTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderBudgetGuardTrace(summary = {}) {
+  lastFundingChoicesProviderBudgetGuardTrace = {
+    iterationIndex:
+      Math.max(0, Number(summary.iterationIndex) || 0),
+    budgetCapValue:
+      Math.max(0, Number(summary.budgetCapValue) || 0),
+    comparedValue:
+      Math.max(0, Number(summary.comparedValue) || 0),
+    comparisonOperator:
+      String(summary.comparisonOperator || '>=').slice(0, 20),
+    conditionResult:
+      Boolean(summary.conditionResult),
+    sourceCodeBranchName:
+      String(summary.sourceCodeBranchName || '').slice(0, 120),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12601,6 +12623,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderFullToggleTest,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
+    providerBudgetGuardTrace:
+      lastFundingChoicesProviderBudgetGuardTrace,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18381,6 +18405,25 @@ function sanitizeFundingChoicesProviderFullToggleStopTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderBudgetGuardTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    iterationIndex:
+      Math.max(0, Number(summary.iterationIndex) || 0),
+    budgetCapValue:
+      Math.max(0, Number(summary.budgetCapValue) || 0),
+    comparedValue:
+      Math.max(0, Number(summary.comparedValue) || 0),
+    comparisonOperator:
+      String(summary.comparisonOperator || '').slice(0, 20),
+    conditionResult:
+      Boolean(summary.conditionResult),
+    sourceCodeBranchName:
+      String(summary.sourceCodeBranchName || '').slice(0, 120),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -18766,7 +18809,20 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     })
 
     while (currentActiveCount > 0) {
-      if (hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)) {
+      const budgetComparedValue =
+        startedAt ? Date.now() - startedAt : 0
+      const providerPhaseBudgetExceeded =
+        hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)
+      setFundingChoicesProviderBudgetGuardTrace({
+        iterationIndex: successfulCount + 1,
+        budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+        comparedValue: budgetComparedValue,
+        comparisonOperator: '>=',
+        conditionResult: providerPhaseBudgetExceeded,
+        sourceCodeBranchName: 'provider_phase_budget_guard',
+      })
+
+      if (providerPhaseBudgetExceeded) {
         lastFundingChoicesProviderTimeBudgetExceeded = true
         stopReason = 'budget_capped'
         setFundingChoicesProviderFullToggleStopTrace({
@@ -19252,6 +19308,18 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           Number(lastFundingChoicesProviderFullToggleTest?.successfulCount) || 0
         ) + 1,
       terminationBranchTaken: 'unexpected_exception',
+    })
+    setFundingChoicesProviderBudgetGuardTrace({
+      iterationIndex:
+        Math.max(
+          0,
+          Number(lastFundingChoicesProviderFullToggleTest?.successfulCount) || 0
+        ) + 1,
+      budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+      comparedValue: 0,
+      comparisonOperator: '>=',
+      conditionResult: false,
+      sourceCodeBranchName: 'provider_phase_exception',
     })
     recordFundingChoicesProviderLabelCoordinateError(error)
     return false
@@ -20352,6 +20420,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderFullToggleTest,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
+    providerBudgetGuardTrace:
+      lastFundingChoicesProviderBudgetGuardTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20623,6 +20693,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderFullToggleTest,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
+    providerBudgetGuardTrace:
+      lastFundingChoicesProviderBudgetGuardTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -22466,6 +22538,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderMultiToggleTest = null
     lastFundingChoicesProviderFullToggleTest = null
     lastFundingChoicesProviderFullToggleStopTrace = null
+    lastFundingChoicesProviderBudgetGuardTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''

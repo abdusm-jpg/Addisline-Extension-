@@ -3502,6 +3502,25 @@ function formatProviderFullToggleStopTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderBudgetGuardTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerBudgetGuardTrace: none'
+
+  return [
+    'providerBudgetGuardTrace:',
+    `iterationIndex:${Math.max(0, Number(trace.iterationIndex) || 0)}`,
+    `budgetCapValue:${Math.max(0, Number(trace.budgetCapValue) || 0)}`,
+    `comparedValue:${Math.max(0, Number(trace.comparedValue) || 0)}`,
+    `comparisonOperator:${String(trace.comparisonOperator || 'none').slice(0, 20)}`,
+    `conditionResult:${Boolean(trace.conditionResult)}`,
+    `sourceCodeBranchName:${String(trace.sourceCodeBranchName || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3738,6 +3757,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderMultiToggleTest(summary.providerMultiToggleTest),
     formatProviderFullToggleTest(summary.providerFullToggleTest),
     formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
+    formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4088,6 +4108,7 @@ function formatFundingChoicesControls(summary) {
       formatProviderMultiToggleTest(summary.providerMultiToggleTest),
       formatProviderFullToggleTest(summary.providerFullToggleTest),
       formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
+      formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
