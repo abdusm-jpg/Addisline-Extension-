@@ -19975,13 +19975,6 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       })
       const targetComparisonEntries =
         visibleActiveEntries
-      const targetRequestedInputs =
-        requestedDataIdForComparison
-          ? targetProviderInputs.filter((candidateInput) =>
-              String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
-                requestedDataIdForComparison
-            )
-          : []
       setFundingChoicesProviderComparisonInputTrace({
         requestedDataId: requestedDataIdForComparison,
         sourceCollectionLength: targetComparisonEntries.length,
@@ -20241,7 +20234,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           },
           {
             name: `data-id=${firstTargetDataIdRequested || 'none'}`,
-            count: targetRequestedInputs.length,
+            count: requestedTraceCandidates.length,
           },
         ],
       })
@@ -20258,14 +20251,22 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       )
 
       const targetInputCandidates =
-        targetRequestedInputs
+        targetTraceVisibleInputs.filter((candidateInput) => {
+          const normalizedCandidateDataId =
+            String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80)
+
+          return (
+            normalizedCandidateDataId === normalizedRequestedFilterDataId &&
+            refreshedVisibleActiveEntryDataIds.has(normalizedCandidateDataId)
+          )
+        })
       const targetInputCandidateDataIds =
         targetInputCandidates.map((candidateInput) =>
           candidateInput?.getAttribute?.('data-id') || ''
         )
       setFundingChoicesProviderDomCandidateSourceTrace({
         requestedDataId: requestedDataIdForComparison,
-        collectionName: 'targetRequestedInputs',
+        collectionName: 'targetTraceVisibleInputs filtered by requested data-id and refreshed visible entries',
         collectionLength: targetInputCandidates.length,
         collectionDataIds: targetInputCandidateDataIds,
         containsRequestedDataId:
@@ -20275,9 +20276,9 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           ),
         first10DataIds: targetInputCandidateDataIds.slice(0, 10),
         last10DataIds: targetInputCandidateDataIds.slice(-10),
-        sourceBuiltFromSelector: false,
+        sourceBuiltFromSelector: true,
         sourceBuiltFromVisibleInputs: true,
-        sourceBuiltFromVisibleActiveEntries: false,
+        sourceBuiltFromVisibleActiveEntries: true,
       })
       const initialLifecycleCandidate =
         targetInputCandidates[0] || null
