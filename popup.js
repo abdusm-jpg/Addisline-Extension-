@@ -3683,6 +3683,38 @@ function formatProviderDataIdComparisonTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderComparisonInputTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerComparisonInputTrace: none'
+
+  const sourceIds =
+    Array.isArray(trace.sourceCollectionDataIds)
+      ? trace.sourceCollectionDataIds
+      : []
+  const visibleIds =
+    Array.isArray(trace.lastVisibleActiveEntriesDataIds)
+      ? trace.lastVisibleActiveEntriesDataIds
+      : []
+  const guardIds =
+    Array.isArray(trace.lastProviderGuardCountEntriesDataIds)
+      ? trace.lastProviderGuardCountEntriesDataIds
+      : []
+
+  return [
+    'providerComparisonInputTrace:',
+    `requestedDataId:${String(trace.requestedDataId || 'none').slice(0, 80)}`,
+    `sourceCollectionLength:${Math.max(0, Number(trace.sourceCollectionLength) || 0)}`,
+    `sourceCollectionDataIds:${sourceIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `lastVisibleActiveEntriesDataIds:${visibleIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `lastProviderGuardCountEntriesDataIds:${guardIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `collectionNameUsedByComparisonStage:${String(trace.collectionNameUsedByComparisonStage || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3928,6 +3960,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     ),
     formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
     formatProviderDataIdComparisonTrace(summary.providerDataIdComparisonTrace),
+    formatProviderComparisonInputTrace(summary.providerComparisonInputTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4287,6 +4320,7 @@ function formatFundingChoicesControls(summary) {
       ),
       formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
       formatProviderDataIdComparisonTrace(summary.providerDataIdComparisonTrace),
+      formatProviderComparisonInputTrace(summary.providerComparisonInputTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
