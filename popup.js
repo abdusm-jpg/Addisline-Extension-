@@ -3566,6 +3566,36 @@ function formatProviderActiveAfterTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderNextTargetLookupTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerNextTargetLookupTrace: none'
+
+  const visibleActiveDataIds =
+    Array.isArray(trace.visibleActiveDataIds)
+      ? trace.visibleActiveDataIds
+      : []
+  const candidateDataIdsConsidered =
+    Array.isArray(trace.candidateDataIdsConsidered)
+      ? trace.candidateDataIdsConsidered
+      : []
+
+  return [
+    'providerNextTargetLookupTrace:',
+    `visibleActiveDataIds:${visibleActiveDataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `candidateDataIdsConsidered:${candidateDataIdsConsidered.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `firstTargetDataIdRequested:${String(trace.firstTargetDataIdRequested || 'none').slice(0, 80)}`,
+    `targetFound:${Boolean(trace.targetFound)}`,
+    `labelFound:${Boolean(trace.labelFound)}`,
+    `rowFound:${Boolean(trace.rowFound)}`,
+    `clickableAncestorFound:${Boolean(trace.clickableAncestorFound)}`,
+    `reasonTargetRejected:${String(trace.reasonTargetRejected || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3805,6 +3835,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
     formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
     formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
+    formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4158,6 +4189,7 @@ function formatFundingChoicesControls(summary) {
       formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
       formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
       formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
+      formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true

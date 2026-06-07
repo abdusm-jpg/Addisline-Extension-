@@ -112,6 +112,7 @@ let lastFundingChoicesProviderFullToggleStopTrace = null
 let lastFundingChoicesProviderBudgetGuardTrace = null
 let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderActiveAfterTrace = null
+let lastFundingChoicesProviderNextTargetLookupTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4220,6 +4221,10 @@ function recordCurrentSiteDiagnostic({
             providerActiveAfterTrace:
               sanitizeFundingChoicesProviderActiveAfterTrace(
                 fundingChoicesControlDiagnostics.providerActiveAfterTrace
+              ),
+            providerNextTargetLookupTrace:
+              sanitizeFundingChoicesProviderNextTargetLookupTrace(
+                fundingChoicesControlDiagnostics.providerNextTargetLookupTrace
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12290,6 +12295,39 @@ function setFundingChoicesProviderActiveAfterTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderNextTargetLookupTrace(summary = {}) {
+  lastFundingChoicesProviderNextTargetLookupTrace = {
+    visibleActiveDataIds:
+      (Array.isArray(summary.visibleActiveDataIds)
+        ? summary.visibleActiveDataIds
+        : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    candidateDataIdsConsidered:
+      (Array.isArray(summary.candidateDataIdsConsidered)
+        ? summary.candidateDataIdsConsidered
+        : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    firstTargetDataIdRequested:
+      String(summary.firstTargetDataIdRequested || '').slice(0, 80),
+    targetFound:
+      Boolean(summary.targetFound),
+    labelFound:
+      Boolean(summary.labelFound),
+    rowFound:
+      Boolean(summary.rowFound),
+    clickableAncestorFound:
+      Boolean(summary.clickableAncestorFound),
+    reasonTargetRejected:
+      String(summary.reasonTargetRejected || '').slice(0, 120),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12690,6 +12728,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderRemainingCountTrace,
     providerActiveAfterTrace:
       lastFundingChoicesProviderActiveAfterTrace,
+    providerNextTargetLookupTrace:
+      lastFundingChoicesProviderNextTargetLookupTrace,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18535,6 +18575,41 @@ function sanitizeFundingChoicesProviderActiveAfterTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderNextTargetLookupTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    visibleActiveDataIds:
+      (Array.isArray(summary.visibleActiveDataIds)
+        ? summary.visibleActiveDataIds
+        : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    candidateDataIdsConsidered:
+      (Array.isArray(summary.candidateDataIdsConsidered)
+        ? summary.candidateDataIdsConsidered
+        : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    firstTargetDataIdRequested:
+      String(summary.firstTargetDataIdRequested || '').slice(0, 80),
+    targetFound:
+      Boolean(summary.targetFound),
+    labelFound:
+      Boolean(summary.labelFound),
+    rowFound:
+      Boolean(summary.rowFound),
+    clickableAncestorFound:
+      Boolean(summary.clickableAncestorFound),
+    reasonTargetRejected:
+      String(summary.reasonTargetRejected || '').slice(0, 120),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19038,6 +19113,54 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         currentActiveLegitimateInterestInputs[0] || null
       const label =
         getFundingChoicesProviderLegitimateInterestLabel(input)
+      const slider =
+        safeClosest(input, '.fc-preference-slider')
+      const row =
+        getFundingChoicesProviderFirstActiveRow(input, label, slider)
+      const clickableAncestor =
+        input
+          ? findFundingChoicesProviderAncestor(input, (element) =>
+              Boolean(
+                element !== input &&
+                  (
+                    safeMatches(element, 'button, a, label, [role="button"], [role="switch"], [role="checkbox"], [tabindex]') ||
+                    typeof element.onclick === 'function' ||
+                    safeGetComputedStyle(element)?.cursor === 'pointer'
+                  )
+              )
+            )
+          : null
+      const visibleActiveDataIds =
+        (Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
+          ? lastFundingChoicesProviderVisibleActiveEntries
+          : [])
+          .map((entry) =>
+            entry?.dataId || ''
+          )
+      const candidateDataIdsConsidered =
+        currentActiveLegitimateInterestInputs.map((candidateInput) =>
+          candidateInput?.getAttribute?.('data-id') || ''
+        )
+      const firstTargetDataIdRequested =
+        String(input?.getAttribute?.('data-id') || '').slice(0, 80)
+      setFundingChoicesProviderNextTargetLookupTrace({
+        visibleActiveDataIds,
+        candidateDataIdsConsidered,
+        firstTargetDataIdRequested,
+        targetFound: Boolean(input),
+        labelFound: Boolean(label),
+        rowFound: Boolean(row),
+        clickableAncestorFound: Boolean(clickableAncestor),
+        reasonTargetRejected: !input
+          ? 'no_active_legitimate_interest_candidate'
+          : !label
+            ? 'label_missing'
+            : !row
+              ? 'row_missing'
+              : !clickableAncestor
+                ? 'clickable_ancestor_missing'
+                : '',
+      })
 
       if (!input || !label) {
         stopReason = 'provider_label_coordinate_missing_target'
@@ -20559,6 +20682,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderRemainingCountTrace,
     providerActiveAfterTrace:
       lastFundingChoicesProviderActiveAfterTrace,
+    providerNextTargetLookupTrace:
+      lastFundingChoicesProviderNextTargetLookupTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20836,6 +20961,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderRemainingCountTrace,
     providerActiveAfterTrace:
       lastFundingChoicesProviderActiveAfterTrace,
+    providerNextTargetLookupTrace:
+      lastFundingChoicesProviderNextTargetLookupTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -22682,6 +22809,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderBudgetGuardTrace = null
     lastFundingChoicesProviderRemainingCountTrace = null
     lastFundingChoicesProviderActiveAfterTrace = null
+    lastFundingChoicesProviderNextTargetLookupTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''
