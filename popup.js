@@ -3648,6 +3648,38 @@ function formatProviderDomTargetResolutionTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderDomResolutionCollectionTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerDomResolutionCollectionTrace: none'
+
+  const beforeIds =
+    Array.isArray(trace.collectionDataIdsBeforeLimit)
+      ? trace.collectionDataIdsBeforeLimit
+      : []
+  const afterIds =
+    Array.isArray(trace.collectionDataIdsAfterLimit)
+      ? trace.collectionDataIdsAfterLimit
+      : []
+
+  return [
+    'providerDomResolutionCollectionTrace:',
+    `requestedDataId:${String(trace.requestedDataId || 'none').slice(0, 80)}`,
+    `collectionLengthBeforeLimit:${Math.max(0, Number(trace.collectionLengthBeforeLimit) || 0)}`,
+    `collectionLengthAfterLimit:${Math.max(0, Number(trace.collectionLengthAfterLimit) || 0)}`,
+    `limitValue:${Math.max(0, Number(trace.limitValue) || 0)}`,
+    `collectionDataIdsBeforeLimit:${beforeIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `collectionDataIdsAfterLimit:${afterIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `candidate32PresentBeforeLimit:${Boolean(trace.candidate32PresentBeforeLimit)}`,
+    `candidate32PresentAfterLimit:${Boolean(trace.candidate32PresentAfterLimit)}`,
+    `candidate36PresentBeforeLimit:${Boolean(trace.candidate36PresentBeforeLimit)}`,
+    `candidate36PresentAfterLimit:${Boolean(trace.candidate36PresentAfterLimit)}`,
+  ].join(' ')
+}
+
 function formatProviderTargetLookupSelectorTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -4009,6 +4041,9 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
     formatProviderDomTargetResolutionTrace(
       summary.providerDomTargetResolutionTrace
+    ),
+    formatProviderDomResolutionCollectionTrace(
+      summary.providerDomResolutionCollectionTrace
     ),
     formatProviderTargetLookupSelectorTrace(
       summary.providerTargetLookupSelectorTrace
@@ -4372,6 +4407,9 @@ function formatFundingChoicesControls(summary) {
       formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
       formatProviderDomTargetResolutionTrace(
         summary.providerDomTargetResolutionTrace
+      ),
+      formatProviderDomResolutionCollectionTrace(
+        summary.providerDomResolutionCollectionTrace
       ),
       formatProviderTargetLookupSelectorTrace(
         summary.providerTargetLookupSelectorTrace

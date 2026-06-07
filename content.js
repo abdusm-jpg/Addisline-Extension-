@@ -114,6 +114,7 @@ let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderActiveAfterTrace = null
 let lastFundingChoicesProviderNextTargetLookupTrace = null
 let lastFundingChoicesProviderDomTargetResolutionTrace = null
+let lastFundingChoicesProviderDomResolutionCollectionTrace = null
 let lastFundingChoicesProviderTargetLookupSelectorTrace = null
 let lastFundingChoicesProviderTargetFilterTrace = null
 let lastFundingChoicesProviderDataIdComparisonTrace = null
@@ -4234,6 +4235,10 @@ function recordCurrentSiteDiagnostic({
             providerDomTargetResolutionTrace:
               sanitizeFundingChoicesProviderDomTargetResolutionTrace(
                 fundingChoicesControlDiagnostics.providerDomTargetResolutionTrace
+              ),
+            providerDomResolutionCollectionTrace:
+              sanitizeFundingChoicesProviderDomResolutionCollectionTrace(
+                fundingChoicesControlDiagnostics.providerDomResolutionCollectionTrace
               ),
             providerTargetLookupSelectorTrace:
               sanitizeFundingChoicesProviderTargetLookupSelectorTrace(
@@ -12429,6 +12434,43 @@ function setFundingChoicesProviderDomTargetResolutionTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderDomResolutionCollectionTrace(summary = {}) {
+  lastFundingChoicesProviderDomResolutionCollectionTrace = {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    collectionLengthBeforeLimit:
+      Math.max(0, Number(summary.collectionLengthBeforeLimit) || 0),
+    collectionLengthAfterLimit:
+      Math.max(0, Number(summary.collectionLengthAfterLimit) || 0),
+    limitValue:
+      Math.max(0, Number(summary.limitValue) || 0),
+    collectionDataIdsBeforeLimit:
+      (Array.isArray(summary.collectionDataIdsBeforeLimit)
+        ? summary.collectionDataIdsBeforeLimit
+        : [])
+        .slice(0, 80)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    collectionDataIdsAfterLimit:
+      (Array.isArray(summary.collectionDataIdsAfterLimit)
+        ? summary.collectionDataIdsAfterLimit
+        : [])
+        .slice(0, 80)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    candidate32PresentBeforeLimit:
+      Boolean(summary.candidate32PresentBeforeLimit),
+    candidate32PresentAfterLimit:
+      Boolean(summary.candidate32PresentAfterLimit),
+    candidate36PresentBeforeLimit:
+      Boolean(summary.candidate36PresentBeforeLimit),
+    candidate36PresentAfterLimit:
+      Boolean(summary.candidate36PresentAfterLimit),
+  }
+}
+
 function getFundingChoicesProviderSelectorTraceIdCounts(inputs) {
   const ids =
     ['23', '28', '32', '36']
@@ -13044,6 +13086,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderNextTargetLookupTrace,
     providerDomTargetResolutionTrace:
       lastFundingChoicesProviderDomTargetResolutionTrace,
+    providerDomResolutionCollectionTrace:
+      lastFundingChoicesProviderDomResolutionCollectionTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -18995,6 +19039,45 @@ function sanitizeFundingChoicesProviderDomTargetResolutionTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderDomResolutionCollectionTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    collectionLengthBeforeLimit:
+      Math.max(0, Number(summary.collectionLengthBeforeLimit) || 0),
+    collectionLengthAfterLimit:
+      Math.max(0, Number(summary.collectionLengthAfterLimit) || 0),
+    limitValue:
+      Math.max(0, Number(summary.limitValue) || 0),
+    collectionDataIdsBeforeLimit:
+      (Array.isArray(summary.collectionDataIdsBeforeLimit)
+        ? summary.collectionDataIdsBeforeLimit
+        : [])
+        .slice(0, 80)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    collectionDataIdsAfterLimit:
+      (Array.isArray(summary.collectionDataIdsAfterLimit)
+        ? summary.collectionDataIdsAfterLimit
+        : [])
+        .slice(0, 80)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    candidate32PresentBeforeLimit:
+      Boolean(summary.candidate32PresentBeforeLimit),
+    candidate32PresentAfterLimit:
+      Boolean(summary.candidate32PresentAfterLimit),
+    candidate36PresentBeforeLimit:
+      Boolean(summary.candidate36PresentBeforeLimit),
+    candidate36PresentAfterLimit:
+      Boolean(summary.candidate36PresentAfterLimit),
+  }
+}
+
 function sanitizeFundingChoicesProviderTargetLookupSelectorTrace(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19666,6 +19749,30 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           : []
       const requestedDataIdForComparison =
         firstTargetDataIdRequested
+      const targetDomCollectionDataIdsBeforeLimit =
+        targetInPanelInputs.map((input) =>
+          input?.getAttribute?.('data-id') || ''
+        )
+      const targetDomCollectionDataIdsAfterLimit =
+        targetTraceBoundedInputs.map((input) =>
+          input?.getAttribute?.('data-id') || ''
+        )
+      setFundingChoicesProviderDomResolutionCollectionTrace({
+        requestedDataId: requestedDataIdForComparison,
+        collectionLengthBeforeLimit: targetInPanelInputs.length,
+        collectionLengthAfterLimit: targetTraceBoundedInputs.length,
+        limitValue: MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT,
+        collectionDataIdsBeforeLimit: targetDomCollectionDataIdsBeforeLimit,
+        collectionDataIdsAfterLimit: targetDomCollectionDataIdsAfterLimit,
+        candidate32PresentBeforeLimit:
+          targetDomCollectionDataIdsBeforeLimit.includes('32'),
+        candidate32PresentAfterLimit:
+          targetDomCollectionDataIdsAfterLimit.includes('32'),
+        candidate36PresentBeforeLimit:
+          targetDomCollectionDataIdsBeforeLimit.includes('36'),
+        candidate36PresentAfterLimit:
+          targetDomCollectionDataIdsAfterLimit.includes('36'),
+      })
       const targetComparisonEntries =
         visibleActiveEntries
       const targetRequestedInputs =
@@ -21525,6 +21632,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderNextTargetLookupTrace,
     providerDomTargetResolutionTrace:
       lastFundingChoicesProviderDomTargetResolutionTrace,
+    providerDomResolutionCollectionTrace:
+      lastFundingChoicesProviderDomResolutionCollectionTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -21814,6 +21923,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderNextTargetLookupTrace,
     providerDomTargetResolutionTrace:
       lastFundingChoicesProviderDomTargetResolutionTrace,
+    providerDomResolutionCollectionTrace:
+      lastFundingChoicesProviderDomResolutionCollectionTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -23670,6 +23781,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderActiveAfterTrace = null
     lastFundingChoicesProviderNextTargetLookupTrace = null
     lastFundingChoicesProviderDomTargetResolutionTrace = null
+    lastFundingChoicesProviderDomResolutionCollectionTrace = null
     lastFundingChoicesProviderTargetLookupSelectorTrace = null
     lastFundingChoicesProviderTargetFilterTrace = null
     lastFundingChoicesProviderDataIdComparisonTrace = null
