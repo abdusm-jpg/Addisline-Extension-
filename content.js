@@ -321,6 +321,7 @@ const MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT = 30
 const MAX_FUNDING_CHOICES_PROVIDER_ACTIVE_CLICKS = 10
 const FUNDING_CHOICES_PROVIDER_TOGGLE_BUDGET_MS = 500
 const FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS = 200
+const FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS = 3000
 const MAX_DIAGNOSTIC_CONTROLS = 5
 const MAX_DIAGNOSTIC_DECISION_TRACE_STEPS = 48
 const MAX_REJECT_CANDIDATE_DIAGNOSTICS = 5
@@ -18812,10 +18813,10 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       const budgetComparedValue =
         startedAt ? Date.now() - startedAt : 0
       const providerPhaseBudgetExceeded =
-        hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS)
+        hasElapsedBudget(startedAt, FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS)
       setFundingChoicesProviderBudgetGuardTrace({
         iterationIndex: successfulCount + 1,
-        budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+        budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
         comparedValue: budgetComparedValue,
         comparisonOperator: '>=',
         conditionResult: providerPhaseBudgetExceeded,
@@ -18827,7 +18828,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason = 'budget_capped'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_phase_budget_guard',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
@@ -18854,7 +18855,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason = 'provider_panel_closed'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_panel_lookup',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
           nextTargetCandidate: null,
           loopIterationIndex: successfulCount + 1,
@@ -18876,7 +18877,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason = 'provider_panel_not_verified'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_panel_verification',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
@@ -18929,7 +18930,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason = 'provider_label_coordinate_missing_target'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_target_lookup',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
@@ -19033,7 +19034,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           'provider_label_coordinate_click_failed'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_label_coordinate_click',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
           nextTargetCandidate: {
             dataId: targetDataId,
@@ -19080,7 +19081,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason = 'provider_panel_closed'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_panel_reacquire_after_click',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeBefore,
           nextTargetCandidate: null,
           loopIterationIndex: successfulCount + 1,
@@ -19119,7 +19120,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason = 'ambiguous_provider_state'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_recount',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeBefore,
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
@@ -19172,7 +19173,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
             : 'recount_did_not_decrease'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_recount_delta',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeAfter,
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
@@ -19218,7 +19219,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReason = 'active_provider_count_zero'
         setFundingChoicesProviderFullToggleStopTrace({
           stopReasonSource: 'provider_recount_zero',
-          budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+          budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeAfter,
           nextTargetCandidate: null,
           loopIterationIndex: successfulCount,
@@ -19235,7 +19236,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           : 'provider_label_coordinate_no_change'
       setFundingChoicesProviderFullToggleStopTrace({
         stopReasonSource: 'provider_loop_exhausted',
-        budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+        budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
         remainingActiveProviderCount: currentActiveCount,
         nextTargetCandidate:
           getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
@@ -19297,7 +19298,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     })
     setFundingChoicesProviderFullToggleStopTrace({
       stopReasonSource: 'provider_phase_exception',
-      budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+      budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
       remainingActiveProviderCount:
         lastFundingChoicesProviderFullToggleTest?.endingCount ??
         lastFundingChoicesActiveProviderToggleCount,
@@ -19315,7 +19316,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           0,
           Number(lastFundingChoicesProviderFullToggleTest?.successfulCount) || 0
         ) + 1,
-      budgetCapValue: FUNDING_CHOICES_PROVIDER_PHASE1_BUDGET_MS,
+      budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
       comparedValue: 0,
       comparisonOperator: '>=',
       conditionResult: false,
