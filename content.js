@@ -111,6 +111,7 @@ let lastFundingChoicesProviderFullToggleTest = null
 let lastFundingChoicesProviderFullToggleStopTrace = null
 let lastFundingChoicesProviderBudgetGuardTrace = null
 let lastFundingChoicesProviderRemainingCountTrace = null
+let lastFundingChoicesProviderActiveAfterTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4215,6 +4216,10 @@ function recordCurrentSiteDiagnostic({
             providerRemainingCountTrace:
               sanitizeFundingChoicesProviderRemainingCountTrace(
                 fundingChoicesControlDiagnostics.providerRemainingCountTrace
+              ),
+            providerActiveAfterTrace:
+              sanitizeFundingChoicesProviderActiveAfterTrace(
+                fundingChoicesControlDiagnostics.providerActiveAfterTrace
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12262,6 +12267,29 @@ function setFundingChoicesProviderBudgetGuardTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderActiveAfterTrace(summary = {}) {
+  lastFundingChoicesProviderActiveAfterTrace = {
+    sourceSelector:
+      String(summary.sourceSelector || '').slice(0, 160),
+    candidateCount:
+      Math.max(0, Number(summary.candidateCount) || 0),
+    activeCount:
+      Math.max(0, Number(summary.activeCount) || 0),
+    visibleActiveCount:
+      Math.max(0, Number(summary.visibleActiveCount) || 0),
+    dataIdsReturned:
+      (Array.isArray(summary.dataIdsReturned) ? summary.dataIdsReturned : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    loopIterationIndex:
+      Math.max(0, Number(summary.loopIterationIndex) || 0),
+    refreshCompletedBeforeRead:
+      Boolean(summary.refreshCompletedBeforeRead),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12660,6 +12688,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
       lastFundingChoicesProviderRemainingCountTrace,
+    providerActiveAfterTrace:
+      lastFundingChoicesProviderActiveAfterTrace,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18480,6 +18510,31 @@ function sanitizeFundingChoicesProviderRemainingCountTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderActiveAfterTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    sourceSelector:
+      String(summary.sourceSelector || '').slice(0, 180),
+    candidateCount:
+      Math.max(0, Number(summary.candidateCount) || 0),
+    activeCount:
+      Math.max(0, Number(summary.activeCount) || 0),
+    visibleActiveCount:
+      Math.max(0, Number(summary.visibleActiveCount) || 0),
+    dataIdsReturned:
+      (Array.isArray(summary.dataIdsReturned) ? summary.dataIdsReturned : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    loopIterationIndex:
+      Math.max(0, Number(summary.loopIterationIndex) || 0),
+    refreshCompletedBeforeRead:
+      Boolean(summary.refreshCompletedBeforeRead),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19163,17 +19218,36 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         break
       }
 
-      refreshFundingChoicesProviderPanelDiagnostics(refreshedProviderPanel)
+      const refreshCompletedBeforeRead =
+        refreshFundingChoicesProviderPanelDiagnostics(refreshedProviderPanel)
       const refreshedProviderInputs =
         getBoundedFundingChoicesProviderToggleInputs(refreshedProviderPanel, startedAt)
           .filter((refreshedInput) =>
             isFundingChoicesProviderToggleVisible(refreshedInput, refreshedProviderPanel)
           )
-      const refreshedActiveLegitimateInterestCount =
+      const refreshedActiveInputs =
         refreshedProviderInputs
           .filter(isFundingChoicesProviderInputActiveForPhase1)
+      const refreshedActiveLegitimateInterestInputs =
+        refreshedActiveInputs
           .filter(isFundingChoicesProviderLegitimateInterestInput)
-          .length
+      const refreshedActiveLegitimateInterestCount =
+        refreshedActiveLegitimateInterestInputs.length
+      setFundingChoicesProviderActiveAfterTrace({
+        sourceSelector:
+          'getBoundedFundingChoicesProviderToggleInputs(refreshedProviderPanel).filter(isFundingChoicesProviderToggleVisible).filter(active).filter(legitimateInterest)',
+        candidateCount: refreshedProviderInputs.length,
+        activeCount: refreshedActiveInputs.length,
+        visibleActiveCount: Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
+          ? lastFundingChoicesProviderVisibleActiveEntries.length
+          : 0,
+        dataIdsReturned:
+          refreshedActiveLegitimateInterestInputs.map((refreshedInput) =>
+            refreshedInput?.getAttribute?.('data-id') || ''
+          ),
+        loopIterationIndex: successfulCount + 1,
+        refreshCompletedBeforeRead,
+      })
       const rawActiveAfter =
         Number(refreshedActiveLegitimateInterestCount)
 
@@ -20492,6 +20566,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
       lastFundingChoicesProviderRemainingCountTrace,
+    providerActiveAfterTrace:
+      lastFundingChoicesProviderActiveAfterTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20767,6 +20843,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
       lastFundingChoicesProviderRemainingCountTrace,
+    providerActiveAfterTrace:
+      lastFundingChoicesProviderActiveAfterTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -22612,6 +22690,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderFullToggleStopTrace = null
     lastFundingChoicesProviderBudgetGuardTrace = null
     lastFundingChoicesProviderRemainingCountTrace = null
+    lastFundingChoicesProviderActiveAfterTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''

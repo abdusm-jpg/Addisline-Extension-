@@ -3541,6 +3541,31 @@ function formatProviderRemainingCountTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderActiveAfterTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerActiveAfterTrace: none'
+
+  const dataIdsReturned =
+    Array.isArray(trace.dataIdsReturned)
+      ? trace.dataIdsReturned
+      : []
+
+  return [
+    'providerActiveAfterTrace:',
+    `sourceSelector:${String(trace.sourceSelector || 'none').slice(0, 180)}`,
+    `candidateCount:${Math.max(0, Number(trace.candidateCount) || 0)}`,
+    `activeCount:${Math.max(0, Number(trace.activeCount) || 0)}`,
+    `visibleActiveCount:${Math.max(0, Number(trace.visibleActiveCount) || 0)}`,
+    `dataIdsReturned:${dataIdsReturned.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `loopIterationIndex:${Math.max(0, Number(trace.loopIterationIndex) || 0)}`,
+    `refreshCompletedBeforeRead:${Boolean(trace.refreshCompletedBeforeRead)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3779,6 +3804,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
     formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
     formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
+    formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4131,6 +4157,7 @@ function formatFundingChoicesControls(summary) {
       formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
       formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
       formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
+      formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
