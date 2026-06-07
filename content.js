@@ -19220,36 +19220,27 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       const refreshCompletedBeforeRead =
         refreshFundingChoicesProviderPanelDiagnostics(refreshedProviderPanel)
-      const refreshedProviderInputs =
-        getBoundedFundingChoicesProviderToggleInputs(refreshedProviderPanel, startedAt)
-          .filter((refreshedInput) =>
-            isFundingChoicesProviderToggleVisible(refreshedInput, refreshedProviderPanel)
-          )
-      const refreshedActiveInputs =
-        refreshedProviderInputs
-          .filter(isFundingChoicesProviderInputActiveForPhase1)
-      const refreshedActiveLegitimateInterestInputs =
-        refreshedActiveInputs
-          .filter(isFundingChoicesProviderLegitimateInterestInput)
-      const refreshedActiveLegitimateInterestCount =
-        refreshedActiveLegitimateInterestInputs.length
+      const refreshedVisibleActiveEntries =
+        Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
+          ? lastFundingChoicesProviderVisibleActiveEntries
+          : []
+      const refreshedVisibleActiveEntryCount =
+        refreshedVisibleActiveEntries.length
       setFundingChoicesProviderActiveAfterTrace({
         sourceSelector:
-          'getBoundedFundingChoicesProviderToggleInputs(refreshedProviderPanel).filter(isFundingChoicesProviderToggleVisible).filter(active).filter(legitimateInterest)',
-        candidateCount: refreshedProviderInputs.length,
-        activeCount: refreshedActiveInputs.length,
-        visibleActiveCount: Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
-          ? lastFundingChoicesProviderVisibleActiveEntries.length
-          : 0,
+          'lastFundingChoicesProviderVisibleActiveEntries from refreshFundingChoicesProviderPanelDiagnostics',
+        candidateCount: refreshedVisibleActiveEntryCount,
+        activeCount: refreshedVisibleActiveEntryCount,
+        visibleActiveCount: refreshedVisibleActiveEntryCount,
         dataIdsReturned:
-          refreshedActiveLegitimateInterestInputs.map((refreshedInput) =>
-            refreshedInput?.getAttribute?.('data-id') || ''
+          refreshedVisibleActiveEntries.map((entry) =>
+            entry?.dataId || ''
           ),
         loopIterationIndex: successfulCount + 1,
         refreshCompletedBeforeRead,
       })
       const rawActiveAfter =
-        Number(refreshedActiveLegitimateInterestCount)
+        Number(refreshedVisibleActiveEntryCount)
 
       if (!Number.isFinite(rawActiveAfter)) {
         stopReason = 'ambiguous_provider_state'
