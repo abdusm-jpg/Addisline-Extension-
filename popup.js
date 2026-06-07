@@ -3621,6 +3621,39 @@ function formatProviderTargetLookupSelectorTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderTargetFilterTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerTargetFilterTrace: none'
+
+  const stages =
+    Array.isArray(trace.filterStages)
+      ? trace.filterStages
+      : []
+  const rejections =
+    Array.isArray(trace.rejectionReasons)
+      ? trace.rejectionReasons
+      : []
+
+  return [
+    'providerTargetFilterTrace:',
+    `dataId:${String(trace.dataId || 'none').slice(0, 80)}`,
+    `candidateCountBeforeFiltering:${Math.max(0, Number(trace.candidateCountBeforeFiltering) || 0)}`,
+    `finalSurvivingCandidateCount:${Math.max(0, Number(trace.finalSurvivingCandidateCount) || 0)}`,
+    `filterStages:${stages.map((stage) => `${String(stage?.filterName || 'none').slice(0, 80)}=${Math.max(0, Number(stage?.countAfterFilter) || 0)}`).join('|') || 'none'}`,
+    `rejectionReasons:${rejections.map((candidate) => [
+      `dataId:${String(candidate?.dataId || 'none').slice(0, 40)}`,
+      `connected:${Boolean(candidate?.connected)}`,
+      `inPanel:${Boolean(candidate?.inPanel)}`,
+      `visible:${Boolean(candidate?.visible)}`,
+      `reason:${String(candidate?.rejectionReason || 'none').slice(0, 100)}`,
+    ].join(',')).join('|') || 'none'}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3864,6 +3897,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderTargetLookupSelectorTrace(
       summary.providerTargetLookupSelectorTrace
     ),
+    formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4221,6 +4255,7 @@ function formatFundingChoicesControls(summary) {
       formatProviderTargetLookupSelectorTrace(
         summary.providerTargetLookupSelectorTrace
       ),
+      formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
