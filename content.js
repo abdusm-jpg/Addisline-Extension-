@@ -113,6 +113,7 @@ let lastFundingChoicesProviderBudgetGuardTrace = null
 let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderActiveAfterTrace = null
 let lastFundingChoicesProviderNextTargetLookupTrace = null
+let lastFundingChoicesProviderDomTargetResolutionTrace = null
 let lastFundingChoicesProviderTargetLookupSelectorTrace = null
 let lastFundingChoicesProviderTargetFilterTrace = null
 let lastFundingChoicesProviderDataIdComparisonTrace = null
@@ -4229,6 +4230,10 @@ function recordCurrentSiteDiagnostic({
             providerNextTargetLookupTrace:
               sanitizeFundingChoicesProviderNextTargetLookupTrace(
                 fundingChoicesControlDiagnostics.providerNextTargetLookupTrace
+              ),
+            providerDomTargetResolutionTrace:
+              sanitizeFundingChoicesProviderDomTargetResolutionTrace(
+                fundingChoicesControlDiagnostics.providerDomTargetResolutionTrace
               ),
             providerTargetLookupSelectorTrace:
               sanitizeFundingChoicesProviderTargetLookupSelectorTrace(
@@ -12363,6 +12368,67 @@ function setFundingChoicesProviderNextTargetLookupTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderDomTargetResolutionTrace(summary = {}) {
+  lastFundingChoicesProviderDomTargetResolutionTrace = {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    matchingCandidatesCount:
+      Math.max(0, Number(summary.matchingCandidatesCount) || 0),
+    matchingCandidateDataIds:
+      (Array.isArray(summary.matchingCandidateDataIds)
+        ? summary.matchingCandidateDataIds
+        : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    candidateTagNames:
+      (Array.isArray(summary.candidateTagNames)
+        ? summary.candidateTagNames
+        : [])
+        .slice(0, 20)
+        .map((tagName) =>
+          String(tagName || '').slice(0, 40)
+        ),
+    candidateClasses:
+      (Array.isArray(summary.candidateClasses)
+        ? summary.candidateClasses
+        : [])
+        .slice(0, 20)
+        .map((className) =>
+          String(className || '').slice(0, 160)
+        ),
+    candidateConnected:
+      (Array.isArray(summary.candidateConnected)
+        ? summary.candidateConnected
+        : [])
+        .slice(0, 20)
+        .map(Boolean),
+    candidateVisible:
+      (Array.isArray(summary.candidateVisible)
+        ? summary.candidateVisible
+        : [])
+        .slice(0, 20)
+        .map(Boolean),
+    candidateInsideVisibleDialog:
+      (Array.isArray(summary.candidateInsideVisibleDialog)
+        ? summary.candidateInsideVisibleDialog
+        : [])
+        .slice(0, 20)
+        .map(Boolean),
+    candidateRejectedReason:
+      (Array.isArray(summary.candidateRejectedReason)
+        ? summary.candidateRejectedReason
+        : [])
+        .slice(0, 20)
+        .map((reason) =>
+          String(reason || '').slice(0, 120)
+        ),
+    finalSelectedCandidateExists:
+      Boolean(summary.finalSelectedCandidateExists),
+  }
+}
+
 function getFundingChoicesProviderSelectorTraceIdCounts(inputs) {
   const ids =
     ['23', '28', '32', '36']
@@ -12976,6 +13042,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderActiveAfterTrace,
     providerNextTargetLookupTrace:
       lastFundingChoicesProviderNextTargetLookupTrace,
+    providerDomTargetResolutionTrace:
+      lastFundingChoicesProviderDomTargetResolutionTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -18864,6 +18932,69 @@ function sanitizeFundingChoicesProviderNextTargetLookupTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderDomTargetResolutionTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    matchingCandidatesCount:
+      Math.max(0, Number(summary.matchingCandidatesCount) || 0),
+    matchingCandidateDataIds:
+      (Array.isArray(summary.matchingCandidateDataIds)
+        ? summary.matchingCandidateDataIds
+        : [])
+        .slice(0, 20)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    candidateTagNames:
+      (Array.isArray(summary.candidateTagNames)
+        ? summary.candidateTagNames
+        : [])
+        .slice(0, 20)
+        .map((tagName) =>
+          String(tagName || '').slice(0, 40)
+        ),
+    candidateClasses:
+      (Array.isArray(summary.candidateClasses)
+        ? summary.candidateClasses
+        : [])
+        .slice(0, 20)
+        .map((className) =>
+          String(className || '').slice(0, 160)
+        ),
+    candidateConnected:
+      (Array.isArray(summary.candidateConnected)
+        ? summary.candidateConnected
+        : [])
+        .slice(0, 20)
+        .map(Boolean),
+    candidateVisible:
+      (Array.isArray(summary.candidateVisible)
+        ? summary.candidateVisible
+        : [])
+        .slice(0, 20)
+        .map(Boolean),
+    candidateInsideVisibleDialog:
+      (Array.isArray(summary.candidateInsideVisibleDialog)
+        ? summary.candidateInsideVisibleDialog
+        : [])
+        .slice(0, 20)
+        .map(Boolean),
+    candidateRejectedReason:
+      (Array.isArray(summary.candidateRejectedReason)
+        ? summary.candidateRejectedReason
+        : [])
+        .slice(0, 20)
+        .map((reason) =>
+          String(reason || '').slice(0, 120)
+        ),
+    finalSelectedCandidateExists:
+      Boolean(summary.finalSelectedCandidateExists),
+  }
+}
+
 function sanitizeFundingChoicesProviderTargetLookupSelectorTrace(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19768,6 +19899,59 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         ) ||
         targetInputCandidates[0] ||
         null
+      setFundingChoicesProviderDomTargetResolutionTrace({
+        requestedDataId: requestedDataIdForComparison,
+        matchingCandidatesCount: targetInputCandidates.length,
+        matchingCandidateDataIds:
+          targetInputCandidates.map((candidateInput) =>
+            candidateInput?.getAttribute?.('data-id') || ''
+          ),
+        candidateTagNames:
+          targetInputCandidates.map((candidateInput) =>
+            candidateInput?.tagName || ''
+          ),
+        candidateClasses:
+          targetInputCandidates.map((candidateInput) =>
+            candidateInput?.className || ''
+          ),
+        candidateConnected:
+          targetInputCandidates.map((candidateInput) =>
+            Boolean(candidateInput?.isConnected)
+          ),
+        candidateVisible:
+          targetInputCandidates.map((candidateInput) =>
+            Boolean(
+              targetProviderPanel &&
+                isFundingChoicesProviderToggleVisible(candidateInput, targetProviderPanel)
+            )
+          ),
+        candidateInsideVisibleDialog:
+          targetInputCandidates.map((candidateInput) =>
+            Boolean(
+              targetProviderPanel &&
+                isFundingChoicesProviderToggleInPanel(candidateInput, targetProviderPanel)
+            )
+          ),
+        candidateRejectedReason:
+          targetInputCandidates.map((candidateInput) => {
+            if (candidateInput === input) return ''
+            if (!candidateInput?.isConnected) return 'candidate_disconnected'
+            if (
+              !targetProviderPanel ||
+              !isFundingChoicesProviderToggleInPanel(candidateInput, targetProviderPanel)
+            ) {
+              return 'candidate_outside_visible_dialog'
+            }
+            if (!isFundingChoicesProviderToggleVisible(candidateInput, targetProviderPanel)) {
+              return 'candidate_not_visible'
+            }
+            if (!getFundingChoicesProviderLegitimateInterestLabel(candidateInput)) {
+              return 'legitimate_interest_label_missing'
+            }
+            return 'not_selected'
+          }),
+        finalSelectedCandidateExists: Boolean(input),
+      })
       const label =
         getFundingChoicesProviderLegitimateInterestLabel(input)
       const slider =
@@ -21339,6 +21523,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderActiveAfterTrace,
     providerNextTargetLookupTrace:
       lastFundingChoicesProviderNextTargetLookupTrace,
+    providerDomTargetResolutionTrace:
+      lastFundingChoicesProviderDomTargetResolutionTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -21626,6 +21812,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderActiveAfterTrace,
     providerNextTargetLookupTrace:
       lastFundingChoicesProviderNextTargetLookupTrace,
+    providerDomTargetResolutionTrace:
+      lastFundingChoicesProviderDomTargetResolutionTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -23481,6 +23669,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderRemainingCountTrace = null
     lastFundingChoicesProviderActiveAfterTrace = null
     lastFundingChoicesProviderNextTargetLookupTrace = null
+    lastFundingChoicesProviderDomTargetResolutionTrace = null
     lastFundingChoicesProviderTargetLookupSelectorTrace = null
     lastFundingChoicesProviderTargetFilterTrace = null
     lastFundingChoicesProviderDataIdComparisonTrace = null

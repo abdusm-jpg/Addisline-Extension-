@@ -3596,6 +3596,58 @@ function formatProviderNextTargetLookupTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderDomTargetResolutionTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerDomTargetResolutionTrace: none'
+
+  const matchingCandidateDataIds =
+    Array.isArray(trace.matchingCandidateDataIds)
+      ? trace.matchingCandidateDataIds
+      : []
+  const candidateTagNames =
+    Array.isArray(trace.candidateTagNames)
+      ? trace.candidateTagNames
+      : []
+  const candidateClasses =
+    Array.isArray(trace.candidateClasses)
+      ? trace.candidateClasses
+      : []
+  const candidateConnected =
+    Array.isArray(trace.candidateConnected)
+      ? trace.candidateConnected
+      : []
+  const candidateVisible =
+    Array.isArray(trace.candidateVisible)
+      ? trace.candidateVisible
+      : []
+  const candidateInsideVisibleDialog =
+    Array.isArray(trace.candidateInsideVisibleDialog)
+      ? trace.candidateInsideVisibleDialog
+      : []
+  const candidateRejectedReason =
+    Array.isArray(trace.candidateRejectedReason)
+      ? trace.candidateRejectedReason
+      : []
+
+  return [
+    'providerDomTargetResolutionTrace:',
+    `requestedDataId:${String(trace.requestedDataId || 'none').slice(0, 80)}`,
+    `matchingCandidatesCount:${Math.max(0, Number(trace.matchingCandidatesCount) || 0)}`,
+    `matchingCandidateDataIds:${matchingCandidateDataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `candidateTagNames:${candidateTagNames.map((tagName) => String(tagName || 'none').slice(0, 40)).join('|') || 'none'}`,
+    `candidateClasses:${candidateClasses.map((className) => String(className || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `candidateConnected:${candidateConnected.map(Boolean).join('|') || 'none'}`,
+    `candidateVisible:${candidateVisible.map(Boolean).join('|') || 'none'}`,
+    `candidateInsideVisibleDialog:${candidateInsideVisibleDialog.map(Boolean).join('|') || 'none'}`,
+    `candidateRejectedReason:${candidateRejectedReason.map((reason) => String(reason || 'selected').slice(0, 100)).join('|') || 'none'}`,
+    `finalSelectedCandidateExists:${Boolean(trace.finalSelectedCandidateExists)}`,
+  ].join(' ')
+}
+
 function formatProviderTargetLookupSelectorTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -3955,6 +4007,9 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
     formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
     formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
+    formatProviderDomTargetResolutionTrace(
+      summary.providerDomTargetResolutionTrace
+    ),
     formatProviderTargetLookupSelectorTrace(
       summary.providerTargetLookupSelectorTrace
     ),
@@ -4315,6 +4370,9 @@ function formatFundingChoicesControls(summary) {
       formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
       formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
       formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
+      formatProviderDomTargetResolutionTrace(
+        summary.providerDomTargetResolutionTrace
+      ),
       formatProviderTargetLookupSelectorTrace(
         summary.providerTargetLookupSelectorTrace
       ),
