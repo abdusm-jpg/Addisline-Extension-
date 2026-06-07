@@ -19099,11 +19099,6 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         break
       }
 
-      const currentProviderInputs =
-        getBoundedFundingChoicesProviderToggleInputs(currentProviderPanel, startedAt)
-          .filter((input) =>
-            isFundingChoicesProviderToggleVisible(input, currentProviderPanel)
-          )
       const visibleActiveEntries =
         Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
           ? lastFundingChoicesProviderVisibleActiveEntries
@@ -19114,10 +19109,24 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         )
       currentActiveCount = visibleActiveEntries.length
 
-      setFundingChoicesProviderActiveStateMethodFromInputs(currentProviderInputs)
-      lastFundingChoicesProviderPreferenceOpened = true
-      lastFundingChoicesProviderToggleCount = currentProviderInputs.length
-      lastFundingChoicesProviderInspectedCount = currentProviderInputs.length
+      setFundingChoicesProviderLabelCoordinateExecutionStep('target_lookup')
+      const firstTargetDataIdRequested =
+        String(visibleActiveDataIds[0] || '').slice(0, 80)
+      const targetProviderPanel =
+        getVisibleFundingChoicesProviderPreferencesPanel(root)
+      const targetProviderInputs =
+        targetProviderPanel &&
+        isFundingChoicesProviderPreferencesVisuallyVerified(targetProviderPanel)
+          ? getBoundedFundingChoicesProviderToggleInputs(targetProviderPanel, startedAt)
+              .filter((input) =>
+                isFundingChoicesProviderToggleVisible(input, targetProviderPanel)
+              )
+          : []
+
+      setFundingChoicesProviderActiveStateMethodFromInputs(targetProviderInputs)
+      lastFundingChoicesProviderPreferenceOpened = Boolean(targetProviderPanel)
+      lastFundingChoicesProviderToggleCount = targetProviderInputs.length
+      lastFundingChoicesProviderInspectedCount = targetProviderInputs.length
       lastFundingChoicesProviderActiveFoundCount = currentActiveCount
       setFundingChoicesActiveProviderToggleCount(
         currentActiveCount,
@@ -19125,12 +19134,9 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         'fc.provider_label_coordinate_enter'
       )
 
-      setFundingChoicesProviderLabelCoordinateExecutionStep('target_lookup')
-      const firstTargetDataIdRequested =
-        String(visibleActiveDataIds[0] || '').slice(0, 80)
       const targetInputCandidates =
         firstTargetDataIdRequested
-          ? currentProviderInputs.filter((candidateInput) =>
+          ? targetProviderInputs.filter((candidateInput) =>
               String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
                 firstTargetDataIdRequested
             )
@@ -19162,18 +19168,23 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           : null
       const candidateDataIdsConsidered =
         visibleActiveDataIds
-      const reasonTargetRejected =
-        !firstTargetDataIdRequested
-          ? 'no_refreshed_visible_active_entry'
-          : !input
-            ? 'no_dom_input_for_visible_active_entry'
-            : !label
-              ? 'label_missing'
-              : !row
-                ? 'row_missing'
-                : !clickableAncestor
-                  ? 'clickable_ancestor_missing'
-                  : ''
+      let reasonTargetRejected = ''
+
+      if (!firstTargetDataIdRequested) {
+        reasonTargetRejected = 'no_refreshed_visible_active_entry'
+      } else if (!targetProviderPanel) {
+        reasonTargetRejected = 'reacquired_provider_panel_missing'
+      } else if (!isFundingChoicesProviderPreferencesVisuallyVerified(targetProviderPanel)) {
+        reasonTargetRejected = 'reacquired_provider_panel_not_verified'
+      } else if (!input) {
+        reasonTargetRejected = 'no_dom_input_for_visible_active_entry'
+      } else if (!label) {
+        reasonTargetRejected = 'label_missing'
+      } else if (!row) {
+        reasonTargetRejected = 'row_missing'
+      } else if (!clickableAncestor) {
+        reasonTargetRejected = 'clickable_ancestor_missing'
+      }
       setFundingChoicesProviderNextTargetLookupTrace({
         visibleActiveDataIds,
         candidateDataIdsConsidered,
@@ -19240,7 +19251,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       const targetDataId =
         String(input?.getAttribute?.('data-id') || '').slice(0, 80)
       const targetLabel =
-        getFundingChoicesPreferenceToggleLabel(input, currentProviderPanel)
+        getFundingChoicesPreferenceToggleLabel(input, targetProviderPanel)
       targetDataIds.push(targetDataId)
       targetLabels.push(targetLabel)
       attemptedCount += 1
@@ -19275,7 +19286,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       setFundingChoicesProviderLabelCoordinateExecutionStep('click_dispatch')
       const clicked =
-        dispatchFundingChoicesProviderLabelCoordinateClick(label, currentProviderPanel)
+        dispatchFundingChoicesProviderLabelCoordinateClick(label, targetProviderPanel)
       appendLastDiagnosticDecisionStep({
         strategy: 'fc.provider_label_coordinate_click_dispatched',
         status: clicked ? 'clicked' : 'failed',
@@ -19306,7 +19317,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         })
         setFundingChoicesProviderLabelCoordinateExecutionStep('recount')
         const activeAfterFailedClick =
-          getFundingChoicesProviderActiveCountFromDocument(currentProviderPanel)
+          getFundingChoicesProviderActiveCountFromDocument(targetProviderPanel)
         setFundingChoicesActiveProviderToggleCount(
           activeAfterFailedClick,
           'handleFundingChoicesVisibleProviderTogglesPhase1.click_failed_recount',
