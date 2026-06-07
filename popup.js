@@ -3648,6 +3648,42 @@ function formatProviderDomTargetResolutionTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderDomCandidateSourceTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerDomCandidateSourceTrace: none'
+
+  const collectionDataIds =
+    Array.isArray(trace.collectionDataIds)
+      ? trace.collectionDataIds
+      : []
+  const first10DataIds =
+    Array.isArray(trace.first10DataIds)
+      ? trace.first10DataIds
+      : []
+  const last10DataIds =
+    Array.isArray(trace.last10DataIds)
+      ? trace.last10DataIds
+      : []
+
+  return [
+    'providerDomCandidateSourceTrace:',
+    `requestedDataId:${String(trace.requestedDataId || 'none').slice(0, 80)}`,
+    `collectionName:${String(trace.collectionName || 'none').slice(0, 120)}`,
+    `collectionLength:${Math.max(0, Number(trace.collectionLength) || 0)}`,
+    `collectionDataIds:${collectionDataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `containsRequestedDataId:${Boolean(trace.containsRequestedDataId)}`,
+    `first10DataIds:${first10DataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `last10DataIds:${last10DataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `sourceBuiltFromSelector:${Boolean(trace.sourceBuiltFromSelector)}`,
+    `sourceBuiltFromVisibleInputs:${Boolean(trace.sourceBuiltFromVisibleInputs)}`,
+    `sourceBuiltFromVisibleActiveEntries:${Boolean(trace.sourceBuiltFromVisibleActiveEntries)}`,
+  ].join(' ')
+}
+
 function formatProviderDomResolutionCollectionTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -4090,6 +4126,9 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderDomTargetResolutionTrace(
       summary.providerDomTargetResolutionTrace
     ),
+    formatProviderDomCandidateSourceTrace(
+      summary.providerDomCandidateSourceTrace
+    ),
     formatProviderDomResolutionCollectionTrace(
       summary.providerDomResolutionCollectionTrace
     ),
@@ -4461,6 +4500,9 @@ function formatFundingChoicesControls(summary) {
       formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
       formatProviderDomTargetResolutionTrace(
         summary.providerDomTargetResolutionTrace
+      ),
+      formatProviderDomCandidateSourceTrace(
+        summary.providerDomCandidateSourceTrace
       ),
       formatProviderDomResolutionCollectionTrace(
         summary.providerDomResolutionCollectionTrace

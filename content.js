@@ -114,6 +114,7 @@ let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderActiveAfterTrace = null
 let lastFundingChoicesProviderNextTargetLookupTrace = null
 let lastFundingChoicesProviderDomTargetResolutionTrace = null
+let lastFundingChoicesProviderDomCandidateSourceTrace = null
 let lastFundingChoicesProviderDomResolutionCollectionTrace = null
 let lastFundingChoicesProviderDomReferenceLifecycleTrace = null
 let lastFundingChoicesProviderTargetLookupSelectorTrace = null
@@ -4237,6 +4238,10 @@ function recordCurrentSiteDiagnostic({
             providerDomTargetResolutionTrace:
               sanitizeFundingChoicesProviderDomTargetResolutionTrace(
                 fundingChoicesControlDiagnostics.providerDomTargetResolutionTrace
+              ),
+            providerDomCandidateSourceTrace:
+              sanitizeFundingChoicesProviderDomCandidateSourceTrace(
+                fundingChoicesControlDiagnostics.providerDomCandidateSourceTrace
               ),
             providerDomResolutionCollectionTrace:
               sanitizeFundingChoicesProviderDomResolutionCollectionTrace(
@@ -12444,6 +12449,45 @@ function setFundingChoicesProviderDomTargetResolutionTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderDomCandidateSourceTrace(summary = {}) {
+  lastFundingChoicesProviderDomCandidateSourceTrace = {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    collectionName:
+      String(summary.collectionName || '').slice(0, 120),
+    collectionLength:
+      Math.max(0, Number(summary.collectionLength) || 0),
+    collectionDataIds:
+      (Array.isArray(summary.collectionDataIds)
+        ? summary.collectionDataIds
+        : [])
+        .slice(0, 80)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    containsRequestedDataId:
+      Boolean(summary.containsRequestedDataId),
+    first10DataIds:
+      (Array.isArray(summary.first10DataIds) ? summary.first10DataIds : [])
+        .slice(0, 10)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    last10DataIds:
+      (Array.isArray(summary.last10DataIds) ? summary.last10DataIds : [])
+        .slice(0, 10)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    sourceBuiltFromSelector:
+      Boolean(summary.sourceBuiltFromSelector),
+    sourceBuiltFromVisibleInputs:
+      Boolean(summary.sourceBuiltFromVisibleInputs),
+    sourceBuiltFromVisibleActiveEntries:
+      Boolean(summary.sourceBuiltFromVisibleActiveEntries),
+  }
+}
+
 function setFundingChoicesProviderDomResolutionCollectionTrace(summary = {}) {
   lastFundingChoicesProviderDomResolutionCollectionTrace = {
     requestedDataId:
@@ -13145,6 +13189,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderNextTargetLookupTrace,
     providerDomTargetResolutionTrace:
       lastFundingChoicesProviderDomTargetResolutionTrace,
+    providerDomCandidateSourceTrace:
+      lastFundingChoicesProviderDomCandidateSourceTrace,
     providerDomResolutionCollectionTrace:
       lastFundingChoicesProviderDomResolutionCollectionTrace,
     providerDomReferenceLifecycleTrace:
@@ -19102,6 +19148,47 @@ function sanitizeFundingChoicesProviderDomTargetResolutionTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderDomCandidateSourceTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    collectionName:
+      String(summary.collectionName || '').slice(0, 120),
+    collectionLength:
+      Math.max(0, Number(summary.collectionLength) || 0),
+    collectionDataIds:
+      (Array.isArray(summary.collectionDataIds)
+        ? summary.collectionDataIds
+        : [])
+        .slice(0, 80)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    containsRequestedDataId:
+      Boolean(summary.containsRequestedDataId),
+    first10DataIds:
+      (Array.isArray(summary.first10DataIds) ? summary.first10DataIds : [])
+        .slice(0, 10)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    last10DataIds:
+      (Array.isArray(summary.last10DataIds) ? summary.last10DataIds : [])
+        .slice(0, 10)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    sourceBuiltFromSelector:
+      Boolean(summary.sourceBuiltFromSelector),
+    sourceBuiltFromVisibleInputs:
+      Boolean(summary.sourceBuiltFromVisibleInputs),
+    sourceBuiltFromVisibleActiveEntries:
+      Boolean(summary.sourceBuiltFromVisibleActiveEntries),
+  }
+}
+
 function sanitizeFundingChoicesProviderDomResolutionCollectionTrace(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -20172,6 +20259,26 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       const targetInputCandidates =
         targetRequestedInputs
+      const targetInputCandidateDataIds =
+        targetInputCandidates.map((candidateInput) =>
+          candidateInput?.getAttribute?.('data-id') || ''
+        )
+      setFundingChoicesProviderDomCandidateSourceTrace({
+        requestedDataId: requestedDataIdForComparison,
+        collectionName: 'targetRequestedInputs',
+        collectionLength: targetInputCandidates.length,
+        collectionDataIds: targetInputCandidateDataIds,
+        containsRequestedDataId:
+          Boolean(
+            requestedDataIdForComparison &&
+              targetInputCandidateDataIds.includes(requestedDataIdForComparison)
+          ),
+        first10DataIds: targetInputCandidateDataIds.slice(0, 10),
+        last10DataIds: targetInputCandidateDataIds.slice(-10),
+        sourceBuiltFromSelector: false,
+        sourceBuiltFromVisibleInputs: true,
+        sourceBuiltFromVisibleActiveEntries: false,
+      })
       const initialLifecycleCandidate =
         targetInputCandidates[0] || null
       const input =
@@ -21876,6 +21983,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderNextTargetLookupTrace,
     providerDomTargetResolutionTrace:
       lastFundingChoicesProviderDomTargetResolutionTrace,
+    providerDomCandidateSourceTrace:
+      lastFundingChoicesProviderDomCandidateSourceTrace,
     providerDomResolutionCollectionTrace:
       lastFundingChoicesProviderDomResolutionCollectionTrace,
     providerDomReferenceLifecycleTrace:
@@ -22171,6 +22280,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderNextTargetLookupTrace,
     providerDomTargetResolutionTrace:
       lastFundingChoicesProviderDomTargetResolutionTrace,
+    providerDomCandidateSourceTrace:
+      lastFundingChoicesProviderDomCandidateSourceTrace,
     providerDomResolutionCollectionTrace:
       lastFundingChoicesProviderDomResolutionCollectionTrace,
     providerDomReferenceLifecycleTrace:
@@ -24033,6 +24144,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderActiveAfterTrace = null
     lastFundingChoicesProviderNextTargetLookupTrace = null
     lastFundingChoicesProviderDomTargetResolutionTrace = null
+    lastFundingChoicesProviderDomCandidateSourceTrace = null
     lastFundingChoicesProviderDomResolutionCollectionTrace = null
     lastFundingChoicesProviderDomReferenceLifecycleTrace = null
     lastFundingChoicesProviderTargetLookupSelectorTrace = null
