@@ -115,6 +115,7 @@ let lastFundingChoicesProviderActiveAfterTrace = null
 let lastFundingChoicesProviderNextTargetLookupTrace = null
 let lastFundingChoicesProviderTargetLookupSelectorTrace = null
 let lastFundingChoicesProviderTargetFilterTrace = null
+let lastFundingChoicesProviderDataIdComparisonTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4235,6 +4236,10 @@ function recordCurrentSiteDiagnostic({
             providerTargetFilterTrace:
               sanitizeFundingChoicesProviderTargetFilterTrace(
                 fundingChoicesControlDiagnostics.providerTargetFilterTrace
+              ),
+            providerDataIdComparisonTrace:
+              sanitizeFundingChoicesProviderDataIdComparisonTrace(
+                fundingChoicesControlDiagnostics.providerDataIdComparisonTrace
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12490,6 +12495,45 @@ function setFundingChoicesProviderTargetFilterTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderDataIdComparisonTrace(summary = {}) {
+  const comparisons =
+    Array.isArray(summary.comparisons)
+      ? summary.comparisons
+      : []
+
+  lastFundingChoicesProviderDataIdComparisonTrace = {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    requestedDataIdType:
+      String(summary.requestedDataIdType || '').slice(0, 40),
+    comparisons:
+      comparisons.slice(0, 20).map((comparison) => ({
+        candidateDatasetId:
+          String(comparison?.candidateDatasetId ?? '').slice(0, 80),
+        candidateDatasetIdType:
+          String(comparison?.candidateDatasetIdType || '').slice(0, 40),
+        candidateAttributeDataId:
+          String(comparison?.candidateAttributeDataId ?? '').slice(0, 80),
+        candidateAttributeDataIdType:
+          String(comparison?.candidateAttributeDataIdType || '').slice(0, 40),
+        candidateInputId:
+          String(comparison?.candidateInputId || '').slice(0, 120),
+        candidateInputIdType:
+          String(comparison?.candidateInputIdType || '').slice(0, 40),
+        normalizedCandidateDataId:
+          String(comparison?.normalizedCandidateDataId ?? '').slice(0, 80),
+        normalizedCandidateDataIdType:
+          String(comparison?.normalizedCandidateDataIdType || '').slice(0, 40),
+        equalityComparisonResult:
+          Boolean(comparison?.equalityComparisonResult),
+        strictEqualityComparisonResult:
+          Boolean(comparison?.strictEqualityComparisonResult),
+        comparisonTypes:
+          String(comparison?.comparisonTypes || '').slice(0, 120),
+      })),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12896,6 +12940,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
       lastFundingChoicesProviderTargetFilterTrace,
+    providerDataIdComparisonTrace:
+      lastFundingChoicesProviderDataIdComparisonTrace,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18845,6 +18891,44 @@ function sanitizeFundingChoicesProviderTargetFilterTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderDataIdComparisonTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    requestedDataIdType:
+      String(summary.requestedDataIdType || '').slice(0, 40),
+    comparisons:
+      (Array.isArray(summary.comparisons) ? summary.comparisons : [])
+        .slice(0, 20)
+        .map((comparison) => ({
+          candidateDatasetId:
+            String(comparison?.candidateDatasetId ?? '').slice(0, 80),
+          candidateDatasetIdType:
+            String(comparison?.candidateDatasetIdType || '').slice(0, 40),
+          candidateAttributeDataId:
+            String(comparison?.candidateAttributeDataId ?? '').slice(0, 80),
+          candidateAttributeDataIdType:
+            String(comparison?.candidateAttributeDataIdType || '').slice(0, 40),
+          candidateInputId:
+            String(comparison?.candidateInputId || '').slice(0, 120),
+          candidateInputIdType:
+            String(comparison?.candidateInputIdType || '').slice(0, 40),
+          normalizedCandidateDataId:
+            String(comparison?.normalizedCandidateDataId ?? '').slice(0, 80),
+          normalizedCandidateDataIdType:
+            String(comparison?.normalizedCandidateDataIdType || '').slice(0, 40),
+          equalityComparisonResult:
+            Boolean(comparison?.equalityComparisonResult),
+          strictEqualityComparisonResult:
+            Boolean(comparison?.strictEqualityComparisonResult),
+          comparisonTypes:
+            String(comparison?.comparisonTypes || '').slice(0, 120),
+        })),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19370,13 +19454,46 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
               isFundingChoicesProviderToggleVisible(input, targetProviderPanel)
             )
           : []
-      const targetRequestedInputs =
+      const requestedDataIdForComparison =
         firstTargetDataIdRequested
+      const targetRequestedInputs =
+        requestedDataIdForComparison
           ? targetProviderInputs.filter((candidateInput) =>
               String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
-                firstTargetDataIdRequested
+                requestedDataIdForComparison
             )
           : []
+      setFundingChoicesProviderDataIdComparisonTrace({
+        requestedDataId: requestedDataIdForComparison,
+        requestedDataIdType: typeof requestedDataIdForComparison,
+        comparisons: targetTraceVisibleInputs.map((candidateInput) => {
+          const candidateDatasetId =
+            candidateInput?.dataset?.id
+          const candidateAttributeDataId =
+            candidateInput?.getAttribute?.('data-id')
+          const candidateInputId =
+            candidateInput?.id
+          const normalizedCandidateDataId =
+            String(candidateAttributeDataId || '').slice(0, 80)
+
+          return {
+            candidateDatasetId,
+            candidateDatasetIdType: typeof candidateDatasetId,
+            candidateAttributeDataId,
+            candidateAttributeDataIdType: typeof candidateAttributeDataId,
+            candidateInputId,
+            candidateInputIdType: typeof candidateInputId,
+            normalizedCandidateDataId,
+            normalizedCandidateDataIdType: typeof normalizedCandidateDataId,
+            equalityComparisonResult:
+              normalizedCandidateDataId === requestedDataIdForComparison,
+            strictEqualityComparisonResult:
+              candidateAttributeDataId === requestedDataIdForComparison,
+            comparisonTypes:
+              `normalized:${typeof normalizedCandidateDataId},requested:${typeof requestedDataIdForComparison},attribute:${typeof candidateAttributeDataId},dataset:${typeof candidateDatasetId},inputId:${typeof candidateInputId}`,
+          }
+        }),
+      })
       const targetIdCounts =
         getFundingChoicesProviderSelectorTraceIdCounts(targetTraceVisibleInputs)
       const targetFilterDataId =
@@ -21122,6 +21239,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
       lastFundingChoicesProviderTargetFilterTrace,
+    providerDataIdComparisonTrace:
+      lastFundingChoicesProviderDataIdComparisonTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -21405,6 +21524,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
       lastFundingChoicesProviderTargetFilterTrace,
+    providerDataIdComparisonTrace:
+      lastFundingChoicesProviderDataIdComparisonTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -23254,6 +23375,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderNextTargetLookupTrace = null
     lastFundingChoicesProviderTargetLookupSelectorTrace = null
     lastFundingChoicesProviderTargetFilterTrace = null
+    lastFundingChoicesProviderDataIdComparisonTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''

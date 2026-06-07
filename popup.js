@@ -3654,6 +3654,35 @@ function formatProviderTargetFilterTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderDataIdComparisonTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerDataIdComparisonTrace: none'
+
+  const comparisons =
+    Array.isArray(trace.comparisons)
+      ? trace.comparisons
+      : []
+
+  return [
+    'providerDataIdComparisonTrace:',
+    `requestedDataId:${String(trace.requestedDataId || 'none').slice(0, 80)}`,
+    `requestedDataIdType:${String(trace.requestedDataIdType || 'none').slice(0, 40)}`,
+    `comparisons:${comparisons.map((comparison) => [
+      `datasetId:${String(comparison?.candidateDatasetId || 'none').slice(0, 60)}`,
+      `attributeDataId:${String(comparison?.candidateAttributeDataId || 'none').slice(0, 60)}`,
+      `inputId:${String(comparison?.candidateInputId || 'none').slice(0, 80)}`,
+      `normalized:${String(comparison?.normalizedCandidateDataId || 'none').slice(0, 60)}`,
+      `eq:${Boolean(comparison?.equalityComparisonResult)}`,
+      `strictEq:${Boolean(comparison?.strictEqualityComparisonResult)}`,
+      `types:${String(comparison?.comparisonTypes || 'none').slice(0, 120)}`,
+    ].join(',')).join('|') || 'none'}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3898,6 +3927,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
       summary.providerTargetLookupSelectorTrace
     ),
     formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
+    formatProviderDataIdComparisonTrace(summary.providerDataIdComparisonTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4256,6 +4286,7 @@ function formatFundingChoicesControls(summary) {
         summary.providerTargetLookupSelectorTrace
       ),
       formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
+      formatProviderDataIdComparisonTrace(summary.providerDataIdComparisonTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
