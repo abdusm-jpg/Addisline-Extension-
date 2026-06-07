@@ -19993,28 +19993,42 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           .filter((candidate) =>
             candidate.dataId === targetFilterDataId
           )
+      const normalizedRequestedFilterDataId =
+        String(firstTargetDataIdRequested || '').slice(0, 80)
+      const refreshedVisibleActiveEntryDataIds =
+        new Set(
+          (Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
+            ? lastFundingChoicesProviderVisibleActiveEntries
+            : visibleActiveEntries)
+            .map((entry) =>
+              String(entry?.dataId || '').slice(0, 80)
+            )
+        )
       const requestedTraceCandidates =
-        targetRequestedInputs
-          .map((candidate) =>
-            getFundingChoicesProviderFilterTraceCandidate(candidate, targetProviderPanel)
-          )
-          .filter((candidate) =>
-            candidate.dataId === targetFilterDataId
-          )
+        visibleTraceCandidates
+          .filter((candidate) => {
+            const normalizedCandidateDataId =
+              String(candidate?.dataId || '').slice(0, 80)
+
+            return (
+              normalizedCandidateDataId === normalizedRequestedFilterDataId &&
+              refreshedVisibleActiveEntryDataIds.has(normalizedCandidateDataId)
+            )
+          })
       const requestedTraceCandidateKeys =
         new Set(
           requestedTraceCandidates.map(getFundingChoicesProviderFilterTraceKey)
         )
-      const normalizedRequestedFilterDataId =
-        String(firstTargetDataIdRequested || '').slice(0, 80)
       setFundingChoicesProviderFinalDataIdFilterLogicTrace(
         visibleTraceCandidates.map((candidate) => {
           const normalizedCandidateDataId =
             String(candidate?.dataId || '').slice(0, 80)
           const equalityResult =
             normalizedCandidateDataId === normalizedRequestedFilterDataId
+          const membershipResult =
+            refreshedVisibleActiveEntryDataIds.has(normalizedCandidateDataId)
           const callbackReturnValue =
-            equalityResult
+            equalityResult && membershipResult
           const candidateKept =
             requestedTraceCandidateKeys.has(
               getFundingChoicesProviderFilterTraceKey(candidate)
@@ -20025,7 +20039,10 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           if (candidateKept) {
             candidateRemovedReason = 'kept'
           } else if (!callbackReturnValue) {
-            candidateRemovedReason = 'callback_returned_false'
+            candidateRemovedReason =
+              equalityResult
+                ? 'refreshed_visible_entry_membership_false'
+                : 'callback_returned_false'
           } else {
             candidateRemovedReason =
               'callback_true_but_candidate_not_in_requested_source_collection'
