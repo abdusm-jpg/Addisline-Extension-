@@ -19535,6 +19535,8 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           : []
       const requestedDataIdForComparison =
         firstTargetDataIdRequested
+      const targetComparisonEntries =
+        visibleActiveEntries
       const targetRequestedInputs =
         requestedDataIdForComparison
           ? targetProviderInputs.filter((candidateInput) =>
@@ -19544,10 +19546,10 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           : []
       setFundingChoicesProviderComparisonInputTrace({
         requestedDataId: requestedDataIdForComparison,
-        sourceCollectionLength: targetTraceVisibleInputs.length,
+        sourceCollectionLength: targetComparisonEntries.length,
         sourceCollectionDataIds:
-          targetTraceVisibleInputs.map((candidateInput) =>
-            candidateInput?.getAttribute?.('data-id') || ''
+          targetComparisonEntries.map((entry) =>
+            entry?.dataId || ''
           ),
         lastVisibleActiveEntriesDataIds:
           (Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
@@ -19563,18 +19565,18 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
             .map((entry) =>
               entry?.dataId || ''
             ),
-        collectionNameUsedByComparisonStage: 'targetTraceVisibleInputs',
+        collectionNameUsedByComparisonStage: 'lastFundingChoicesProviderVisibleActiveEntries',
       })
       setFundingChoicesProviderDataIdComparisonTrace({
         requestedDataId: requestedDataIdForComparison,
         requestedDataIdType: typeof requestedDataIdForComparison,
-        comparisons: targetTraceVisibleInputs.map((candidateInput) => {
+        comparisons: targetComparisonEntries.map((entry) => {
           const candidateDatasetId =
-            candidateInput?.dataset?.id
+            entry?.dataId
           const candidateAttributeDataId =
-            candidateInput?.getAttribute?.('data-id')
+            entry?.dataId
           const candidateInputId =
-            candidateInput?.id
+            ''
           const normalizedCandidateDataId =
             String(candidateAttributeDataId || '').slice(0, 80)
 
