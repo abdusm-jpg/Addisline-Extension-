@@ -110,6 +110,7 @@ let lastFundingChoicesProviderMultiToggleTest = null
 let lastFundingChoicesProviderFullToggleTest = null
 let lastFundingChoicesProviderFullToggleStopTrace = null
 let lastFundingChoicesProviderBudgetGuardTrace = null
+let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4210,6 +4211,10 @@ function recordCurrentSiteDiagnostic({
             providerBudgetGuardTrace:
               sanitizeFundingChoicesProviderBudgetGuardTrace(
                 fundingChoicesControlDiagnostics.providerBudgetGuardTrace
+              ),
+            providerRemainingCountTrace:
+              sanitizeFundingChoicesProviderRemainingCountTrace(
+                fundingChoicesControlDiagnostics.providerRemainingCountTrace
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12190,6 +12195,33 @@ function setFundingChoicesProviderFullToggleStopTrace(summary = {}) {
     typeof summary.nextTargetCandidate === 'object'
       ? summary.nextTargetCandidate
       : null
+  const rawRemainingActiveProviderCount =
+    summary.remainingActiveProviderCount
+  const computedRemainingActiveProviderCount =
+    Math.max(0, Number(rawRemainingActiveProviderCount) || 0)
+
+  lastFundingChoicesProviderRemainingCountTrace = {
+    sourceVariable:
+      String(summary.remainingCountSourceVariable || 'remainingActiveProviderCount')
+        .slice(0, 120),
+    rawValue:
+      String(rawRemainingActiveProviderCount ?? '').slice(0, 80),
+    computedValue:
+      computedRemainingActiveProviderCount,
+    activeEntriesLength:
+      Array.isArray(lastFundingChoicesProviderGuardCountEntries)
+        ? lastFundingChoicesProviderGuardCountEntries.length
+        : 0,
+    visibleActiveEntriesLength:
+      Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
+        ? lastFundingChoicesProviderVisibleActiveEntries.length
+        : 0,
+    loopIterationIndex:
+      Math.max(0, Number(summary.loopIterationIndex) || 0),
+    branchThatConsumesValue:
+      String(summary.terminationBranchTaken || summary.stopReasonSource || '')
+        .slice(0, 120),
+  }
 
   lastFundingChoicesProviderFullToggleStopTrace = {
     stopReasonSource:
@@ -12197,7 +12229,7 @@ function setFundingChoicesProviderFullToggleStopTrace(summary = {}) {
     budgetCapValue:
       Math.max(0, Number(summary.budgetCapValue) || 0),
     remainingActiveProviderCount:
-      Math.max(0, Number(summary.remainingActiveProviderCount) || 0),
+      computedRemainingActiveProviderCount,
     nextTargetCandidate: nextTarget
       ? {
           dataId:
@@ -12626,6 +12658,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderFullToggleStopTrace,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
+    providerRemainingCountTrace:
+      lastFundingChoicesProviderRemainingCountTrace,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18425,6 +18459,27 @@ function sanitizeFundingChoicesProviderBudgetGuardTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderRemainingCountTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    sourceVariable:
+      String(summary.sourceVariable || '').slice(0, 120),
+    rawValue:
+      String(summary.rawValue || '').slice(0, 80),
+    computedValue:
+      Math.max(0, Number(summary.computedValue) || 0),
+    activeEntriesLength:
+      Math.max(0, Number(summary.activeEntriesLength) || 0),
+    visibleActiveEntriesLength:
+      Math.max(0, Number(summary.visibleActiveEntriesLength) || 0),
+    loopIterationIndex:
+      Math.max(0, Number(summary.loopIterationIndex) || 0),
+    branchThatConsumesValue:
+      String(summary.branchThatConsumesValue || '').slice(0, 120),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -18830,6 +18885,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_phase_budget_guard',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
+          remainingCountSourceVariable: 'currentActiveCount',
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
           loopIterationIndex: successfulCount + 1,
@@ -18857,6 +18913,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_panel_lookup',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
+          remainingCountSourceVariable: 'currentActiveCount',
           nextTargetCandidate: null,
           loopIterationIndex: successfulCount + 1,
           terminationBranchTaken: 'provider_panel_closed',
@@ -18879,6 +18936,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_panel_verification',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
+          remainingCountSourceVariable: 'currentActiveCount',
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
           loopIterationIndex: successfulCount + 1,
@@ -18932,6 +18990,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_target_lookup',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
+          remainingCountSourceVariable: 'currentActiveCount',
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
           loopIterationIndex: successfulCount + 1,
@@ -19036,6 +19095,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_label_coordinate_click',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: currentActiveCount,
+          remainingCountSourceVariable: 'currentActiveCount',
           nextTargetCandidate: {
             dataId: targetDataId,
             label: targetLabel,
@@ -19083,6 +19143,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_panel_reacquire_after_click',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeBefore,
+          remainingCountSourceVariable: 'activeBefore',
           nextTargetCandidate: null,
           loopIterationIndex: successfulCount + 1,
           terminationBranchTaken: 'provider_panel_closed_after_click',
@@ -19122,6 +19183,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_recount',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeBefore,
+          remainingCountSourceVariable: 'activeBefore',
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
           loopIterationIndex: successfulCount + 1,
@@ -19175,6 +19237,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_recount_delta',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeAfter,
+          remainingCountSourceVariable: 'activeAfter',
           nextTargetCandidate:
             getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
           loopIterationIndex: successfulCount + 1,
@@ -19221,6 +19284,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           stopReasonSource: 'provider_recount_zero',
           budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
           remainingActiveProviderCount: activeAfter,
+          remainingCountSourceVariable: 'activeAfter',
           nextTargetCandidate: null,
           loopIterationIndex: successfulCount,
           terminationBranchTaken: 'active_provider_count_zero',
@@ -19238,6 +19302,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         stopReasonSource: 'provider_loop_exhausted',
         budgetCapValue: FUNDING_CHOICES_PROVIDER_FULL_TOGGLE_BUDGET_MS,
         remainingActiveProviderCount: currentActiveCount,
+        remainingCountSourceVariable: 'currentActiveCount',
         nextTargetCandidate:
           getFundingChoicesProviderFullToggleNextCandidate(root, startedAt),
         loopIterationIndex: successfulCount + 1,
@@ -19302,6 +19367,8 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       remainingActiveProviderCount:
         lastFundingChoicesProviderFullToggleTest?.endingCount ??
         lastFundingChoicesActiveProviderToggleCount,
+      remainingCountSourceVariable:
+        'lastFundingChoicesProviderFullToggleTest.endingCount ?? lastFundingChoicesActiveProviderToggleCount',
       nextTargetCandidate: null,
       loopIterationIndex:
         Math.max(
@@ -20423,6 +20490,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderFullToggleStopTrace,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
+    providerRemainingCountTrace:
+      lastFundingChoicesProviderRemainingCountTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20696,6 +20765,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderFullToggleStopTrace,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
+    providerRemainingCountTrace:
+      lastFundingChoicesProviderRemainingCountTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -22540,6 +22611,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderFullToggleTest = null
     lastFundingChoicesProviderFullToggleStopTrace = null
     lastFundingChoicesProviderBudgetGuardTrace = null
+    lastFundingChoicesProviderRemainingCountTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''

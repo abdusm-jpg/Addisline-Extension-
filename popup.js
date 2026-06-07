@@ -3521,6 +3521,26 @@ function formatProviderBudgetGuardTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderRemainingCountTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerRemainingCountTrace: none'
+
+  return [
+    'providerRemainingCountTrace:',
+    `sourceVariable:${String(trace.sourceVariable || 'none').slice(0, 120)}`,
+    `rawValue:${String(trace.rawValue || 'none').slice(0, 80)}`,
+    `computedValue:${Math.max(0, Number(trace.computedValue) || 0)}`,
+    `activeEntriesLength:${Math.max(0, Number(trace.activeEntriesLength) || 0)}`,
+    `visibleActiveEntriesLength:${Math.max(0, Number(trace.visibleActiveEntriesLength) || 0)}`,
+    `loopIterationIndex:${Math.max(0, Number(trace.loopIterationIndex) || 0)}`,
+    `branchThatConsumesValue:${String(trace.branchThatConsumesValue || 'none').slice(0, 120)}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3758,6 +3778,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderFullToggleTest(summary.providerFullToggleTest),
     formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
     formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
+    formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4109,6 +4130,7 @@ function formatFundingChoicesControls(summary) {
       formatProviderFullToggleTest(summary.providerFullToggleTest),
       formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
       formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
+      formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true
