@@ -118,6 +118,7 @@ let lastFundingChoicesProviderDomResolutionCollectionTrace = null
 let lastFundingChoicesProviderDomReferenceLifecycleTrace = null
 let lastFundingChoicesProviderTargetLookupSelectorTrace = null
 let lastFundingChoicesProviderTargetFilterTrace = null
+let lastFundingChoicesProviderFinalDataIdFilterLogicTrace = null
 let lastFundingChoicesProviderDataIdComparisonTrace = null
 let lastFundingChoicesProviderComparisonInputTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
@@ -4252,6 +4253,10 @@ function recordCurrentSiteDiagnostic({
             providerTargetFilterTrace:
               sanitizeFundingChoicesProviderTargetFilterTrace(
                 fundingChoicesControlDiagnostics.providerTargetFilterTrace
+              ),
+            providerFinalDataIdFilterLogicTrace:
+              sanitizeFundingChoicesProviderFinalDataIdFilterLogicTrace(
+                fundingChoicesControlDiagnostics.providerFinalDataIdFilterLogicTrace
               ),
             providerDataIdComparisonTrace:
               sanitizeFundingChoicesProviderDataIdComparisonTrace(
@@ -12638,6 +12643,30 @@ function setFundingChoicesProviderTargetFilterTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderFinalDataIdFilterLogicTrace(summary = []) {
+  lastFundingChoicesProviderFinalDataIdFilterLogicTrace =
+    (Array.isArray(summary) ? summary : [])
+      .slice(0, 20)
+      .map((entry) => ({
+        requestedDataId:
+          String(entry?.requestedDataId || '').slice(0, 80),
+        candidateDataId:
+          String(entry?.candidateDataId || '').slice(0, 80),
+        normalizedRequestedDataId:
+          String(entry?.normalizedRequestedDataId || '').slice(0, 80),
+        normalizedCandidateDataId:
+          String(entry?.normalizedCandidateDataId || '').slice(0, 80),
+        equalityResult:
+          Boolean(entry?.equalityResult),
+        callbackReturnValue:
+          Boolean(entry?.callbackReturnValue),
+        candidateKept:
+          Boolean(entry?.candidateKept),
+        candidateRemovedReason:
+          String(entry?.candidateRemovedReason || '').slice(0, 160),
+      }))
+}
+
 function setFundingChoicesProviderDataIdComparisonTrace(summary = {}) {
   const comparisons =
     Array.isArray(summary.comparisons)
@@ -13124,6 +13153,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
       lastFundingChoicesProviderTargetFilterTrace,
+    providerFinalDataIdFilterLogicTrace:
+      lastFundingChoicesProviderFinalDataIdFilterLogicTrace,
     providerDataIdComparisonTrace:
       lastFundingChoicesProviderDataIdComparisonTrace,
     providerComparisonInputTrace:
@@ -19206,6 +19237,29 @@ function sanitizeFundingChoicesProviderTargetFilterTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderFinalDataIdFilterLogicTrace(summary) {
+  return (Array.isArray(summary) ? summary : [])
+    .slice(0, 20)
+    .map((entry) => ({
+      requestedDataId:
+        String(entry?.requestedDataId || '').slice(0, 80),
+      candidateDataId:
+        String(entry?.candidateDataId || '').slice(0, 80),
+      normalizedRequestedDataId:
+        String(entry?.normalizedRequestedDataId || '').slice(0, 80),
+      normalizedCandidateDataId:
+        String(entry?.normalizedCandidateDataId || '').slice(0, 80),
+      equalityResult:
+        Boolean(entry?.equalityResult),
+      callbackReturnValue:
+        Boolean(entry?.callbackReturnValue),
+      candidateKept:
+        Boolean(entry?.candidateKept),
+      candidateRemovedReason:
+        String(entry?.candidateRemovedReason || '').slice(0, 160),
+    }))
+}
+
 function sanitizeFundingChoicesProviderDataIdComparisonTrace(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19947,6 +20001,48 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           .filter((candidate) =>
             candidate.dataId === targetFilterDataId
           )
+      const requestedTraceCandidateKeys =
+        new Set(
+          requestedTraceCandidates.map(getFundingChoicesProviderFilterTraceKey)
+        )
+      const normalizedRequestedFilterDataId =
+        String(firstTargetDataIdRequested || '').slice(0, 80)
+      setFundingChoicesProviderFinalDataIdFilterLogicTrace(
+        visibleTraceCandidates.map((candidate) => {
+          const normalizedCandidateDataId =
+            String(candidate?.dataId || '').slice(0, 80)
+          const equalityResult =
+            normalizedCandidateDataId === normalizedRequestedFilterDataId
+          const callbackReturnValue =
+            equalityResult
+          const candidateKept =
+            requestedTraceCandidateKeys.has(
+              getFundingChoicesProviderFilterTraceKey(candidate)
+            )
+          let candidateRemovedReason =
+            ''
+
+          if (candidateKept) {
+            candidateRemovedReason = 'kept'
+          } else if (!callbackReturnValue) {
+            candidateRemovedReason = 'callback_returned_false'
+          } else {
+            candidateRemovedReason =
+              'callback_true_but_candidate_not_in_requested_source_collection'
+          }
+
+          return {
+            requestedDataId: firstTargetDataIdRequested || '',
+            candidateDataId: candidate?.dataId || '',
+            normalizedRequestedDataId: normalizedRequestedFilterDataId,
+            normalizedCandidateDataId,
+            equalityResult,
+            callbackReturnValue,
+            candidateKept,
+            candidateRemovedReason,
+          }
+        })
+      )
       const removedFilterCandidates = [
         ...getFundingChoicesProviderRemovedFilterCandidates(
           rawTraceCandidates,
@@ -21771,6 +21867,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
       lastFundingChoicesProviderTargetFilterTrace,
+    providerFinalDataIdFilterLogicTrace:
+      lastFundingChoicesProviderFinalDataIdFilterLogicTrace,
     providerDataIdComparisonTrace:
       lastFundingChoicesProviderDataIdComparisonTrace,
     providerComparisonInputTrace:
@@ -22064,6 +22162,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
       lastFundingChoicesProviderTargetFilterTrace,
+    providerFinalDataIdFilterLogicTrace:
+      lastFundingChoicesProviderFinalDataIdFilterLogicTrace,
     providerDataIdComparisonTrace:
       lastFundingChoicesProviderDataIdComparisonTrace,
     providerComparisonInputTrace:
@@ -23920,6 +24020,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderDomReferenceLifecycleTrace = null
     lastFundingChoicesProviderTargetLookupSelectorTrace = null
     lastFundingChoicesProviderTargetFilterTrace = null
+    lastFundingChoicesProviderFinalDataIdFilterLogicTrace = null
     lastFundingChoicesProviderDataIdComparisonTrace = null
     lastFundingChoicesProviderComparisonInputTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''

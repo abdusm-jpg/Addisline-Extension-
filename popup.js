@@ -3761,6 +3761,31 @@ function formatProviderTargetFilterTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderFinalDataIdFilterLogicTrace(summary) {
+  const trace =
+    Array.isArray(summary)
+      ? summary
+      : []
+
+  if (trace.length === 0) {
+    return 'providerFinalDataIdFilterLogicTrace: none'
+  }
+
+  return [
+    'providerFinalDataIdFilterLogicTrace:',
+    trace.map((entry) => [
+      `requestedDataId:${String(entry?.requestedDataId || 'none').slice(0, 80)}`,
+      `candidateDataId:${String(entry?.candidateDataId || 'none').slice(0, 80)}`,
+      `normalizedRequestedDataId:${String(entry?.normalizedRequestedDataId || 'none').slice(0, 80)}`,
+      `normalizedCandidateDataId:${String(entry?.normalizedCandidateDataId || 'none').slice(0, 80)}`,
+      `equalityResult:${Boolean(entry?.equalityResult)}`,
+      `callbackReturnValue:${Boolean(entry?.callbackReturnValue)}`,
+      `candidateKept:${Boolean(entry?.candidateKept)}`,
+      `candidateRemovedReason:${String(entry?.candidateRemovedReason || 'none').slice(0, 160)}`,
+    ].join(',')).join('|'),
+  ].join(' ')
+}
+
 function formatProviderDataIdComparisonTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -4075,6 +4100,9 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
       summary.providerTargetLookupSelectorTrace
     ),
     formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
+    formatProviderFinalDataIdFilterLogicTrace(
+      summary.providerFinalDataIdFilterLogicTrace
+    ),
     formatProviderDataIdComparisonTrace(summary.providerDataIdComparisonTrace),
     formatProviderComparisonInputTrace(summary.providerComparisonInputTrace),
     formatProviderSingleToggleTestExportState(
@@ -4444,6 +4472,9 @@ function formatFundingChoicesControls(summary) {
         summary.providerTargetLookupSelectorTrace
       ),
       formatProviderTargetFilterTrace(summary.providerTargetFilterTrace),
+      formatProviderFinalDataIdFilterLogicTrace(
+        summary.providerFinalDataIdFilterLogicTrace
+      ),
       formatProviderDataIdComparisonTrace(summary.providerDataIdComparisonTrace),
       formatProviderComparisonInputTrace(summary.providerComparisonInputTrace),
       formatProviderSingleToggleTestExportState(
