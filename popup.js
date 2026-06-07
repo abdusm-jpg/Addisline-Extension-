@@ -3596,6 +3596,31 @@ function formatProviderNextTargetLookupTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderTargetLookupSelectorTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerTargetLookupSelectorTrace: none'
+
+  const stages =
+    Array.isArray(trace.filteringStagesApplied)
+      ? trace.filteringStagesApplied
+      : []
+
+  return [
+    'providerTargetLookupSelectorTrace:',
+    `selectorString:${String(trace.selectorString || 'none').slice(0, 500)}`,
+    `totalMatchesInVisibleDialog:${Math.max(0, Number(trace.totalMatchesInVisibleDialog) || 0)}`,
+    `matchesWithDataId23:${Math.max(0, Number(trace.matchesWithDataId23) || 0)}`,
+    `matchesWithDataId28:${Math.max(0, Number(trace.matchesWithDataId28) || 0)}`,
+    `matchesWithDataId32:${Math.max(0, Number(trace.matchesWithDataId32) || 0)}`,
+    `matchesWithDataId36:${Math.max(0, Number(trace.matchesWithDataId36) || 0)}`,
+    `filteringStagesApplied:${stages.map((stage) => `${String(stage?.name || 'none').slice(0, 80)}=${Math.max(0, Number(stage?.count) || 0)}`).join('|') || 'none'}`,
+  ].join(' ')
+}
+
 function formatProviderSingleToggleTestExportState(summary, copyReportExported = false) {
   const state =
     summary && typeof summary === 'object'
@@ -3836,6 +3861,9 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
     formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
     formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
+    formatProviderTargetLookupSelectorTrace(
+      summary.providerTargetLookupSelectorTrace
+    ),
     formatProviderSingleToggleTestExportState(
       summary.providerSingleToggleTestExportState,
       true
@@ -4190,6 +4218,9 @@ function formatFundingChoicesControls(summary) {
       formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
       formatProviderActiveAfterTrace(summary.providerActiveAfterTrace),
       formatProviderNextTargetLookupTrace(summary.providerNextTargetLookupTrace),
+      formatProviderTargetLookupSelectorTrace(
+        summary.providerTargetLookupSelectorTrace
+      ),
       formatProviderSingleToggleTestExportState(
         summary.providerSingleToggleTestExportState,
         true

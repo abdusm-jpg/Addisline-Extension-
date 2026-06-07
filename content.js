@@ -113,6 +113,7 @@ let lastFundingChoicesProviderBudgetGuardTrace = null
 let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderActiveAfterTrace = null
 let lastFundingChoicesProviderNextTargetLookupTrace = null
+let lastFundingChoicesProviderTargetLookupSelectorTrace = null
 let lastFundingChoicesProviderPhaseBlockedReason = ''
 let lastFundingChoicesProviderPhaseGuardState = null
 let lastFundingChoicesProviderGuardCountSource = ''
@@ -4225,6 +4226,10 @@ function recordCurrentSiteDiagnostic({
             providerNextTargetLookupTrace:
               sanitizeFundingChoicesProviderNextTargetLookupTrace(
                 fundingChoicesControlDiagnostics.providerNextTargetLookupTrace
+              ),
+            providerTargetLookupSelectorTrace:
+              sanitizeFundingChoicesProviderTargetLookupSelectorTrace(
+                fundingChoicesControlDiagnostics.providerTargetLookupSelectorTrace
               ),
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
@@ -12343,6 +12348,52 @@ function setFundingChoicesProviderNextTargetLookupTrace(summary = {}) {
   }
 }
 
+function getFundingChoicesProviderSelectorTraceIdCounts(inputs) {
+  const ids =
+    ['23', '28', '32', '36']
+  const list =
+    Array.isArray(inputs) ? inputs : []
+
+  return ids.reduce((result, id) => {
+    result[id] =
+      list.filter((input) =>
+        String(input?.getAttribute?.('data-id') || '').slice(0, 80) === id
+      ).length
+    return result
+  }, {})
+}
+
+function setFundingChoicesProviderTargetLookupSelectorTrace(summary = {}) {
+  const filters =
+    Array.isArray(summary.filteringStagesApplied)
+      ? summary.filteringStagesApplied
+      : []
+
+  lastFundingChoicesProviderTargetLookupSelectorTrace = {
+    selectorString:
+      String(summary.selectorString || '').slice(0, 500),
+    totalMatchesInVisibleDialog:
+      Math.max(0, Number(summary.totalMatchesInVisibleDialog) || 0),
+    matchesWithDataId23:
+      Math.max(0, Number(summary.matchesWithDataId23) || 0),
+    matchesWithDataId28:
+      Math.max(0, Number(summary.matchesWithDataId28) || 0),
+    matchesWithDataId32:
+      Math.max(0, Number(summary.matchesWithDataId32) || 0),
+    matchesWithDataId36:
+      Math.max(0, Number(summary.matchesWithDataId36) || 0),
+    filteringStagesApplied:
+      filters
+        .slice(0, 12)
+        .map((stage) => ({
+          name:
+            String(stage?.name || '').slice(0, 120),
+          count:
+            Math.max(0, Number(stage?.count) || 0),
+        })),
+  }
+}
+
 function getFundingChoicesProviderSingleToggleTestExportState() {
   return {
     objectCreated:
@@ -12745,6 +12796,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderActiveAfterTrace,
     providerNextTargetLookupTrace:
       lastFundingChoicesProviderNextTargetLookupTrace,
+    providerTargetLookupSelectorTrace:
+      lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerPhaseBlockedReason:
       lastFundingChoicesProviderPhaseBlockedReason,
     providerPhaseGuardState:
@@ -18625,6 +18678,36 @@ function sanitizeFundingChoicesProviderNextTargetLookupTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderTargetLookupSelectorTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    selectorString:
+      String(summary.selectorString || '').slice(0, 500),
+    totalMatchesInVisibleDialog:
+      Math.max(0, Number(summary.totalMatchesInVisibleDialog) || 0),
+    matchesWithDataId23:
+      Math.max(0, Number(summary.matchesWithDataId23) || 0),
+    matchesWithDataId28:
+      Math.max(0, Number(summary.matchesWithDataId28) || 0),
+    matchesWithDataId32:
+      Math.max(0, Number(summary.matchesWithDataId32) || 0),
+    matchesWithDataId36:
+      Math.max(0, Number(summary.matchesWithDataId36) || 0),
+    filteringStagesApplied:
+      (Array.isArray(summary.filteringStagesApplied)
+        ? summary.filteringStagesApplied
+        : [])
+        .slice(0, 12)
+        .map((stage) => ({
+          name:
+            String(stage?.name || '').slice(0, 120),
+          count:
+            Math.max(0, Number(stage?.count) || 0),
+        })),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -19114,6 +19197,25 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         String(visibleActiveDataIds[0] || '').slice(0, 80)
       const targetProviderPanel =
         getVisibleFundingChoicesProviderPreferencesPanel(root)
+      const targetRawMatches =
+        targetProviderPanel
+          ? safeQuerySelectorAll(
+              document,
+              FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS
+            )
+          : []
+      const targetMappedInputs =
+        uniqueElements(
+          targetRawMatches
+            .map(getFundingChoicesProviderToggleInput)
+            .filter(Boolean)
+        )
+      const targetInPanelInputs =
+        targetProviderPanel
+          ? targetMappedInputs.filter((input) =>
+              isFundingChoicesProviderToggleInPanel(input, targetProviderPanel)
+            )
+          : []
       const targetProviderInputs =
         targetProviderPanel &&
         isFundingChoicesProviderPreferencesVisuallyVerified(targetProviderPanel)
@@ -19122,6 +19224,62 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
                 isFundingChoicesProviderToggleVisible(input, targetProviderPanel)
               )
           : []
+      const targetTraceBoundedInputs =
+        targetInPanelInputs
+          .slice(0, MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT)
+      const targetTraceVisibleInputs =
+        targetProviderPanel
+          ? targetTraceBoundedInputs.filter((input) =>
+              isFundingChoicesProviderToggleVisible(input, targetProviderPanel)
+            )
+          : []
+      const targetRequestedInputs =
+        firstTargetDataIdRequested
+          ? targetProviderInputs.filter((candidateInput) =>
+              String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
+                firstTargetDataIdRequested
+            )
+          : []
+      const targetIdCounts =
+        getFundingChoicesProviderSelectorTraceIdCounts(targetTraceVisibleInputs)
+
+      setFundingChoicesProviderTargetLookupSelectorTrace({
+        selectorString: FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS,
+        totalMatchesInVisibleDialog: targetTraceVisibleInputs.length,
+        matchesWithDataId23: targetIdCounts['23'],
+        matchesWithDataId28: targetIdCounts['28'],
+        matchesWithDataId32: targetIdCounts['32'],
+        matchesWithDataId36: targetIdCounts['36'],
+        filteringStagesApplied: [
+          {
+            name: 'raw document selector matches',
+            count: targetRawMatches.length,
+          },
+          {
+            name: 'mapped provider toggle inputs',
+            count: targetMappedInputs.length,
+          },
+          {
+            name: 'inside reacquired visible dialog',
+            count: targetInPanelInputs.length,
+          },
+          {
+            name: 'bounded to provider inspect limit',
+            count: Math.min(
+              targetInPanelInputs.length,
+              MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT
+            ),
+          },
+          {
+            name: 'visible in reacquired dialog',
+            count: targetTraceVisibleInputs.length,
+          },
+          {
+            name: `data-id=${firstTargetDataIdRequested || 'none'}`,
+            count: targetRequestedInputs.length,
+          },
+        ],
+      })
 
       setFundingChoicesProviderActiveStateMethodFromInputs(targetProviderInputs)
       lastFundingChoicesProviderPreferenceOpened = Boolean(targetProviderPanel)
@@ -19135,12 +19293,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       )
 
       const targetInputCandidates =
-        firstTargetDataIdRequested
-          ? targetProviderInputs.filter((candidateInput) =>
-              String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
-                firstTargetDataIdRequested
-            )
-          : []
+        targetRequestedInputs
       const input =
         targetInputCandidates.find((candidateInput) =>
           Boolean(getFundingChoicesProviderLegitimateInterestLabel(candidateInput))
@@ -20718,6 +20871,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderActiveAfterTrace,
     providerNextTargetLookupTrace:
       lastFundingChoicesProviderNextTargetLookupTrace,
+    providerTargetLookupSelectorTrace:
+      lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -20997,6 +21152,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderActiveAfterTrace,
     providerNextTargetLookupTrace:
       lastFundingChoicesProviderNextTargetLookupTrace,
+    providerTargetLookupSelectorTrace:
+      lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerSingleToggleTestExportState:
       getFundingChoicesProviderSingleToggleTestExportState(),
     providerPhaseBlockedReason:
@@ -22844,6 +23001,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderRemainingCountTrace = null
     lastFundingChoicesProviderActiveAfterTrace = null
     lastFundingChoicesProviderNextTargetLookupTrace = null
+    lastFundingChoicesProviderTargetLookupSelectorTrace = null
     lastFundingChoicesProviderPhaseBlockedReason = ''
     lastFundingChoicesProviderPhaseGuardState = null
     lastFundingChoicesProviderGuardCountSource = ''
