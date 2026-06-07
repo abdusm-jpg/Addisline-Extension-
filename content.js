@@ -12181,15 +12181,30 @@ function getFundingChoicesProviderFullToggleNextCandidate(root, startedAt) {
     return null
   }
 
+  const nextEntry =
+    (Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
+      ? lastFundingChoicesProviderVisibleActiveEntries
+      : [])[0] || null
+  const nextDataId =
+    String(nextEntry?.dataId || '').slice(0, 80)
+
+  if (!nextDataId) return null
+
   const nextInput =
     getBoundedFundingChoicesProviderToggleInputs(providerPanel, startedAt)
       .filter((input) =>
         isFundingChoicesProviderToggleVisible(input, providerPanel)
       )
-      .filter(isFundingChoicesProviderInputActiveForPhase1)
-      .filter(isFundingChoicesProviderLegitimateInterestInput)[0] || null
+      .find((input) =>
+        String(input?.getAttribute?.('data-id') || '').slice(0, 80) === nextDataId
+      ) || null
 
-  if (!nextInput) return null
+  if (!nextInput) {
+    return {
+      dataId: nextDataId,
+      label: nextEntry?.labelText || '',
+    }
+  }
 
   return {
     dataId:
@@ -19089,13 +19104,15 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           .filter((input) =>
             isFundingChoicesProviderToggleVisible(input, currentProviderPanel)
           )
-      const currentActiveInputs =
-        currentProviderInputs
-          .filter(isFundingChoicesProviderInputActiveForPhase1)
-      const currentActiveLegitimateInterestInputs =
-        currentActiveInputs
-          .filter(isFundingChoicesProviderLegitimateInterestInput)
-      currentActiveCount = currentActiveLegitimateInterestInputs.length
+      const visibleActiveEntries =
+        Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
+          ? lastFundingChoicesProviderVisibleActiveEntries
+          : []
+      const visibleActiveDataIds =
+        visibleActiveEntries.map((entry) =>
+          entry?.dataId || ''
+        )
+      currentActiveCount = visibleActiveEntries.length
 
       setFundingChoicesProviderActiveStateMethodFromInputs(currentProviderInputs)
       lastFundingChoicesProviderPreferenceOpened = true
@@ -19109,8 +19126,21 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       )
 
       setFundingChoicesProviderLabelCoordinateExecutionStep('target_lookup')
+      const firstTargetDataIdRequested =
+        String(visibleActiveDataIds[0] || '').slice(0, 80)
+      const targetInputCandidates =
+        firstTargetDataIdRequested
+          ? currentProviderInputs.filter((candidateInput) =>
+              String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
+                firstTargetDataIdRequested
+            )
+          : []
       const input =
-        currentActiveLegitimateInterestInputs[0] || null
+        targetInputCandidates.find((candidateInput) =>
+          Boolean(getFundingChoicesProviderLegitimateInterestLabel(candidateInput))
+        ) ||
+        targetInputCandidates[0] ||
+        null
       const label =
         getFundingChoicesProviderLegitimateInterestLabel(input)
       const slider =
@@ -19130,19 +19160,20 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
               )
             )
           : null
-      const visibleActiveDataIds =
-        (Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
-          ? lastFundingChoicesProviderVisibleActiveEntries
-          : [])
-          .map((entry) =>
-            entry?.dataId || ''
-          )
       const candidateDataIdsConsidered =
-        currentActiveLegitimateInterestInputs.map((candidateInput) =>
-          candidateInput?.getAttribute?.('data-id') || ''
-        )
-      const firstTargetDataIdRequested =
-        String(input?.getAttribute?.('data-id') || '').slice(0, 80)
+        visibleActiveDataIds
+      const reasonTargetRejected =
+        !firstTargetDataIdRequested
+          ? 'no_refreshed_visible_active_entry'
+          : !input
+            ? 'no_dom_input_for_visible_active_entry'
+            : !label
+              ? 'label_missing'
+              : !row
+                ? 'row_missing'
+                : !clickableAncestor
+                  ? 'clickable_ancestor_missing'
+                  : ''
       setFundingChoicesProviderNextTargetLookupTrace({
         visibleActiveDataIds,
         candidateDataIdsConsidered,
@@ -19151,15 +19182,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         labelFound: Boolean(label),
         rowFound: Boolean(row),
         clickableAncestorFound: Boolean(clickableAncestor),
-        reasonTargetRejected: !input
-          ? 'no_active_legitimate_interest_candidate'
-          : !label
-            ? 'label_missing'
-            : !row
-              ? 'row_missing'
-              : !clickableAncestor
-                ? 'clickable_ancestor_missing'
-                : '',
+        reasonTargetRejected,
       })
 
       if (!input || !label) {
