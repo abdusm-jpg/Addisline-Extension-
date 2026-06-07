@@ -115,6 +115,7 @@ let lastFundingChoicesProviderActiveAfterTrace = null
 let lastFundingChoicesProviderNextTargetLookupTrace = null
 let lastFundingChoicesProviderDomTargetResolutionTrace = null
 let lastFundingChoicesProviderDomResolutionCollectionTrace = null
+let lastFundingChoicesProviderDomReferenceLifecycleTrace = null
 let lastFundingChoicesProviderTargetLookupSelectorTrace = null
 let lastFundingChoicesProviderTargetFilterTrace = null
 let lastFundingChoicesProviderDataIdComparisonTrace = null
@@ -4239,6 +4240,10 @@ function recordCurrentSiteDiagnostic({
             providerDomResolutionCollectionTrace:
               sanitizeFundingChoicesProviderDomResolutionCollectionTrace(
                 fundingChoicesControlDiagnostics.providerDomResolutionCollectionTrace
+              ),
+            providerDomReferenceLifecycleTrace:
+              sanitizeFundingChoicesProviderDomReferenceLifecycleTrace(
+                fundingChoicesControlDiagnostics.providerDomReferenceLifecycleTrace
               ),
             providerTargetLookupSelectorTrace:
               sanitizeFundingChoicesProviderTargetLookupSelectorTrace(
@@ -12471,6 +12476,31 @@ function setFundingChoicesProviderDomResolutionCollectionTrace(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderDomReferenceLifecycleTrace(summary = {}) {
+  lastFundingChoicesProviderDomReferenceLifecycleTrace = {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    candidateFoundInitially:
+      Boolean(summary.candidateFoundInitially),
+    candidateConnectedInitially:
+      Boolean(summary.candidateConnectedInitially),
+    candidateConnectedAtFinalResolution:
+      Boolean(summary.candidateConnectedAtFinalResolution),
+    candidateSameReferenceAtFinalResolution:
+      Boolean(summary.candidateSameReferenceAtFinalResolution),
+    candidateReacquiredByDataId:
+      Boolean(summary.candidateReacquiredByDataId),
+    candidateReacquiredConnected:
+      Boolean(summary.candidateReacquiredConnected),
+    candidateReacquiredVisible:
+      Boolean(summary.candidateReacquiredVisible),
+    candidateReacquiredInsideVisibleDialog:
+      Boolean(summary.candidateReacquiredInsideVisibleDialog),
+    finalFailureReason:
+      String(summary.finalFailureReason || '').slice(0, 160),
+  }
+}
+
 function getFundingChoicesProviderSelectorTraceIdCounts(inputs) {
   const ids =
     ['23', '28', '32', '36']
@@ -13088,6 +13118,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderDomTargetResolutionTrace,
     providerDomResolutionCollectionTrace:
       lastFundingChoicesProviderDomResolutionCollectionTrace,
+    providerDomReferenceLifecycleTrace:
+      lastFundingChoicesProviderDomReferenceLifecycleTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -19078,6 +19110,33 @@ function sanitizeFundingChoicesProviderDomResolutionCollectionTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderDomReferenceLifecycleTrace(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    requestedDataId:
+      String(summary.requestedDataId || '').slice(0, 80),
+    candidateFoundInitially:
+      Boolean(summary.candidateFoundInitially),
+    candidateConnectedInitially:
+      Boolean(summary.candidateConnectedInitially),
+    candidateConnectedAtFinalResolution:
+      Boolean(summary.candidateConnectedAtFinalResolution),
+    candidateSameReferenceAtFinalResolution:
+      Boolean(summary.candidateSameReferenceAtFinalResolution),
+    candidateReacquiredByDataId:
+      Boolean(summary.candidateReacquiredByDataId),
+    candidateReacquiredConnected:
+      Boolean(summary.candidateReacquiredConnected),
+    candidateReacquiredVisible:
+      Boolean(summary.candidateReacquiredVisible),
+    candidateReacquiredInsideVisibleDialog:
+      Boolean(summary.candidateReacquiredInsideVisibleDialog),
+    finalFailureReason:
+      String(summary.finalFailureReason || '').slice(0, 160),
+  }
+}
+
 function sanitizeFundingChoicesProviderTargetLookupSelectorTrace(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -20000,12 +20059,84 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
 
       const targetInputCandidates =
         targetRequestedInputs
+      const initialLifecycleCandidate =
+        targetInputCandidates[0] || null
       const input =
         targetInputCandidates.find((candidateInput) =>
           Boolean(getFundingChoicesProviderLegitimateInterestLabel(candidateInput))
         ) ||
         targetInputCandidates[0] ||
         null
+      const lifecycleReacquiredPanel =
+        getVisibleFundingChoicesProviderPreferencesPanel(root)
+      const lifecycleReacquiredCandidates =
+        lifecycleReacquiredPanel &&
+        requestedDataIdForComparison
+          ? getBoundedFundingChoicesProviderToggleInputs(
+              lifecycleReacquiredPanel,
+              startedAt
+            ).filter((candidateInput) =>
+              String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
+                requestedDataIdForComparison
+            )
+          : []
+      const lifecycleReacquiredCandidate =
+        lifecycleReacquiredCandidates[0] || null
+      let lifecycleFinalFailureReason =
+        ''
+
+      if (!requestedDataIdForComparison) {
+        lifecycleFinalFailureReason = 'requested_data_id_missing'
+      } else if (!initialLifecycleCandidate) {
+        lifecycleFinalFailureReason = 'initial_candidate_missing'
+      } else if (!initialLifecycleCandidate.isConnected) {
+        lifecycleFinalFailureReason = 'initial_candidate_disconnected'
+      } else if (!lifecycleReacquiredCandidate) {
+        lifecycleFinalFailureReason = 'reacquired_candidate_missing'
+      } else if (initialLifecycleCandidate !== lifecycleReacquiredCandidate) {
+        lifecycleFinalFailureReason = 'reacquired_candidate_different_reference'
+      } else if (!input) {
+        lifecycleFinalFailureReason = 'final_selected_candidate_missing'
+      } else {
+        lifecycleFinalFailureReason = 'none'
+      }
+
+      setFundingChoicesProviderDomReferenceLifecycleTrace({
+        requestedDataId: requestedDataIdForComparison,
+        candidateFoundInitially: Boolean(initialLifecycleCandidate),
+        candidateConnectedInitially:
+          Boolean(initialLifecycleCandidate?.isConnected),
+        candidateConnectedAtFinalResolution:
+          Boolean(initialLifecycleCandidate?.isConnected),
+        candidateSameReferenceAtFinalResolution:
+          Boolean(
+            initialLifecycleCandidate &&
+              lifecycleReacquiredCandidate &&
+              initialLifecycleCandidate === lifecycleReacquiredCandidate
+          ),
+        candidateReacquiredByDataId: Boolean(lifecycleReacquiredCandidate),
+        candidateReacquiredConnected:
+          Boolean(lifecycleReacquiredCandidate?.isConnected),
+        candidateReacquiredVisible:
+          Boolean(
+            lifecycleReacquiredPanel &&
+              lifecycleReacquiredCandidate &&
+              isFundingChoicesProviderToggleVisible(
+                lifecycleReacquiredCandidate,
+                lifecycleReacquiredPanel
+              )
+          ),
+        candidateReacquiredInsideVisibleDialog:
+          Boolean(
+            lifecycleReacquiredPanel &&
+              lifecycleReacquiredCandidate &&
+              isFundingChoicesProviderToggleInPanel(
+                lifecycleReacquiredCandidate,
+                lifecycleReacquiredPanel
+              )
+          ),
+        finalFailureReason: lifecycleFinalFailureReason,
+      })
       setFundingChoicesProviderDomTargetResolutionTrace({
         requestedDataId: requestedDataIdForComparison,
         matchingCandidatesCount: targetInputCandidates.length,
@@ -21634,6 +21765,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderDomTargetResolutionTrace,
     providerDomResolutionCollectionTrace:
       lastFundingChoicesProviderDomResolutionCollectionTrace,
+    providerDomReferenceLifecycleTrace:
+      lastFundingChoicesProviderDomReferenceLifecycleTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -21925,6 +22058,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderDomTargetResolutionTrace,
     providerDomResolutionCollectionTrace:
       lastFundingChoicesProviderDomResolutionCollectionTrace,
+    providerDomReferenceLifecycleTrace:
+      lastFundingChoicesProviderDomReferenceLifecycleTrace,
     providerTargetLookupSelectorTrace:
       lastFundingChoicesProviderTargetLookupSelectorTrace,
     providerTargetFilterTrace:
@@ -23782,6 +23917,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderNextTargetLookupTrace = null
     lastFundingChoicesProviderDomTargetResolutionTrace = null
     lastFundingChoicesProviderDomResolutionCollectionTrace = null
+    lastFundingChoicesProviderDomReferenceLifecycleTrace = null
     lastFundingChoicesProviderTargetLookupSelectorTrace = null
     lastFundingChoicesProviderTargetFilterTrace = null
     lastFundingChoicesProviderDataIdComparisonTrace = null

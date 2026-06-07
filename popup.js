@@ -3680,6 +3680,29 @@ function formatProviderDomResolutionCollectionTrace(summary) {
   ].join(' ')
 }
 
+function formatProviderDomReferenceLifecycleTrace(summary) {
+  const trace =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!trace) return 'providerDomReferenceLifecycleTrace: none'
+
+  return [
+    'providerDomReferenceLifecycleTrace:',
+    `requestedDataId:${String(trace.requestedDataId || 'none').slice(0, 80)}`,
+    `candidateFoundInitially:${Boolean(trace.candidateFoundInitially)}`,
+    `candidateConnectedInitially:${Boolean(trace.candidateConnectedInitially)}`,
+    `candidateConnectedAtFinalResolution:${Boolean(trace.candidateConnectedAtFinalResolution)}`,
+    `candidateSameReferenceAtFinalResolution:${Boolean(trace.candidateSameReferenceAtFinalResolution)}`,
+    `candidateReacquiredByDataId:${Boolean(trace.candidateReacquiredByDataId)}`,
+    `candidateReacquiredConnected:${Boolean(trace.candidateReacquiredConnected)}`,
+    `candidateReacquiredVisible:${Boolean(trace.candidateReacquiredVisible)}`,
+    `candidateReacquiredInsideVisibleDialog:${Boolean(trace.candidateReacquiredInsideVisibleDialog)}`,
+    `finalFailureReason:${String(trace.finalFailureReason || 'none').slice(0, 160)}`,
+  ].join(' ')
+}
+
 function formatProviderTargetLookupSelectorTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -4044,6 +4067,9 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     ),
     formatProviderDomResolutionCollectionTrace(
       summary.providerDomResolutionCollectionTrace
+    ),
+    formatProviderDomReferenceLifecycleTrace(
+      summary.providerDomReferenceLifecycleTrace
     ),
     formatProviderTargetLookupSelectorTrace(
       summary.providerTargetLookupSelectorTrace
@@ -4410,6 +4436,9 @@ function formatFundingChoicesControls(summary) {
       ),
       formatProviderDomResolutionCollectionTrace(
         summary.providerDomResolutionCollectionTrace
+      ),
+      formatProviderDomReferenceLifecycleTrace(
+        summary.providerDomReferenceLifecycleTrace
       ),
       formatProviderTargetLookupSelectorTrace(
         summary.providerTargetLookupSelectorTrace
