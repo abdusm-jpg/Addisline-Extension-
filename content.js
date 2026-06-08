@@ -109,6 +109,7 @@ let lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
 let lastFundingChoicesProviderMultiToggleTest = null
 let lastFundingChoicesProviderFullToggleTest = null
 let lastFundingChoicesProviderFullToggleStopTrace = null
+let lastFundingChoicesProviderPostToggleSaveDiagnostics = null
 let lastFundingChoicesProviderBudgetGuardTrace = null
 let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderActiveAfterTrace = null
@@ -4218,6 +4219,10 @@ function recordCurrentSiteDiagnostic({
             providerFullToggleStopTrace:
               sanitizeFundingChoicesProviderFullToggleStopTrace(
                 fundingChoicesControlDiagnostics.providerFullToggleStopTrace
+              ),
+            providerPostToggleSaveDiagnostics:
+              sanitizeFundingChoicesProviderPostToggleSaveDiagnostics(
+                fundingChoicesControlDiagnostics.providerPostToggleSaveDiagnostics
               ),
             providerBudgetGuardTrace:
               sanitizeFundingChoicesProviderBudgetGuardTrace(
@@ -9733,6 +9738,98 @@ function getFundingChoicesProviderSaveCandidateDiagnostics(root) {
   }
 }
 
+function getFundingChoicesPostToggleControlText(control) {
+  if (!control) return ''
+
+  return normalizeMatchText([
+    getFundingChoicesProviderStrictSaveVisibleText(control),
+    getActionText(control),
+    control?.getAttribute?.('aria-label'),
+    control?.getAttribute?.('title'),
+    control?.value,
+  ].join(' ')).slice(0, 160)
+}
+
+function getFundingChoicesProviderPostToggleSaveDiagnostics(
+  root,
+  providerToggleCompleted,
+  activeProviderCountAfterToggle
+) {
+  const selector =
+    'button, a, [role="button"], input[type="button"], input[type="submit"]'
+  const roots =
+    getFundingChoicesFinalizationDiagnosticRoots(root)
+  const controls = []
+
+  for (const searchRoot of roots) {
+    if (!searchRoot || typeof searchRoot.querySelectorAll !== 'function') {
+      continue
+    }
+
+    for (const control of safeQuerySelectorAll(searchRoot, selector)) {
+      if (
+        controls.includes(control) ||
+        !isFundingChoicesFinalizationDiagnosticControl(control, roots)
+      ) {
+        continue
+      }
+
+      controls.push(control)
+    }
+  }
+
+  const confirmSaveControls =
+    controls.filter((control) =>
+      getFundingChoicesFinalizationControlType(control) === 'confirm/save'
+    )
+  const saveControl =
+    confirmSaveControls.find((control) =>
+      textHasAny(getFundingChoicesPostToggleControlText(control), [
+        'save',
+        'apply',
+        'guardar',
+        'aplicar',
+      ])
+    ) ||
+    confirmSaveControls[0] ||
+    null
+  const confirmControl =
+    confirmSaveControls.find((control) =>
+      textHasAny(getFundingChoicesPostToggleControlText(control), [
+        'confirm',
+        'confirmar',
+        'confirma',
+      ])
+    ) ||
+    confirmSaveControls[0] ||
+    null
+
+  return {
+    providerToggleCompleted:
+      Boolean(providerToggleCompleted),
+    activeProviderCountAfterToggle:
+      Math.max(0, Number(activeProviderCountAfterToggle) || 0),
+    saveButtonFound:
+      Boolean(saveControl),
+    saveButtonVisible:
+      Boolean(saveControl && isVisible(saveControl)),
+    saveButtonText:
+      getFundingChoicesPostToggleControlText(saveControl),
+    saveButtonSelectorUsed:
+      selector,
+    confirmButtonFound:
+      Boolean(confirmControl),
+    confirmButtonVisible:
+      Boolean(confirmControl && isVisible(confirmControl)),
+    confirmButtonText:
+      getFundingChoicesPostToggleControlText(confirmControl),
+    clickedSave:
+      false,
+    clickedConfirm:
+      false,
+  }
+}
+
 function resetFundingChoicesProviderSaveBackDiagnostics() {
   lastFundingChoicesProviderSaveBackFound = false
   lastFundingChoicesProviderSaveBackClicked = false
@@ -13179,6 +13276,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderFullToggleTest,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
+    providerPostToggleSaveDiagnostics:
+      lastFundingChoicesProviderPostToggleSaveDiagnostics,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
@@ -19422,6 +19521,35 @@ function sanitizeFundingChoicesProviderComparisonInputTrace(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderPostToggleSaveDiagnostics(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    providerToggleCompleted:
+      Boolean(summary.providerToggleCompleted),
+    activeProviderCountAfterToggle:
+      Math.max(0, Number(summary.activeProviderCountAfterToggle) || 0),
+    saveButtonFound:
+      Boolean(summary.saveButtonFound),
+    saveButtonVisible:
+      Boolean(summary.saveButtonVisible),
+    saveButtonText:
+      String(summary.saveButtonText || '').slice(0, 160),
+    saveButtonSelectorUsed:
+      String(summary.saveButtonSelectorUsed || '').slice(0, 240),
+    confirmButtonFound:
+      Boolean(summary.confirmButtonFound),
+    confirmButtonVisible:
+      Boolean(summary.confirmButtonVisible),
+    confirmButtonText:
+      String(summary.confirmButtonText || '').slice(0, 160),
+    clickedSave:
+      false,
+    clickedConfirm:
+      false,
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -20813,6 +20941,13 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       targetDataIds,
       stopReason,
     })
+    lastFundingChoicesProviderPostToggleSaveDiagnostics =
+      getFundingChoicesProviderPostToggleSaveDiagnostics(
+        root,
+        currentActiveCount <= 0 ||
+          stopReason === 'active_provider_count_zero',
+        currentActiveCount
+      )
 
     if (attemptedCount === 0 && !firstToggleRecorded) {
       setFundingChoicesProviderSingleToggleTestDiagnostic({
@@ -21974,6 +22109,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderFullToggleTest,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
+    providerPostToggleSaveDiagnostics:
+      lastFundingChoicesProviderPostToggleSaveDiagnostics,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
@@ -22271,6 +22408,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderFullToggleTest,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
+    providerPostToggleSaveDiagnostics:
+      lastFundingChoicesProviderPostToggleSaveDiagnostics,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
@@ -24140,6 +24279,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderMultiToggleTest = null
     lastFundingChoicesProviderFullToggleTest = null
     lastFundingChoicesProviderFullToggleStopTrace = null
+    lastFundingChoicesProviderPostToggleSaveDiagnostics = null
     lastFundingChoicesProviderBudgetGuardTrace = null
     lastFundingChoicesProviderRemainingCountTrace = null
     lastFundingChoicesProviderActiveAfterTrace = null

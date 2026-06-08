@@ -3476,6 +3476,30 @@ function formatProviderFullToggleTest(summary) {
   ].join(' ')
 }
 
+function formatProviderPostToggleSaveDiagnostics(summary) {
+  const diagnostic =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!diagnostic) return 'providerPostToggleSaveDiagnostics: none'
+
+  return [
+    'providerPostToggleSaveDiagnostics:',
+    `providerToggleCompleted:${Boolean(diagnostic.providerToggleCompleted)}`,
+    `activeProviderCountAfterToggle:${Math.max(0, Number(diagnostic.activeProviderCountAfterToggle) || 0)}`,
+    `saveButtonFound:${Boolean(diagnostic.saveButtonFound)}`,
+    `saveButtonVisible:${Boolean(diagnostic.saveButtonVisible)}`,
+    `saveButtonText:${String(diagnostic.saveButtonText || 'none').slice(0, 120)}`,
+    `saveButtonSelectorUsed:${String(diagnostic.saveButtonSelectorUsed || 'none').slice(0, 180)}`,
+    `confirmButtonFound:${Boolean(diagnostic.confirmButtonFound)}`,
+    `confirmButtonVisible:${Boolean(diagnostic.confirmButtonVisible)}`,
+    `confirmButtonText:${String(diagnostic.confirmButtonText || 'none').slice(0, 120)}`,
+    `clickedSave:${Boolean(diagnostic.clickedSave)}`,
+    `clickedConfirm:${Boolean(diagnostic.clickedConfirm)}`,
+  ].join(' ')
+}
+
 function formatProviderFullToggleStopTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -4118,6 +4142,9 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderSingleToggleTest(summary.providerSingleToggleTest),
     formatProviderMultiToggleTest(summary.providerMultiToggleTest),
     formatProviderFullToggleTest(summary.providerFullToggleTest),
+    formatProviderPostToggleSaveDiagnostics(
+      summary.providerPostToggleSaveDiagnostics
+    ),
     formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
     formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
     formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
@@ -4493,6 +4520,9 @@ function formatFundingChoicesControls(summary) {
       formatProviderSingleToggleTest(summary.providerSingleToggleTest),
       formatProviderMultiToggleTest(summary.providerMultiToggleTest),
       formatProviderFullToggleTest(summary.providerFullToggleTest),
+      formatProviderPostToggleSaveDiagnostics(
+        summary.providerPostToggleSaveDiagnostics
+      ),
       formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
       formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
       formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
