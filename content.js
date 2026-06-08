@@ -81,6 +81,7 @@ let lastRejectVerificationDiagnostics = null
 let lastFundingChoicesControlDiagnostics = null
 let lastFundingChoicesClickedSliderKeys = []
 let lastFundingChoicesPreferenceToggleActions = []
+let lastFundingChoicesMainPurposeToggleAudit = []
 let lastFundingChoicesMainRequiredActiveBefore = 0
 let lastFundingChoicesMainRequiredActiveAfter = 0
 let lastFundingChoicesMainClickedCount = 0
@@ -4168,6 +4169,10 @@ function recordCurrentSiteDiagnostic({
               Math.max(0, Number(fundingChoicesControlDiagnostics.mainClickedCount) || 0),
             mainToggleMethod:
               String(fundingChoicesControlDiagnostics.mainToggleMethod || '').slice(0, 40),
+            mainPurposeToggleAudit:
+              sanitizeFundingChoicesMainPurposeToggleAudit(
+                fundingChoicesControlDiagnostics.mainPurposeToggleAudit
+              ),
             providerPreferenceOpened:
               Boolean(fundingChoicesControlDiagnostics.providerPreferenceOpened),
             providerToggleCount:
@@ -11743,6 +11748,67 @@ function getFundingChoicesPreferenceToggleLabel(input, root) {
   return normalizeMatchText(parts.join(' '))
 }
 
+function getFundingChoicesMainPurposeId(input) {
+  const owner =
+    safeClosest(
+      input,
+      '[data-purpose-id], [data-purposeid], [data-id], [id]'
+    )
+  const candidates = [
+    input?.getAttribute?.('data-purpose-id'),
+    input?.getAttribute?.('data-purposeid'),
+    input?.getAttribute?.('data-id'),
+    input?.id,
+    owner?.getAttribute?.('data-purpose-id'),
+    owner?.getAttribute?.('data-purposeid'),
+    owner?.getAttribute?.('data-id'),
+    owner?.id,
+    input?.name,
+    input?.getAttribute?.('aria-label'),
+  ]
+
+  return String(
+    candidates.find((value) =>
+      String(value || '').trim()
+    ) || ''
+  )
+    .trim()
+    .slice(0, 120)
+}
+
+function getFundingChoicesMainPurposeClickTargetLabel(clickTarget) {
+  return String(clickTarget || 'none')
+    .split(',')
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(',')
+    .slice(0, 120) || 'none'
+}
+
+function setFundingChoicesMainPurposeToggleAudit(entries) {
+  lastFundingChoicesMainPurposeToggleAudit =
+    (Array.isArray(entries) ? entries : [])
+      .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+      .map((entry) => ({
+        purposeId:
+          String(entry?.purposeId || '').slice(0, 120),
+        purposeLabel:
+          normalizeMatchText(entry?.purposeLabel || '').slice(0, 180),
+        activeBefore:
+          Boolean(entry?.activeBefore),
+        clickTargetUsed:
+          getFundingChoicesMainPurposeClickTargetLabel(entry?.clickTargetUsed),
+        activeImmediatelyAfter:
+          Boolean(entry?.activeImmediatelyAfter),
+        activeAfterRefresh:
+          Boolean(entry?.activeAfterRefresh),
+        finalState:
+          String(entry?.finalState || 'unknown').slice(0, 80),
+        failureReason:
+          String(entry?.failureReason || '').slice(0, 120),
+      }))
+}
+
 function isFundingChoicesPreferenceCategoryToggle(input, root) {
   return textHasAny(
     getFundingChoicesPreferenceToggleLabel(input, root),
@@ -14095,6 +14161,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   let disabledCount = 0
   const mainClickedKeys =
     new Set()
+  const mainPurposeToggleAuditEntries = []
+
+  if (scope !== 'provider') {
+    setFundingChoicesMainPurposeToggleAudit([])
+  }
 
   if (scope !== 'provider') {
     appendLastDiagnosticDecisionStep({
@@ -14133,6 +14204,24 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     const actionDiagnostic =
       actionDiagnostics.get(input) ||
       getFundingChoicesPreferenceToggleActionDiagnostic(input, root)
+    const mainPurposeAuditEntry =
+      scope !== 'provider'
+        ? {
+            purposeId:
+              getFundingChoicesMainPurposeId(input),
+            purposeLabel:
+              getFundingChoicesPreferenceToggleLabel(input, root),
+            activeBefore:
+              getFundingChoicesPreferenceToggleState(input) === 'enabled',
+            clickTargetUsed: '',
+            activeImmediatelyAfter:
+              getFundingChoicesPreferenceToggleState(input) === 'enabled',
+            activeAfterRefresh:
+              getFundingChoicesPreferenceToggleState(input) === 'enabled',
+            finalState: 'not_attempted',
+            failureReason: '',
+          }
+        : null
 
     if (!actionDiagnostics.has(input)) {
       if (scope === 'provider') {
@@ -14143,11 +14232,21 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
     if (!shouldRunOnThisSite()) {
       actionDiagnostic.skippedReason = 'site_not_enabled'
+      if (mainPurposeAuditEntry) {
+        mainPurposeAuditEntry.failureReason = 'site_not_enabled'
+        mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
+        setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+      }
       break
     }
 
     if (!root.contains(input)) {
       actionDiagnostic.skippedReason = 'outside_fc_root'
+      if (mainPurposeAuditEntry) {
+        mainPurposeAuditEntry.failureReason = 'outside_fc_root'
+        mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
+        setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+      }
       continue
     }
 
@@ -14157,6 +14256,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       input.getAttribute?.('aria-disabled') === 'true'
     ) {
       actionDiagnostic.skippedReason = 'disabled'
+      if (mainPurposeAuditEntry) {
+        mainPurposeAuditEntry.failureReason = 'disabled'
+        mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
+        setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+      }
       continue
     }
 
@@ -14217,6 +14321,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
       if (clickTargets.length === 0) {
         actionDiagnostic.skippedReason = 'click_target_not_found'
+        if (mainPurposeAuditEntry) {
+          mainPurposeAuditEntry.failureReason = 'click_target_not_found'
+          mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
+          setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+        }
         continue
       }
 
@@ -14255,6 +14364,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
         const currentAfter =
           getFundingChoicesCurrentPreferenceInput(root, sliderKey, input)
+        if (mainPurposeAuditEntry) {
+          mainPurposeAuditEntry.clickTargetUsed =
+            actionDiagnostic.clickTarget
+          mainPurposeAuditEntry.activeImmediatelyAfter =
+            getFundingChoicesPreferenceToggleState(currentAfter) === 'enabled'
+        }
 
         if (getFundingChoicesPreferenceToggleState(currentAfter) !== 'enabled') {
           disabledCount += 1
@@ -14302,6 +14417,32 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         dispatchedForInput
           ? 'provider_toggle_activation_method_not_found'
           : 'provider_toggle_click_failed'
+    }
+
+    if (mainPurposeAuditEntry) {
+      mainPurposeAuditEntry.clickTargetUsed =
+        actionDiagnostic.clickTarget || mainPurposeAuditEntry.clickTargetUsed || 'none'
+      mainPurposeAuditEntry.activeAfterRefresh =
+        Boolean(actionDiagnostic.activeAfter)
+      mainPurposeAuditEntry.finalState =
+        clickedInputRemoved
+          ? 'input_removed_after_click'
+          : actionDiagnostic.activeAfter
+            ? 'active'
+            : 'disabled'
+      mainPurposeAuditEntry.failureReason =
+        actionDiagnostic.activeAfter
+          ? (
+              actionDiagnostic.skippedReason ||
+              (
+                dispatchedForInput
+                  ? 'state_still_active_after_refresh'
+                  : 'click_not_dispatched'
+              )
+            )
+          : ''
+      mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
+      setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
     }
   }
 
@@ -19329,6 +19470,29 @@ function sanitizeFundingChoicesProviderFullToggleTest(summary) {
   }
 }
 
+function sanitizeFundingChoicesMainPurposeToggleAudit(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+    .map((entry) => ({
+      purposeId:
+        String(entry?.purposeId || '').slice(0, 120),
+      purposeLabel:
+        normalizeMatchText(entry?.purposeLabel || '').slice(0, 180),
+      activeBefore:
+        Boolean(entry?.activeBefore),
+      clickTargetUsed:
+        String(entry?.clickTargetUsed || 'none').slice(0, 120),
+      activeImmediatelyAfter:
+        Boolean(entry?.activeImmediatelyAfter),
+      activeAfterRefresh:
+        Boolean(entry?.activeAfterRefresh),
+      finalState:
+        String(entry?.finalState || 'unknown').slice(0, 80),
+      failureReason:
+        String(entry?.failureReason || '').slice(0, 120),
+    }))
+}
+
 function sanitizeFundingChoicesProviderFlowResult(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -22106,6 +22270,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
     mainClickedCount: lastFundingChoicesMainClickedCount,
     mainToggleMethod: lastFundingChoicesMainToggleMethod,
+    mainPurposeToggleAudit:
+      lastFundingChoicesMainPurposeToggleAudit,
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -22434,6 +22600,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
     mainClickedCount: lastFundingChoicesMainClickedCount,
     mainToggleMethod: lastFundingChoicesMainToggleMethod,
+    mainPurposeToggleAudit:
+      lastFundingChoicesMainPurposeToggleAudit,
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -23384,6 +23552,8 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         mainRequiredActiveAfter: lastFundingChoicesMainRequiredActiveAfter,
         mainClickedCount: lastFundingChoicesMainClickedCount,
         mainToggleMethod: lastFundingChoicesMainToggleMethod,
+        mainPurposeToggleAudit:
+          lastFundingChoicesMainPurposeToggleAudit,
         providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
         providerToggleCount: lastFundingChoicesProviderToggleCount,
         activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -24318,6 +24488,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
   try {
     lastFundingChoicesClickedSliderKeys = []
     lastFundingChoicesPreferenceToggleActions = []
+    lastFundingChoicesMainPurposeToggleAudit = []
     lastFundingChoicesMainRequiredActiveBefore = 0
     lastFundingChoicesMainRequiredActiveAfter = 0
     lastFundingChoicesMainClickedCount = 0

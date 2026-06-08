@@ -4943,6 +4943,7 @@ function formatFundingChoicesControls(summary) {
       `mainRequiredActiveAfter: ${Math.max(0, Number(summary.mainRequiredActiveAfter) || 0)}`,
       `mainClickedCount: ${Math.max(0, Number(summary.mainClickedCount) || 0)}`,
       `mainToggleMethod: ${String(summary.mainToggleMethod || 'none').slice(0, 40)}`,
+      `mainPurposeToggleAuditCount: ${Array.isArray(summary.mainPurposeToggleAudit) ? summary.mainPurposeToggleAudit.length : 0}`,
       `providerPreferenceOpened: ${Boolean(summary.providerPreferenceOpened)}`,
       `providerToggleCount: ${Math.max(0, Number(summary.providerToggleCount) || 0)}`,
       `activeProviderToggleCount: ${Math.max(0, Number(summary.activeProviderToggleCount) || 0)}`,
@@ -5379,6 +5380,31 @@ function formatFundingChoicesControls(summary) {
         `activeAfter:${Boolean(action.activeAfter)}`,
         `stillActive:${Boolean(action.stillActive)}`,
         `skipped:${String(action.skippedReason || 'none').slice(0, 60)}`,
+      ].join(' | '))
+    })
+  }
+
+  const mainPurposeToggleAudit =
+    Array.isArray(summary.mainPurposeToggleAudit)
+      ? summary.mainPurposeToggleAudit
+          .filter((entry) =>
+            entry && typeof entry === 'object'
+          )
+          .slice(0, 8)
+      : []
+
+  if (mainPurposeToggleAudit.length > 0) {
+    lines.push('mainPurposeToggleAudit:')
+    mainPurposeToggleAudit.forEach((entry, index) => {
+      lines.push([
+        `${index + 1}. id:${String(entry.purposeId || 'none').slice(0, 80)}`,
+        `label:${String(entry.purposeLabel || 'none').slice(0, 120)}`,
+        `activeBefore:${Boolean(entry.activeBefore)}`,
+        `target:${String(entry.clickTargetUsed || 'none').slice(0, 80)}`,
+        `activeImmediatelyAfter:${Boolean(entry.activeImmediatelyAfter)}`,
+        `activeAfterRefresh:${Boolean(entry.activeAfterRefresh)}`,
+        `finalState:${String(entry.finalState || 'unknown').slice(0, 80)}`,
+        `failure:${String(entry.failureReason || 'none').slice(0, 100)}`,
       ].join(' | '))
     })
   }
