@@ -970,7 +970,7 @@ function ensureDiagnosticCompactUi() {
     const label =
       document.createElement('dt')
     label.textContent =
-      'diagnosticSummary'
+      'Addisline protection summary'
 
     diagnosticSummaryValue =
       document.createElement('dd')
@@ -1109,17 +1109,137 @@ function getDiagnosticSummary(diagnostic) {
   }
 }
 
-function formatDiagnosticSummary(summary) {
+function getProtectionStatusLabel(summary) {
+  const status =
+    String(summary?.status || '')
+  const reason =
+    String(summary?.reason || '')
+  const verification =
+    String(summary?.finalVerificationResult || '')
+
+  if (verification === 'all_disabled') return 'Protección aplicada'
+  if (summary?.preferencesSaved) return 'Preferencias guardadas'
+  if (summary?.providersDisabled > 0) return 'Proveedores desactivados'
+  if (status === 'handled') return 'Banner gestionado'
+  if (reason === 'no_cmp_detected') return 'Sin banner compatible detectado'
+  if (status === 'blocked') return 'Revisión necesaria'
+  if (status === 'skipped') return 'Sin cambios'
+
+  return 'Sin datos'
+}
+
+function getProtectionSummary(diagnostic) {
+  const summary =
+    diagnostic?.fundingChoicesControlDiagnostics &&
+    typeof diagnostic.fundingChoicesControlDiagnostics === 'object'
+      ? diagnostic.fundingChoicesControlDiagnostics
+      : {}
+  const providerFlow =
+    summary.providerFlowResult &&
+    typeof summary.providerFlowResult === 'object'
+      ? summary.providerFlowResult
+      : {}
+  const fullToggle =
+    summary.providerFullToggleTest &&
+    typeof summary.providerFullToggleTest === 'object'
+      ? summary.providerFullToggleTest
+      : {}
+  const saveTest =
+    summary.providerSaveTest &&
+    typeof summary.providerSaveTest === 'object'
+      ? summary.providerSaveTest
+      : {}
+  const audit =
+    summary.providerPersistenceAudit &&
+    typeof summary.providerPersistenceAudit === 'object'
+      ? summary.providerPersistenceAudit
+      : {}
+  const status =
+    String(diagnostic?.status || 'skipped')
+  const reason =
+    String(diagnostic?.reason || diagnostic?.blockedReason || 'none')
+  const providersDetected =
+    Math.max(
+      0,
+      Number(providerFlow.providersDetected) ||
+        Number(fullToggle.startingCount) ||
+        Number(summary.activeProviderToggleCount) ||
+        0
+    )
+  const providersDisabled =
+    Math.max(
+      0,
+      Number(providerFlow.providersDisabled) ||
+        Number(fullToggle.successfulCount) ||
+        Number(summary.providerClickedCount) ||
+        0
+    )
+  const activeProvidersRemaining =
+    Math.max(
+      0,
+      Number(
+        providerFlow.activeProvidersRemaining ??
+          audit.activeLegitimateInterestCount ??
+          fullToggle.endingCount ??
+          summary.activeProviderToggleCount ??
+          0
+      ) || 0
+    )
+  const preferencesSaved =
+    Boolean(providerFlow.saveClicked || saveTest.saveButtonClicked)
+  const finalVerificationResult =
+    String(
+      providerFlow.verificationResult ||
+        audit.auditResult ||
+        saveTest.saveVerificationResult ||
+        summary.providerPersistenceReason ||
+        'none'
+    )
+  const result = {
+    status,
+    reason,
+    statusLabel: '',
+    bannerHandled:
+      Boolean(
+        status === 'handled' ||
+          providerFlow.completed ||
+          preferencesSaved
+      ),
+    preferencesOpened:
+      Boolean(
+        summary.providerManageVendorsClicked ||
+          summary.providerPreferenceOpened ||
+          providerFlow.started
+      ),
+    providerPanelOpened:
+      Boolean(summary.providerPreferenceOpened || providerFlow.started),
+    providersDetected,
+    providersDisabled,
+    activeProvidersRemaining,
+    preferencesSaved,
+    finalVerificationResult,
+    elapsedMs:
+      Math.max(0, Number(providerFlow.elapsedMs) || 0),
+  }
+
+  result.statusLabel =
+    getProtectionStatusLabel(result)
+
+  return result
+}
+
+function formatProtectionSummary(summary) {
   return [
-    `status:${summary.status}`,
-    `reason:${summary.reason}`,
-    `providerFlowStatus:${summary.providerFlowStatus}`,
-    `providersDisabledCount:${summary.providersDisabledCount}`,
+    `statusLabel:${summary.statusLabel}`,
+    `bannerHandled:${Boolean(summary.bannerHandled)}`,
+    `preferencesOpened:${Boolean(summary.preferencesOpened)}`,
+    `providerPanelOpened:${Boolean(summary.providerPanelOpened)}`,
+    `providersDetected:${summary.providersDetected}`,
+    `providersDisabled:${summary.providersDisabled}`,
     `activeProvidersRemaining:${summary.activeProvidersRemaining}`,
-    `saveClicked:${summary.saveClicked}`,
-    `saveVerificationResult:${summary.saveVerificationResult}`,
+    `preferencesSaved:${Boolean(summary.preferencesSaved)}`,
     `finalVerificationResult:${summary.finalVerificationResult}`,
-    `lastError:${summary.lastError}`,
+    `elapsedMs:${summary.elapsedMs}`,
   ].join('\n')
 }
 
@@ -1140,10 +1260,14 @@ function updateDiagnosticDebugVisibility() {
   ensureDiagnosticCompactUi()
 
   const verboseElements = [
+    currentSiteDiagnosticState,
+    currentSiteDiagnosticClassification,
+    currentSiteDiagnosticReason,
     currentSiteDiagnosticControls,
     currentSiteDiagnosticReject,
     currentSiteDiagnosticBlocked,
     currentSiteDiagnosticVerification,
+    currentSiteDiagnosticFundingChoices,
     currentSiteDiagnosticRejectCandidates,
     currentSiteDiagnosticDirectControls,
     currentSiteDiagnosticCookieTextMatches,
@@ -1167,8 +1291,8 @@ function updateDiagnosticDebugVisibility() {
   if (diagnosticDebugToggleButton) {
     diagnosticDebugToggleButton.textContent =
       diagnosticDebugExpanded
-        ? 'Hide full debug details'
-        : 'Show full debug details'
+        ? 'Ocultar diagnóstico avanzado'
+        : 'Mostrar diagnóstico avanzado'
     diagnosticDebugToggleButton.setAttribute(
       'aria-expanded',
       diagnosticDebugExpanded ? 'true' : 'false'
@@ -5338,8 +5462,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'Sin datos'
     if (diagnosticSummaryValue) {
       diagnosticSummaryValue.innerText =
-        formatDiagnosticSummary(
-          getDiagnosticSummary(null)
+        formatProtectionSummary(
+          getProtectionSummary(null)
         )
     }
     updateDiagnosticDebugVisibility()
@@ -5435,8 +5559,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     String(diagnostic.reason || 'Sin datos')
   if (diagnosticSummaryValue) {
     diagnosticSummaryValue.innerText =
-      formatDiagnosticSummary(
-        getDiagnosticSummary(diagnostic)
+      formatProtectionSummary(
+        getProtectionSummary(diagnostic)
       )
   }
   if (diagnosticDebugExpanded) {
@@ -5450,20 +5574,22 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       formatCurrentSiteVerificationDiagnostics(
         diagnostic.rejectVerificationDiagnostics
       )
+    currentSiteDiagnosticFundingChoices.innerText =
+      formatFundingChoicesCompactSummary(
+        diagnostic.fundingChoicesControlDiagnostics
+      )
   } else {
     currentSiteDiagnosticControls.innerText =
-      'Hidden until full debug details are shown'
+      'Oculto hasta mostrar diagnóstico avanzado'
     currentSiteDiagnosticReject.innerText =
-      'Hidden until full debug details are shown'
+      'Oculto hasta mostrar diagnóstico avanzado'
     currentSiteDiagnosticBlocked.innerText =
-      'Hidden until full debug details are shown'
+      'Oculto hasta mostrar diagnóstico avanzado'
     currentSiteDiagnosticVerification.innerText =
-      'Hidden until full debug details are shown'
+      'Oculto hasta mostrar diagnóstico avanzado'
+    currentSiteDiagnosticFundingChoices.innerText =
+      'Oculto hasta mostrar diagnóstico avanzado'
   }
-  currentSiteDiagnosticFundingChoices.innerText =
-    formatFundingChoicesCompactSummary(
-      diagnostic.fundingChoicesControlDiagnostics
-    )
   if (diagnosticDebugExpanded) {
     currentSiteDiagnosticRejectCandidates.innerText =
       formatCurrentSiteRejectCandidates(
@@ -5517,7 +5643,7 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       currentSiteDiagnosticTrace,
     ].forEach((element) => {
       element.innerText =
-        'Hidden until full debug details are shown'
+        'Oculto hasta mostrar diagnóstico avanzado'
     })
   }
   updateDiagnosticDebugVisibility()
