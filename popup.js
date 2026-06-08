@@ -3500,6 +3500,26 @@ function formatProviderPostToggleSaveDiagnostics(summary) {
   ].join(' ')
 }
 
+function formatProviderSaveTest(summary) {
+  const test =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!test) return 'providerSaveTest: none'
+
+  return [
+    'providerSaveTest:',
+    `saveButtonClicked:${Boolean(test.saveButtonClicked)}`,
+    `saveButtonText:${String(test.saveButtonText || 'none').slice(0, 120)}`,
+    `saveButtonVisibleBeforeClick:${Boolean(test.saveButtonVisibleBeforeClick)}`,
+    `panelStillVisibleAfterClick:${Boolean(test.panelStillVisibleAfterClick)}`,
+    `providerCountAfterSave:${Math.max(0, Number(test.providerCountAfterSave) || 0)}`,
+    `saveVerificationResult:${String(test.saveVerificationResult || 'none').slice(0, 120)}`,
+    `failureReason:${String(test.failureReason || 'none').slice(0, 160)}`,
+  ].join(' ')
+}
+
 function formatProviderFullToggleStopTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -4145,6 +4165,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
     formatProviderPostToggleSaveDiagnostics(
       summary.providerPostToggleSaveDiagnostics
     ),
+    formatProviderSaveTest(summary.providerSaveTest),
     formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
     formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
     formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
@@ -4523,6 +4544,7 @@ function formatFundingChoicesControls(summary) {
       formatProviderPostToggleSaveDiagnostics(
         summary.providerPostToggleSaveDiagnostics
       ),
+      formatProviderSaveTest(summary.providerSaveTest),
       formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
       formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
       formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
