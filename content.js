@@ -85,6 +85,8 @@ let lastFundingChoicesMainPurposeToggleAudit = []
 let lastFundingChoicesMainPurposeInteractionTrace = []
 let lastFundingChoicesMainRequiredActiveBefore = 0
 let lastFundingChoicesMainRequiredActiveAfter = 0
+let lastFundingChoicesMainLegitimateInterestActiveBefore = 0
+let lastFundingChoicesMainLegitimateInterestActiveAfter = 0
 let lastFundingChoicesMainClickedCount = 0
 let lastFundingChoicesMainToggleMethod = ''
 let lastFundingChoicesProviderPreferenceOpened = false
@@ -9390,7 +9392,10 @@ function findFundingChoicesProviderStrictSaveAction(root, startedAt, budgetMs) {
 
 function shouldDiagnoseFundingChoicesProviderSaveCandidates() {
   return Boolean(
-    Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0 &&
+    Math.max(
+      0,
+      Number(lastFundingChoicesMainLegitimateInterestActiveAfter) || 0
+    ) === 0 &&
       Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0 &&
       Math.max(0, Number(lastFundingChoicesProviderClickedCount) || 0) > 0 &&
       lastFundingChoicesProviderToggleMethod === 'aria-pressed'
@@ -10070,7 +10075,10 @@ function resetFundingChoicesProviderSaveBackDiagnostics() {
 function shouldDiagnoseFundingChoicesProviderSaveAfterAriaSuccess(providerPhaseHandled) {
   return Boolean(
     providerPhaseHandled &&
-      Math.max(0, Number(lastFundingChoicesMainRequiredActiveAfter) || 0) === 0 &&
+      Math.max(
+        0,
+        Number(lastFundingChoicesMainLegitimateInterestActiveAfter) || 0
+      ) === 0 &&
       Math.max(0, Number(lastFundingChoicesActiveProviderToggleCount) || 0) === 0 &&
       Math.max(0, Number(lastFundingChoicesProviderClickedCount) || 0) > 0 &&
       lastFundingChoicesProviderToggleMethod === 'aria-pressed'
@@ -12000,6 +12008,20 @@ function isFundingChoicesPreferenceCategoryToggle(input, root) {
   )
 }
 
+function isFundingChoicesMainLegitimateInterestToggle(input, root) {
+  return textHasAny(
+    getFundingChoicesPreferenceToggleLabel(input, root),
+    [
+      'interes legitim',
+      'interes legitimo',
+      'interessos legitims',
+      'intereses legitimos',
+      'legitimate interest',
+      'legitimate interests',
+    ]
+  )
+}
+
 function getFundingChoicesPreferenceToggleState(input) {
   const ariaPressed =
     normalizeMatchText(input?.getAttribute?.('aria-pressed') || '')
@@ -12552,14 +12574,110 @@ function getFundingChoicesPreferenceClickTargets(input, root) {
     wrapper && root.contains(wrapper)
       ? safeQuerySelectorAll(wrapper, '.fc-slider-el')[0] || null
       : null
+  const row =
+    getFundingChoicesProviderFirstActiveRow(input, label, wrapper)
+
+  const seen =
+    new Set()
 
   return [
-    { element: input, type: 'input' },
+    { element: label, type: 'label-coordinate', coordinate: true },
+    { element: row, type: 'row-coordinate', coordinate: true },
     { element: label, type: 'label' },
     { element: slider, type: 'slider' },
-  ].filter(({ element }) =>
-    element && root.contains(element)
-  )
+    { element: input, type: 'input' },
+  ].filter(({ element }) => {
+    if (!element || !root.contains(element) || seen.has(element)) {
+      return false
+    }
+
+    seen.add(element)
+    return isVisible(element)
+  })
+}
+
+function dispatchFundingChoicesCoordinateClick(
+  element,
+  root,
+  budgetKey = 'fundingChoicesPreferenceToggle'
+) {
+  if (
+    !shouldRunOnThisSite() ||
+    !element ||
+    !root?.contains?.(element) ||
+    processedActionElements.has(element) ||
+    !canUsePageActionBudget(budgetKey)
+  ) {
+    return false
+  }
+
+  const rect =
+    element.getBoundingClientRect?.()
+
+  if (!rect || rect.width <= 0 || rect.height <= 0) {
+    return false
+  }
+
+  const clientX =
+    rect.left + rect.width * 0.25
+  const clientY =
+    rect.top + rect.height / 2
+  const screenX =
+    window.screenX + clientX
+  const screenY =
+    window.screenY + clientY
+
+  processedActionElements.add(element)
+
+  try {
+    const eventView =
+      element.ownerDocument?.defaultView || window
+    const shared = {
+      bubbles: true,
+      cancelable: true,
+      view: eventView,
+      clientX,
+      clientY,
+      screenX,
+      screenY,
+    }
+
+    if (typeof eventView.PointerEvent === 'function') {
+      element.dispatchEvent(
+        new eventView.PointerEvent('pointerdown', {
+          ...shared,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+    }
+
+    element.dispatchEvent(
+      new eventView.MouseEvent('mousedown', shared)
+    )
+
+    if (typeof eventView.PointerEvent === 'function') {
+      element.dispatchEvent(
+        new eventView.PointerEvent('pointerup', {
+          ...shared,
+          pointerType: 'mouse',
+          isPrimary: true,
+        })
+      )
+    }
+
+    element.dispatchEvent(
+      new eventView.MouseEvent('mouseup', shared)
+    )
+    element.dispatchEvent(
+      new eventView.MouseEvent('click', shared)
+    )
+
+    return true
+  } catch (error) {
+    log('Funding Choices coordinate click failed:', error)
+    return false
+  }
 }
 
 function dispatchFundingChoicesPreferenceToggleClick(element, root) {
@@ -12759,6 +12877,15 @@ function setFundingChoicesProviderFlowResult(summary = {}) {
       Math.max(0, Number(summary.providersDisabled) || 0),
     activeProvidersRemaining:
       Math.max(0, Number(summary.activeProvidersRemaining) || 0),
+    mainLegitimateInterestsDisabled:
+      Math.max(0, Number(summary.mainLegitimateInterestsDisabled) || 0),
+    activeMainLegitimateInterestsRemaining:
+      Math.max(0, Number(summary.activeMainLegitimateInterestsRemaining) || 0),
+    preferencesSaved:
+      Boolean(summary.preferencesSaved),
+    finalVerificationResult:
+      String(summary.finalVerificationResult || summary.verificationResult || '')
+        .slice(0, 120),
     saveClicked:
       Boolean(summary.saveClicked),
     panelClosedAfterSave:
@@ -14190,6 +14317,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     )
   } else {
     lastFundingChoicesMainRequiredActiveBefore = activeInputs.length
+    lastFundingChoicesMainLegitimateInterestActiveBefore =
+      activeInputs
+        .filter((input) =>
+          isFundingChoicesMainLegitimateInterestToggle(input, root)
+        )
+        .length
   }
 
   const diagnosticInputs =
@@ -14569,12 +14702,17 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         continue
       }
 
-      for (const { element, type } of clickTargets) {
+      for (const { element, type, coordinate } of clickTargets) {
         if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
           break
         }
 
-        if (!dispatchFundingChoicesPreferenceToggleClick(element, root)) {
+        const clicked =
+          coordinate
+            ? dispatchFundingChoicesCoordinateClick(element, root)
+            : dispatchFundingChoicesPreferenceToggleClick(element, root)
+
+        if (!clicked) {
           continue
         }
 
@@ -14784,6 +14922,14 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       mainPanelTransitionedToProvider
         ? 0
         : remainingActive.length
+    lastFundingChoicesMainLegitimateInterestActiveAfter =
+      mainPanelTransitionedToProvider
+        ? 0
+        : remainingActive
+            .filter((input) =>
+              isFundingChoicesMainLegitimateInterestToggle(input, root)
+            )
+            .length
   }
 
   const incompleteDisable =
@@ -19798,6 +19944,15 @@ function sanitizeFundingChoicesProviderFlowResult(summary) {
       Math.max(0, Number(summary.providersDisabled) || 0),
     activeProvidersRemaining:
       Math.max(0, Number(summary.activeProvidersRemaining) || 0),
+    mainLegitimateInterestsDisabled:
+      Math.max(0, Number(summary.mainLegitimateInterestsDisabled) || 0),
+    activeMainLegitimateInterestsRemaining:
+      Math.max(0, Number(summary.activeMainLegitimateInterestsRemaining) || 0),
+    preferencesSaved:
+      Boolean(summary.preferencesSaved),
+    finalVerificationResult:
+      String(summary.finalVerificationResult || summary.verificationResult || '')
+        .slice(0, 120),
     saveClicked:
       Boolean(summary.saveClicked),
     panelClosedAfterSave:
@@ -20868,6 +21023,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         break
       }
 
+      refreshFundingChoicesProviderPanelDiagnostics(currentProviderPanel)
       const visibleActiveEntries =
         Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
           ? lastFundingChoicesProviderVisibleActiveEntries
@@ -20883,6 +21039,25 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         String(visibleActiveDataIds[0] || '').slice(0, 80)
       const targetProviderPanel =
         getVisibleFundingChoicesProviderPreferencesPanel(root)
+      const targetRawMatches =
+        targetProviderPanel
+          ? safeQuerySelectorAll(
+              document,
+              FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS
+            )
+          : []
+      const targetMappedInputs =
+        uniqueElements(
+          targetRawMatches
+            .map(getFundingChoicesProviderToggleInput)
+            .filter(Boolean)
+        )
+      const targetInPanelInputs =
+        targetProviderPanel
+          ? targetMappedInputs.filter((candidateInput) =>
+              isFundingChoicesProviderToggleInPanel(candidateInput, targetProviderPanel)
+            )
+          : []
       const targetProviderInputs =
         targetProviderPanel &&
         isFundingChoicesProviderPreferencesVisuallyVerified(targetProviderPanel)
@@ -20890,6 +21065,15 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
               .filter((input) =>
                 isFundingChoicesProviderToggleVisible(input, targetProviderPanel)
               )
+          : []
+      const targetTraceBoundedInputs =
+        targetInPanelInputs
+          .slice(0, MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT)
+      const targetTraceVisibleInputs =
+        targetProviderPanel
+          ? targetTraceBoundedInputs.filter((candidateInput) =>
+              isFundingChoicesProviderToggleVisible(candidateInput, targetProviderPanel)
+            )
           : []
       const requestedDataIdForComparison =
         firstTargetDataIdRequested
@@ -20917,7 +21101,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       )
 
       const targetInputCandidates =
-        targetProviderInputs.filter((candidateInput) => {
+        targetTraceVisibleInputs.filter((candidateInput) => {
           const normalizedCandidateDataId =
             String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80)
 
@@ -20926,6 +21110,26 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
             refreshedVisibleActiveEntryDataIds.has(normalizedCandidateDataId)
           )
         })
+      const targetInputCandidateDataIds =
+        targetInputCandidates.map((candidateInput) =>
+          candidateInput?.getAttribute?.('data-id') || ''
+        )
+      setFundingChoicesProviderDomCandidateSourceTrace({
+        requestedDataId: requestedDataIdForComparison,
+        collectionName: 'targetTraceVisibleInputs filtered by requested data-id and refreshed visible entries',
+        collectionLength: targetInputCandidates.length,
+        collectionDataIds: targetInputCandidateDataIds,
+        containsRequestedDataId:
+          Boolean(
+            requestedDataIdForComparison &&
+              targetInputCandidateDataIds.includes(requestedDataIdForComparison)
+          ),
+        first10DataIds: targetInputCandidateDataIds.slice(0, 10),
+        last10DataIds: targetInputCandidateDataIds.slice(-10),
+        sourceBuiltFromSelector: true,
+        sourceBuiltFromVisibleInputs: true,
+        sourceBuiltFromVisibleActiveEntries: true,
+      })
       const input =
         targetInputCandidates.find((candidateInput) =>
           Boolean(getFundingChoicesProviderLegitimateInterestLabel(candidateInput))
@@ -21334,18 +21538,36 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       targetDataIds,
       stopReason,
     })
+    const activeMainLegitimateInterestsRemaining =
+      Math.max(
+        0,
+        Number(lastFundingChoicesMainLegitimateInterestActiveAfter) || 0
+      )
+    const mainLegitimateInterestsDisabled =
+      Math.max(
+        0,
+        Math.max(
+          0,
+          Number(lastFundingChoicesMainLegitimateInterestActiveBefore) || 0
+        ) -
+          activeMainLegitimateInterestsRemaining
+      )
+    const providerToggleCompleted =
+      currentActiveCount <= 0 ||
+      stopReason === 'active_provider_count_zero'
+    const canSavePreferences =
+      providerToggleCompleted &&
+      activeMainLegitimateInterestsRemaining === 0
     lastFundingChoicesProviderPostToggleSaveDiagnostics =
       getFundingChoicesProviderPostToggleSaveDiagnostics(
         root,
-        currentActiveCount <= 0 ||
-          stopReason === 'active_provider_count_zero',
+        canSavePreferences,
         currentActiveCount
       )
     lastFundingChoicesProviderSaveTest =
       runFundingChoicesProviderSaveTest(
         root,
-        currentActiveCount <= 0 ||
-          stopReason === 'active_provider_count_zero'
+        canSavePreferences
       )
     lastFundingChoicesProviderPersistenceAudit =
       runFundingChoicesProviderPersistenceAudit(
@@ -21390,6 +21612,10 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       providersDetected: initialActiveLegitimateInterestCount,
       providersDisabled: successfulCount,
       activeProvidersRemaining: finalActiveProvidersRemaining,
+      mainLegitimateInterestsDisabled,
+      activeMainLegitimateInterestsRemaining,
+      preferencesSaved: saveClicked,
+      finalVerificationResult: verificationResult,
       saveClicked,
       panelClosedAfterSave,
       verificationResult,
@@ -21469,6 +21695,26 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       activeProvidersRemaining:
         lastFundingChoicesProviderFullToggleTest?.endingCount ??
         lastFundingChoicesActiveProviderToggleCount,
+      mainLegitimateInterestsDisabled:
+        Math.max(
+          0,
+          Math.max(
+            0,
+            Number(lastFundingChoicesMainLegitimateInterestActiveBefore) || 0
+          ) -
+            Math.max(
+              0,
+              Number(lastFundingChoicesMainLegitimateInterestActiveAfter) || 0
+            )
+        ),
+      activeMainLegitimateInterestsRemaining:
+        Math.max(
+          0,
+          Number(lastFundingChoicesMainLegitimateInterestActiveAfter) || 0
+        ),
+      preferencesSaved:
+        Boolean(lastFundingChoicesProviderSaveTest?.saveButtonClicked),
+      finalVerificationResult: 'unexpected_exception',
       saveClicked:
         Boolean(lastFundingChoicesProviderSaveTest?.saveButtonClicked),
       panelClosedAfterSave:
@@ -24789,6 +25035,8 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesMainPurposeInteractionTrace = []
     lastFundingChoicesMainRequiredActiveBefore = 0
     lastFundingChoicesMainRequiredActiveAfter = 0
+    lastFundingChoicesMainLegitimateInterestActiveBefore = 0
+    lastFundingChoicesMainLegitimateInterestActiveAfter = 0
     lastFundingChoicesMainClickedCount = 0
     lastFundingChoicesMainToggleMethod = ''
     lastFundingChoicesProviderPreferenceOpened = false

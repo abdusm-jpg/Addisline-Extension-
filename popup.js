@@ -1185,11 +1185,26 @@ function getProtectionSummary(diagnostic) {
           0
       ) || 0
     )
+  const mainLegitimateInterestsDisabled =
+    Math.max(
+      0,
+      Number(providerFlow.mainLegitimateInterestsDisabled) || 0
+    )
+  const activeMainLegitimateInterestsRemaining =
+    Math.max(
+      0,
+      Number(providerFlow.activeMainLegitimateInterestsRemaining) || 0
+    )
   const preferencesSaved =
-    Boolean(providerFlow.saveClicked || saveTest.saveButtonClicked)
+    Boolean(
+      providerFlow.preferencesSaved ||
+        providerFlow.saveClicked ||
+        saveTest.saveButtonClicked
+    )
   const finalVerificationResult =
     String(
-      providerFlow.verificationResult ||
+      providerFlow.finalVerificationResult ||
+        providerFlow.verificationResult ||
         audit.auditResult ||
         saveTest.saveVerificationResult ||
         summary.providerPersistenceReason ||
@@ -1216,6 +1231,8 @@ function getProtectionSummary(diagnostic) {
     providersDetected,
     providersDisabled,
     activeProvidersRemaining,
+    mainLegitimateInterestsDisabled,
+    activeMainLegitimateInterestsRemaining,
     preferencesSaved,
     finalVerificationResult,
     elapsedMs:
@@ -1237,6 +1254,8 @@ function formatProtectionSummary(summary) {
     `providersDetected:${summary.providersDetected}`,
     `providersDisabled:${summary.providersDisabled}`,
     `activeProvidersRemaining:${summary.activeProvidersRemaining}`,
+    `mainLegitimateInterestsDisabled:${summary.mainLegitimateInterestsDisabled}`,
+    `activeMainLegitimateInterestsRemaining:${summary.activeMainLegitimateInterestsRemaining}`,
     `preferencesSaved:${Boolean(summary.preferencesSaved)}`,
     `finalVerificationResult:${summary.finalVerificationResult}`,
     `elapsedMs:${summary.elapsedMs}`,
@@ -3861,6 +3880,10 @@ function formatProviderFlowResult(summary) {
     `providersDetected:${Math.max(0, Number(result.providersDetected) || 0)}`,
     `providersDisabled:${Math.max(0, Number(result.providersDisabled) || 0)}`,
     `activeProvidersRemaining:${Math.max(0, Number(result.activeProvidersRemaining) || 0)}`,
+    `mainLegitimateInterestsDisabled:${Math.max(0, Number(result.mainLegitimateInterestsDisabled) || 0)}`,
+    `activeMainLegitimateInterestsRemaining:${Math.max(0, Number(result.activeMainLegitimateInterestsRemaining) || 0)}`,
+    `preferencesSaved:${Boolean(result.preferencesSaved || result.saveClicked)}`,
+    `finalVerificationResult:${String(result.finalVerificationResult || result.verificationResult || 'none').slice(0, 120)}`,
     `saveClicked:${Boolean(result.saveClicked)}`,
     `panelClosedAfterSave:${Boolean(result.panelClosedAfterSave)}`,
     `verificationResult:${String(result.verificationResult || 'none').slice(0, 120)}`,
