@@ -398,6 +398,18 @@ let latestIssueReports =
 let latestCurrentSiteDiagnostic =
   null
 
+let diagnosticDebugExpanded =
+  false
+
+let diagnosticSummaryRow =
+  null
+
+let diagnosticSummaryValue =
+  null
+
+let diagnosticDebugToggleButton =
+  null
+
 const REPORTS_PAGE_SIZE =
   5
 
@@ -945,6 +957,206 @@ function getBoundedElementText(element, fallback = 'Sin datos') {
   return `${text.slice(0, DIAGNOSTIC_COPY_SECTION_LIMIT)}...`
 }
 
+function ensureDiagnosticCompactUi() {
+  const diagnosticList =
+    currentSiteDiagnosticState?.closest?.('.diagnosticList')
+
+  if (!diagnosticSummaryRow && diagnosticList) {
+    diagnosticSummaryRow =
+      document.createElement('div')
+    diagnosticSummaryRow.className =
+      'diagnosticSummaryRow'
+
+    const label =
+      document.createElement('dt')
+    label.textContent =
+      'diagnosticSummary'
+
+    diagnosticSummaryValue =
+      document.createElement('dd')
+    diagnosticSummaryValue.id =
+      'currentSiteDiagnosticSummary'
+    diagnosticSummaryValue.textContent =
+      'Sin datos'
+
+    diagnosticSummaryRow.append(label, diagnosticSummaryValue)
+    diagnosticList.prepend(diagnosticSummaryRow)
+  }
+
+  if (!diagnosticDebugToggleButton && copyDiagnosticStatus?.parentElement) {
+    diagnosticDebugToggleButton =
+      document.createElement('button')
+    diagnosticDebugToggleButton.type =
+      'button'
+    diagnosticDebugToggleButton.className =
+      'secondary compact diagnosticDebugToggleButton'
+    diagnosticDebugToggleButton.addEventListener('click', () => {
+      diagnosticDebugExpanded =
+        !diagnosticDebugExpanded
+      if (latestCurrentSiteDiagnostic) {
+        renderCurrentSiteDiagnostic(latestCurrentSiteDiagnostic)
+      } else {
+        updateDiagnosticDebugVisibility()
+      }
+    })
+    copyDiagnosticStatus.parentElement.insertBefore(
+      diagnosticDebugToggleButton,
+      copyDiagnosticStatus.nextSibling
+    )
+  }
+}
+
+function getProviderFlowStatus(summary) {
+  if (!summary || typeof summary !== 'object') return 'none'
+
+  const auditResult =
+    String(summary.providerPersistenceAudit?.auditResult || '')
+  const saveResult =
+    String(summary.providerSaveTest?.saveVerificationResult || '')
+  const fullToggle =
+    summary.providerFullToggleTest &&
+    typeof summary.providerFullToggleTest === 'object'
+      ? summary.providerFullToggleTest
+      : null
+
+  if (auditResult === 'all_disabled') return 'saved_and_verified'
+  if (auditResult === 'active_providers_remain') return 'saved_active_remain'
+  if (summary.providerSaveTest?.saveButtonClicked) return `save_${saveResult || 'clicked'}`
+  if (fullToggle && Number(fullToggle.endingCount) === 0) return 'providers_disabled'
+  if (fullToggle && Number(fullToggle.successfulCount) > 0) return 'partial_provider_disable'
+  if (summary.providerPreferenceOpened) return 'provider_panel_seen'
+
+  return 'not_started'
+}
+
+function getDiagnosticSummary(diagnostic) {
+  const summary =
+    diagnostic?.fundingChoicesControlDiagnostics &&
+    typeof diagnostic.fundingChoicesControlDiagnostics === 'object'
+      ? diagnostic.fundingChoicesControlDiagnostics
+      : {}
+  const fullToggle =
+    summary.providerFullToggleTest &&
+    typeof summary.providerFullToggleTest === 'object'
+      ? summary.providerFullToggleTest
+      : {}
+  const saveTest =
+    summary.providerSaveTest &&
+    typeof summary.providerSaveTest === 'object'
+      ? summary.providerSaveTest
+      : {}
+  const audit =
+    summary.providerPersistenceAudit &&
+    typeof summary.providerPersistenceAudit === 'object'
+      ? summary.providerPersistenceAudit
+      : {}
+  const providersDisabledCount =
+    Math.max(0, Number(fullToggle.successfulCount) || Number(summary.providerClickedCount) || 0)
+  const activeProvidersRemainingValue =
+    audit.activeLegitimateInterestCount ??
+    fullToggle.endingCount ??
+    summary.activeProviderToggleCount ??
+    0
+  const activeProvidersRemaining =
+    Math.max(
+      0,
+      Number(activeProvidersRemainingValue) || 0
+    )
+
+  return {
+    status:
+      String(diagnostic?.status || 'skipped'),
+    reason:
+      String(diagnostic?.reason || diagnostic?.blockedReason || 'none'),
+    providerFlowStatus:
+      getProviderFlowStatus(summary),
+    providersDisabledCount,
+    activeProvidersRemaining,
+    saveClicked:
+      Boolean(saveTest.saveButtonClicked),
+    saveVerificationResult:
+      String(saveTest.saveVerificationResult || 'none'),
+    finalVerificationResult:
+      String(audit.auditResult || summary.providerPersistenceReason || 'none'),
+    lastError:
+      String(diagnostic?.lastError || diagnostic?.error || diagnostic?.blockedReason || 'none'),
+  }
+}
+
+function formatDiagnosticSummary(summary) {
+  return [
+    `status:${summary.status}`,
+    `reason:${summary.reason}`,
+    `providerFlowStatus:${summary.providerFlowStatus}`,
+    `providersDisabledCount:${summary.providersDisabledCount}`,
+    `activeProvidersRemaining:${summary.activeProvidersRemaining}`,
+    `saveClicked:${summary.saveClicked}`,
+    `saveVerificationResult:${summary.saveVerificationResult}`,
+    `finalVerificationResult:${summary.finalVerificationResult}`,
+    `lastError:${summary.lastError}`,
+  ].join('\n')
+}
+
+function formatFundingChoicesCompactSummary(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'providerFlowResult:none'
+  }
+
+  return [
+    'providerFlowResult:',
+    formatProviderFullToggleTest(summary.providerFullToggleTest),
+    formatProviderSaveTest(summary.providerSaveTest),
+    formatProviderPersistenceAudit(summary.providerPersistenceAudit),
+    formatProviderCountSummary(summary),
+  ].join('\n')
+}
+
+function updateDiagnosticDebugVisibility() {
+  ensureDiagnosticCompactUi()
+
+  const verboseElements = [
+    currentSiteDiagnosticControls,
+    currentSiteDiagnosticReject,
+    currentSiteDiagnosticBlocked,
+    currentSiteDiagnosticVerification,
+    currentSiteDiagnosticRejectCandidates,
+    currentSiteDiagnosticDirectControls,
+    currentSiteDiagnosticCookieTextMatches,
+    currentSiteDiagnosticDomScope,
+    currentSiteDiagnosticBottomBanner,
+    currentSiteDiagnosticExperimentalBottomProbe,
+    currentSiteDiagnosticIframeAccess,
+    currentSiteDiagnosticLateSnapshot,
+    currentSiteDiagnosticTrace,
+  ]
+
+  verboseElements.forEach((element) => {
+    const row =
+      element?.parentElement
+    if (row) {
+      row.hidden =
+        !diagnosticDebugExpanded
+    }
+  })
+
+  if (diagnosticDebugToggleButton) {
+    diagnosticDebugToggleButton.textContent =
+      diagnosticDebugExpanded
+        ? 'Hide full debug details'
+        : 'Show full debug details'
+    diagnosticDebugToggleButton.setAttribute(
+      'aria-expanded',
+      diagnosticDebugExpanded ? 'true' : 'false'
+    )
+  }
+}
+
+function buildFullFundingChoicesCopySection(diagnostic) {
+  return formatFundingChoicesControls(
+    diagnostic?.fundingChoicesControlDiagnostics
+  )
+}
+
 function buildDiagnosticCopyReport() {
   const sections = [
     [
@@ -970,16 +1182,16 @@ function buildDiagnosticCopyReport() {
     ],
     [
       'Matched reject',
-      getBoundedElementText(currentSiteDiagnosticReject),
+      String(latestCurrentSiteDiagnostic?.matchedRejectText || 'Sin datos'),
     ],
     [
       'Blocked reason',
-      getBoundedElementText(currentSiteDiagnosticBlocked),
+      String(latestCurrentSiteDiagnostic?.blockedReason || 'Sin datos'),
     ],
     [
       'Verification diagnostics',
-      getBoundedElementText(
-        currentSiteDiagnosticVerification
+      formatCurrentSiteVerificationDiagnostics(
+        latestCurrentSiteDiagnostic?.rejectVerificationDiagnostics
       ),
     ],
     [
@@ -1002,8 +1214,8 @@ function buildDiagnosticCopyReport() {
     ],
     [
       'Funding Choices controls',
-      getBoundedElementText(
-        currentSiteDiagnosticFundingChoices
+      buildFullFundingChoicesCopySection(
+        latestCurrentSiteDiagnostic
       ),
     ],
     [
@@ -1012,53 +1224,62 @@ function buildDiagnosticCopyReport() {
     ],
     [
       'Reject candidates',
-      getBoundedElementText(
-        currentSiteDiagnosticRejectCandidates
+      formatCurrentSiteRejectCandidates(
+        latestCurrentSiteDiagnostic?.rejectCandidateDiagnostics
       ),
     ],
     [
       'Direct controls summary',
-      getBoundedElementText(
-        currentSiteDiagnosticDirectControls
+      formatCurrentSiteDirectControls(
+        latestCurrentSiteDiagnostic?.directClickableDiagnostics
       ),
     ],
     [
       'Cookie text matches summary',
-      getBoundedElementText(
-        currentSiteDiagnosticCookieTextMatches
+      formatCurrentSiteCookieTextMatches(
+        latestCurrentSiteDiagnostic?.cookieTextScopeDiagnostics
       ),
     ],
     [
       'DOM scope',
-      getBoundedElementText(currentSiteDiagnosticDomScope),
+      formatCurrentSiteDomScope(
+        latestCurrentSiteDiagnostic?.domScopeDiagnostics
+      ),
     ],
     [
       'Bottom banner',
-      getBoundedElementText(
-        currentSiteDiagnosticBottomBanner
+      formatCurrentSiteBottomBanner(
+        latestCurrentSiteDiagnostic?.bottomBannerDiagnostics
       ),
     ],
     [
       'Experimental bottom probe',
-      getBoundedElementText(
-        currentSiteDiagnosticExperimentalBottomProbe
+      formatExperimentalBottomProbe(
+        latestCurrentSiteDiagnostic?.experimentalBottomBannerProbe
       ),
     ],
     [
       'Iframe access',
-      getBoundedElementText(
-        currentSiteDiagnosticIframeAccess
+      formatCurrentSiteIframeAccess(
+        latestCurrentSiteDiagnostic?.iframeAccessibilityDiagnostics
       ),
     ],
     [
       'Late snapshot',
-      getBoundedElementText(
-        currentSiteDiagnosticLateSnapshot
+      formatCurrentSiteLateSnapshot(
+        latestCurrentSiteDiagnostic?.lateDiagnosticSnapshot
       ),
     ],
     [
       'Decision trace',
-      getBoundedElementText(currentSiteDiagnosticTrace),
+      [
+        formatCurrentSiteDecisionTrace(latestCurrentSiteDiagnostic?.decisionTrace),
+        formatScanLifecycleTimeoutTrace(
+          latestCurrentSiteDiagnostic?.scanLifecycleTimeoutTrace
+        ),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     ],
   ]
 
@@ -4995,6 +5216,8 @@ function formatFundingChoicesControls(summary) {
 }
 
 function renderCurrentSiteDiagnostic(diagnostic) {
+  ensureDiagnosticCompactUi()
+
   const updatedAt =
     new Date(diagnostic?.lastUpdatedAt || 0)
   const diagnosticUrl =
@@ -5066,6 +5289,13 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       'Sin datos'
     currentSiteDiagnosticTrace.innerText =
       'Sin datos'
+    if (diagnosticSummaryValue) {
+      diagnosticSummaryValue.innerText =
+        formatDiagnosticSummary(
+          getDiagnosticSummary(null)
+        )
+    }
+    updateDiagnosticDebugVisibility()
     return
   }
 
@@ -5156,59 +5386,94 @@ function renderCurrentSiteDiagnostic(diagnostic) {
     String(diagnostic.diagnosticClassification || 'Sin datos')
   currentSiteDiagnosticReason.innerText =
     String(diagnostic.reason || 'Sin datos')
-  currentSiteDiagnosticControls.innerText =
-    [...controls, ...prioritizedSummary].join(', ')
-  currentSiteDiagnosticReject.innerText =
-    String(diagnostic.matchedRejectText || 'Sin datos')
-  currentSiteDiagnosticBlocked.innerText =
-    String(diagnostic.blockedReason || 'Sin datos')
-  currentSiteDiagnosticVerification.innerText =
-    formatCurrentSiteVerificationDiagnostics(
-      diagnostic.rejectVerificationDiagnostics
-    )
+  if (diagnosticSummaryValue) {
+    diagnosticSummaryValue.innerText =
+      formatDiagnosticSummary(
+        getDiagnosticSummary(diagnostic)
+      )
+  }
+  if (diagnosticDebugExpanded) {
+    currentSiteDiagnosticControls.innerText =
+      [...controls, ...prioritizedSummary].join(', ')
+    currentSiteDiagnosticReject.innerText =
+      String(diagnostic.matchedRejectText || 'Sin datos')
+    currentSiteDiagnosticBlocked.innerText =
+      String(diagnostic.blockedReason || 'Sin datos')
+    currentSiteDiagnosticVerification.innerText =
+      formatCurrentSiteVerificationDiagnostics(
+        diagnostic.rejectVerificationDiagnostics
+      )
+  } else {
+    currentSiteDiagnosticControls.innerText =
+      'Hidden until full debug details are shown'
+    currentSiteDiagnosticReject.innerText =
+      'Hidden until full debug details are shown'
+    currentSiteDiagnosticBlocked.innerText =
+      'Hidden until full debug details are shown'
+    currentSiteDiagnosticVerification.innerText =
+      'Hidden until full debug details are shown'
+  }
   currentSiteDiagnosticFundingChoices.innerText =
-    formatFundingChoicesControls(
+    formatFundingChoicesCompactSummary(
       diagnostic.fundingChoicesControlDiagnostics
     )
-  currentSiteDiagnosticRejectCandidates.innerText =
-    formatCurrentSiteRejectCandidates(
-      diagnostic.rejectCandidateDiagnostics
-    )
-  currentSiteDiagnosticDirectControls.innerText =
-    formatCurrentSiteDirectControls(
-      diagnostic.directClickableDiagnostics
-    )
-  currentSiteDiagnosticCookieTextMatches.innerText =
-    formatCurrentSiteCookieTextMatches(
-      diagnostic.cookieTextScopeDiagnostics
-    )
-  currentSiteDiagnosticDomScope.innerText =
-    formatCurrentSiteDomScope(
-      diagnostic.domScopeDiagnostics
-    )
-  currentSiteDiagnosticBottomBanner.innerText =
-    formatCurrentSiteBottomBanner(
-      diagnostic.bottomBannerDiagnostics
-    )
-  currentSiteDiagnosticExperimentalBottomProbe.innerText =
-    formatExperimentalBottomProbe(
-      diagnostic.experimentalBottomBannerProbe
-    )
-  currentSiteDiagnosticIframeAccess.innerText =
-    formatCurrentSiteIframeAccess(
-      diagnostic.iframeAccessibilityDiagnostics
-    )
-  currentSiteDiagnosticLateSnapshot.innerText =
-    formatCurrentSiteLateSnapshot(
-      diagnostic.lateDiagnosticSnapshot
-    )
-  currentSiteDiagnosticTrace.innerText =
+  if (diagnosticDebugExpanded) {
+    currentSiteDiagnosticRejectCandidates.innerText =
+      formatCurrentSiteRejectCandidates(
+        diagnostic.rejectCandidateDiagnostics
+      )
+    currentSiteDiagnosticDirectControls.innerText =
+      formatCurrentSiteDirectControls(
+        diagnostic.directClickableDiagnostics
+      )
+    currentSiteDiagnosticCookieTextMatches.innerText =
+      formatCurrentSiteCookieTextMatches(
+        diagnostic.cookieTextScopeDiagnostics
+      )
+    currentSiteDiagnosticDomScope.innerText =
+      formatCurrentSiteDomScope(
+        diagnostic.domScopeDiagnostics
+      )
+    currentSiteDiagnosticBottomBanner.innerText =
+      formatCurrentSiteBottomBanner(
+        diagnostic.bottomBannerDiagnostics
+      )
+    currentSiteDiagnosticExperimentalBottomProbe.innerText =
+      formatExperimentalBottomProbe(
+        diagnostic.experimentalBottomBannerProbe
+      )
+    currentSiteDiagnosticIframeAccess.innerText =
+      formatCurrentSiteIframeAccess(
+        diagnostic.iframeAccessibilityDiagnostics
+      )
+    currentSiteDiagnosticLateSnapshot.innerText =
+      formatCurrentSiteLateSnapshot(
+        diagnostic.lateDiagnosticSnapshot
+      )
+    currentSiteDiagnosticTrace.innerText =
+      [
+        formatCurrentSiteDecisionTrace(diagnostic.decisionTrace),
+        formatScanLifecycleTimeoutTrace(diagnostic.scanLifecycleTimeoutTrace),
+      ]
+        .filter(Boolean)
+        .join('\n')
+  } else {
     [
-      formatCurrentSiteDecisionTrace(diagnostic.decisionTrace),
-      formatScanLifecycleTimeoutTrace(diagnostic.scanLifecycleTimeoutTrace),
-    ]
-      .filter(Boolean)
-      .join('\n')
+      currentSiteDiagnosticRejectCandidates,
+      currentSiteDiagnosticDirectControls,
+      currentSiteDiagnosticCookieTextMatches,
+      currentSiteDiagnosticDomScope,
+      currentSiteDiagnosticBottomBanner,
+      currentSiteDiagnosticExperimentalBottomProbe,
+      currentSiteDiagnosticIframeAccess,
+      currentSiteDiagnosticLateSnapshot,
+      currentSiteDiagnosticTrace,
+    ].forEach((element) => {
+      element.innerText =
+        'Hidden until full debug details are shown'
+    })
+  }
+  updateDiagnosticDebugVisibility()
 }
 
 function renderIssueReports(issueReports) {

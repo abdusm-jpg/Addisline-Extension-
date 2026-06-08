@@ -391,6 +391,7 @@ const MORE_OPTIONS_NAVIGATION_COOLDOWN_MS = 30000
 const DEEP_CMP_NAVIGATION_COOLDOWN_MS = 30000
 const DEEP_CMP_NAVIGATION_OBSERVATION_MS = 4500
 const PASSIVE_INTELLIGENCE_SCAN_COOLDOWN_MS = 30000
+const ENABLE_FC_PROVIDER_VERBOSE_TRACES = false
 const MUTATION_SCAN_HINT_TEXTS = [
   'cookie',
   'cookies',
@@ -4207,13 +4208,17 @@ function recordCurrentSiteDiagnostic({
                   }
                 : null,
             providerSingleToggleTest:
-              sanitizeFundingChoicesProviderSingleToggleTest(
-                fundingChoicesControlDiagnostics.providerSingleToggleTest
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderSingleToggleTest(
+                    fundingChoicesControlDiagnostics.providerSingleToggleTest
+                  )
+                : null,
             providerMultiToggleTest:
-              sanitizeFundingChoicesProviderMultiToggleTest(
-                fundingChoicesControlDiagnostics.providerMultiToggleTest
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderMultiToggleTest(
+                    fundingChoicesControlDiagnostics.providerMultiToggleTest
+                  )
+                : null,
             providerFullToggleTest:
               sanitizeFundingChoicesProviderFullToggleTest(
                 fundingChoicesControlDiagnostics.providerFullToggleTest
@@ -4247,45 +4252,65 @@ function recordCurrentSiteDiagnostic({
                 fundingChoicesControlDiagnostics.providerActiveAfterTrace
               ),
             providerNextTargetLookupTrace:
-              sanitizeFundingChoicesProviderNextTargetLookupTrace(
-                fundingChoicesControlDiagnostics.providerNextTargetLookupTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderNextTargetLookupTrace(
+                    fundingChoicesControlDiagnostics.providerNextTargetLookupTrace
+                  )
+                : null,
             providerDomTargetResolutionTrace:
-              sanitizeFundingChoicesProviderDomTargetResolutionTrace(
-                fundingChoicesControlDiagnostics.providerDomTargetResolutionTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderDomTargetResolutionTrace(
+                    fundingChoicesControlDiagnostics.providerDomTargetResolutionTrace
+                  )
+                : null,
             providerDomCandidateSourceTrace:
-              sanitizeFundingChoicesProviderDomCandidateSourceTrace(
-                fundingChoicesControlDiagnostics.providerDomCandidateSourceTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderDomCandidateSourceTrace(
+                    fundingChoicesControlDiagnostics.providerDomCandidateSourceTrace
+                  )
+                : null,
             providerDomResolutionCollectionTrace:
-              sanitizeFundingChoicesProviderDomResolutionCollectionTrace(
-                fundingChoicesControlDiagnostics.providerDomResolutionCollectionTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderDomResolutionCollectionTrace(
+                    fundingChoicesControlDiagnostics.providerDomResolutionCollectionTrace
+                  )
+                : null,
             providerDomReferenceLifecycleTrace:
-              sanitizeFundingChoicesProviderDomReferenceLifecycleTrace(
-                fundingChoicesControlDiagnostics.providerDomReferenceLifecycleTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderDomReferenceLifecycleTrace(
+                    fundingChoicesControlDiagnostics.providerDomReferenceLifecycleTrace
+                  )
+                : null,
             providerTargetLookupSelectorTrace:
-              sanitizeFundingChoicesProviderTargetLookupSelectorTrace(
-                fundingChoicesControlDiagnostics.providerTargetLookupSelectorTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderTargetLookupSelectorTrace(
+                    fundingChoicesControlDiagnostics.providerTargetLookupSelectorTrace
+                  )
+                : null,
             providerTargetFilterTrace:
-              sanitizeFundingChoicesProviderTargetFilterTrace(
-                fundingChoicesControlDiagnostics.providerTargetFilterTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderTargetFilterTrace(
+                    fundingChoicesControlDiagnostics.providerTargetFilterTrace
+                  )
+                : null,
             providerFinalDataIdFilterLogicTrace:
-              sanitizeFundingChoicesProviderFinalDataIdFilterLogicTrace(
-                fundingChoicesControlDiagnostics.providerFinalDataIdFilterLogicTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderFinalDataIdFilterLogicTrace(
+                    fundingChoicesControlDiagnostics.providerFinalDataIdFilterLogicTrace
+                  )
+                : [],
             providerDataIdComparisonTrace:
-              sanitizeFundingChoicesProviderDataIdComparisonTrace(
-                fundingChoicesControlDiagnostics.providerDataIdComparisonTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderDataIdComparisonTrace(
+                    fundingChoicesControlDiagnostics.providerDataIdComparisonTrace
+                  )
+                : null,
             providerComparisonInputTrace:
-              sanitizeFundingChoicesProviderComparisonInputTrace(
-                fundingChoicesControlDiagnostics.providerComparisonInputTrace
-              ),
+              ENABLE_FC_PROVIDER_VERBOSE_TRACES
+                ? sanitizeFundingChoicesProviderComparisonInputTrace(
+                    fundingChoicesControlDiagnostics.providerComparisonInputTrace
+                  )
+                : null,
             providerSingleToggleTestExportState:
               sanitizeFundingChoicesProviderSingleToggleTestExportState(
                 fundingChoicesControlDiagnostics.providerSingleToggleTestExportState
@@ -13493,6 +13518,49 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
   }
 }
 
+function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
+  if (diagnostics && typeof diagnostics === 'object') {
+    diagnostics.providerFlowResult =
+      diagnostics.providerFullToggleTest || null
+    diagnostics.providerFullToggleResult =
+      diagnostics.providerFullToggleTest || null
+    diagnostics.providerVisibleFinalVerification =
+      diagnostics.providerPersistenceAudit || null
+  }
+
+  if (
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES ||
+    !diagnostics ||
+    typeof diagnostics !== 'object'
+  ) {
+    return diagnostics
+  }
+
+  [
+    'providerDomTargetResolutionTrace',
+    'providerDomCandidateSourceTrace',
+    'providerDomResolutionCollectionTrace',
+    'providerDomReferenceLifecycleTrace',
+    'providerTargetLookupSelectorTrace',
+    'providerTargetFilterTrace',
+    'providerFinalDataIdFilterLogicTrace',
+    'providerDataIdComparisonTrace',
+    'providerComparisonInputTrace',
+    'providerToggleCountWriteTrace',
+    'providerGuardValueTrace',
+    'provider15GuardSnapshot',
+    'provider15VisibleSnapshot',
+    'provider15SnapshotOrder',
+    'providerSingleToggleTest',
+    'providerMultiToggleTest',
+    'providerSingleToggleTestExportState',
+  ].forEach((key) => {
+    delete diagnostics[key]
+  })
+
+  return diagnostics
+}
+
 function getFundingChoicesProviderLabelCoordinateElementId(element) {
   return String(element?.id || element?.getAttribute?.('id') || '')
     .slice(0, MAX_FUNDING_CHOICES_PROVIDER_DOM_DIAGNOSTIC_ATTR)
@@ -22488,7 +22556,9 @@ function collectFundingChoicesControlDiagnostics(root) {
     controls,
   }
 
-  return lastFundingChoicesControlDiagnostics
+  return stripFundingChoicesVerboseProviderDiagnostics(
+    lastFundingChoicesControlDiagnostics
+  )
 }
 
 function getFundingChoicesLightweightControlDiagnostic(control) {
@@ -22793,7 +22863,9 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     controls,
   }
 
-  return lastFundingChoicesControlDiagnostics
+  return stripFundingChoicesVerboseProviderDiagnostics(
+    lastFundingChoicesControlDiagnostics
+  )
 }
 
 function recordFundingChoicesSkipped(root, reason, blockedReason = '') {

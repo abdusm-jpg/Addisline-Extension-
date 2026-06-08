@@ -402,6 +402,23 @@ h1 {
   text-align: right;
 }
 
+.diagnosticSummaryRow {
+  grid-template-columns: 1fr !important;
+}
+
+.diagnosticSummaryRow dt,
+.diagnosticSummaryRow dd {
+  text-align: left;
+}
+
+.diagnosticSummaryRow dd {
+  white-space: pre-line;
+}
+
+.diagnosticDebugToggleButton {
+  margin: 0 0 8px;
+}
+
 #currentSiteDiagnosticRejectCandidates,
 #currentSiteDiagnosticVerification,
 #currentSiteDiagnosticFundingChoices,
