@@ -1013,12 +1013,26 @@ function getProviderFlowStatus(summary) {
     String(summary.providerPersistenceAudit?.auditResult || '')
   const saveResult =
     String(summary.providerSaveTest?.saveVerificationResult || '')
+  const providerFlow =
+    summary.providerFlowResult &&
+    typeof summary.providerFlowResult === 'object'
+      ? summary.providerFlowResult
+      : null
   const fullToggle =
     summary.providerFullToggleTest &&
     typeof summary.providerFullToggleTest === 'object'
       ? summary.providerFullToggleTest
       : null
 
+  if (providerFlow?.completed) return 'saved_and_verified'
+  if (providerFlow?.started && providerFlow.saveClicked) {
+    return `save_${providerFlow.verificationResult || 'clicked'}`
+  }
+  if (providerFlow?.started && Number(providerFlow.providersDisabled) > 0) {
+    return providerFlow.activeProvidersRemaining === 0
+      ? 'providers_disabled'
+      : 'partial_provider_disable'
+  }
   if (auditResult === 'all_disabled') return 'saved_and_verified'
   if (auditResult === 'active_providers_remain') return 'saved_active_remain'
   if (summary.providerSaveTest?.saveButtonClicked) return `save_${saveResult || 'clicked'}`
@@ -1040,6 +1054,11 @@ function getDiagnosticSummary(diagnostic) {
     typeof summary.providerFullToggleTest === 'object'
       ? summary.providerFullToggleTest
       : {}
+  const providerFlow =
+    summary.providerFlowResult &&
+    typeof summary.providerFlowResult === 'object'
+      ? summary.providerFlowResult
+      : {}
   const saveTest =
     summary.providerSaveTest &&
     typeof summary.providerSaveTest === 'object'
@@ -1051,8 +1070,15 @@ function getDiagnosticSummary(diagnostic) {
       ? summary.providerPersistenceAudit
       : {}
   const providersDisabledCount =
-    Math.max(0, Number(fullToggle.successfulCount) || Number(summary.providerClickedCount) || 0)
+    Math.max(
+      0,
+      Number(providerFlow.providersDisabled) ||
+        Number(fullToggle.successfulCount) ||
+        Number(summary.providerClickedCount) ||
+        0
+    )
   const activeProvidersRemainingValue =
+    providerFlow.activeProvidersRemaining ??
     audit.activeLegitimateInterestCount ??
     fullToggle.endingCount ??
     summary.activeProviderToggleCount ??
@@ -1073,11 +1099,11 @@ function getDiagnosticSummary(diagnostic) {
     providersDisabledCount,
     activeProvidersRemaining,
     saveClicked:
-      Boolean(saveTest.saveButtonClicked),
+      Boolean(providerFlow.saveClicked || saveTest.saveButtonClicked),
     saveVerificationResult:
-      String(saveTest.saveVerificationResult || 'none'),
+      String(saveTest.saveVerificationResult || providerFlow.verificationResult || 'none'),
     finalVerificationResult:
-      String(audit.auditResult || summary.providerPersistenceReason || 'none'),
+      String(providerFlow.verificationResult || audit.auditResult || summary.providerPersistenceReason || 'none'),
     lastError:
       String(diagnostic?.lastError || diagnostic?.error || diagnostic?.blockedReason || 'none'),
   }
@@ -1103,8 +1129,7 @@ function formatFundingChoicesCompactSummary(summary) {
   }
 
   return [
-    'providerFlowResult:',
-    formatProviderFullToggleTest(summary.providerFullToggleTest),
+    formatProviderFlowResult(summary.providerFlowResult),
     formatProviderSaveTest(summary.providerSaveTest),
     formatProviderPersistenceAudit(summary.providerPersistenceAudit),
     formatProviderCountSummary(summary),
@@ -3694,6 +3719,28 @@ function formatProviderFullToggleTest(summary) {
     `successfulCount:${Math.max(0, Number(test.successfulCount) || 0)}`,
     `targetDataIds:${targetDataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
     `stopReason:${String(test.stopReason || 'none').slice(0, 80)}`,
+  ].join(' ')
+}
+
+function formatProviderFlowResult(summary) {
+  const result =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!result) return 'providerFlowResult: none'
+
+  return [
+    'providerFlowResult:',
+    `started:${Boolean(result.started)}`,
+    `completed:${Boolean(result.completed)}`,
+    `providersDetected:${Math.max(0, Number(result.providersDetected) || 0)}`,
+    `providersDisabled:${Math.max(0, Number(result.providersDisabled) || 0)}`,
+    `activeProvidersRemaining:${Math.max(0, Number(result.activeProvidersRemaining) || 0)}`,
+    `saveClicked:${Boolean(result.saveClicked)}`,
+    `panelClosedAfterSave:${Boolean(result.panelClosedAfterSave)}`,
+    `verificationResult:${String(result.verificationResult || 'none').slice(0, 120)}`,
+    `elapsedMs:${Math.max(0, Number(result.elapsedMs) || 0)}`,
   ].join(' ')
 }
 

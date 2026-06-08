@@ -108,6 +108,7 @@ let lastFundingChoicesProviderSingleToggleTestAttached = false
 let lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
 let lastFundingChoicesProviderMultiToggleTest = null
 let lastFundingChoicesProviderFullToggleTest = null
+let lastFundingChoicesProviderFlowResult = null
 let lastFundingChoicesProviderFullToggleStopTrace = null
 let lastFundingChoicesProviderPostToggleSaveDiagnostics = null
 let lastFundingChoicesProviderSaveTest = null
@@ -4222,6 +4223,10 @@ function recordCurrentSiteDiagnostic({
             providerFullToggleTest:
               sanitizeFundingChoicesProviderFullToggleTest(
                 fundingChoicesControlDiagnostics.providerFullToggleTest
+              ),
+            providerFlowResult:
+              sanitizeFundingChoicesProviderFlowResult(
+                fundingChoicesControlDiagnostics.providerFlowResult
               ),
             providerFullToggleStopTrace:
               sanitizeFundingChoicesProviderFullToggleStopTrace(
@@ -12492,6 +12497,29 @@ function setFundingChoicesProviderFullToggleTestDiagnostic(summary = {}) {
   }
 }
 
+function setFundingChoicesProviderFlowResult(summary = {}) {
+  lastFundingChoicesProviderFlowResult = {
+    started:
+      Boolean(summary.started),
+    completed:
+      Boolean(summary.completed),
+    providersDetected:
+      Math.max(0, Number(summary.providersDetected) || 0),
+    providersDisabled:
+      Math.max(0, Number(summary.providersDisabled) || 0),
+    activeProvidersRemaining:
+      Math.max(0, Number(summary.activeProvidersRemaining) || 0),
+    saveClicked:
+      Boolean(summary.saveClicked),
+    panelClosedAfterSave:
+      Boolean(summary.panelClosedAfterSave),
+    verificationResult:
+      String(summary.verificationResult || '').slice(0, 120),
+    elapsedMs:
+      Math.max(0, Number(summary.elapsedMs) || 0),
+  }
+}
+
 function getFundingChoicesProviderFullToggleNextCandidate(root, startedAt) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -13454,6 +13482,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderMultiToggleTest,
     providerFullToggleTest:
       lastFundingChoicesProviderFullToggleTest,
+    providerFlowResult:
+      lastFundingChoicesProviderFlowResult,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
     providerPostToggleSaveDiagnostics:
@@ -13521,7 +13551,9 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
 function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
   if (diagnostics && typeof diagnostics === 'object') {
     diagnostics.providerFlowResult =
-      diagnostics.providerFullToggleTest || null
+      diagnostics.providerFlowResult ||
+      lastFundingChoicesProviderFlowResult ||
+      null
     diagnostics.providerFullToggleResult =
       diagnostics.providerFullToggleTest || null
     diagnostics.providerVisibleFinalVerification =
@@ -13546,6 +13578,11 @@ function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
     'providerFinalDataIdFilterLogicTrace',
     'providerDataIdComparisonTrace',
     'providerComparisonInputTrace',
+    'providerFullToggleStopTrace',
+    'providerBudgetGuardTrace',
+    'providerRemainingCountTrace',
+    'providerActiveAfterTrace',
+    'providerNextTargetLookupTrace',
     'providerToggleCountWriteTrace',
     'providerGuardValueTrace',
     'provider15GuardSnapshot',
@@ -13554,6 +13591,18 @@ function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
     'providerSingleToggleTest',
     'providerMultiToggleTest',
     'providerSingleToggleTestExportState',
+    'providerManualToggleInspection',
+    'providerCountSources',
+    'providerFirstThreeActiveEvaluations',
+    'providerPanelVisibleInputs',
+    'providerDocumentWideInputs',
+    'providerGuardCountEntries',
+    'providerVisibleActiveEntries',
+    'guardOnlyEntries',
+    'visibleOnlyEntries',
+    'providerClickTargetHierarchy',
+    'providerVisualStateDiagnostics',
+    'providerCountComparison',
   ].forEach((key) => {
     delete diagnostics[key]
   })
@@ -19280,6 +19329,31 @@ function sanitizeFundingChoicesProviderFullToggleTest(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderFlowResult(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    started:
+      Boolean(summary.started),
+    completed:
+      Boolean(summary.completed),
+    providersDetected:
+      Math.max(0, Number(summary.providersDetected) || 0),
+    providersDisabled:
+      Math.max(0, Number(summary.providersDisabled) || 0),
+    activeProvidersRemaining:
+      Math.max(0, Number(summary.activeProvidersRemaining) || 0),
+    saveClicked:
+      Boolean(summary.saveClicked),
+    panelClosedAfterSave:
+      Boolean(summary.panelClosedAfterSave),
+    verificationResult:
+      String(summary.verificationResult || '').slice(0, 120),
+    elapsedMs:
+      Math.max(0, Number(summary.elapsedMs) || 0),
+  }
+}
+
 function sanitizeFundingChoicesProviderFullToggleStopTrace(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -20043,7 +20117,7 @@ function refreshFundingChoicesProviderPanelDiagnostics(root) {
         isFundingChoicesProviderToggleVisible(input, providerPanel)
       )
   const providerInputs =
-    visibleInputs.length > 0
+    visibleInputs.length > 0 || !ENABLE_FC_PROVIDER_VERBOSE_TRACES
       ? visibleInputs
       : getDocumentFundingChoicesProviderToggleInputs(startedAt)
   const activeInputs =
@@ -20084,7 +20158,7 @@ function getFundingChoicesStableProviderToggleInputs(root, startedAt) {
         isFundingChoicesProviderToggleVisible(input, providerPanel)
       )
 
-  return visibleInputs.length > 0
+  return visibleInputs.length > 0 || !ENABLE_FC_PROVIDER_VERBOSE_TRACES
     ? visibleInputs
     : getDocumentFundingChoicesProviderToggleInputs(startedAt)
 }
@@ -20106,7 +20180,20 @@ function getFundingChoicesProviderActiveCountFromDocument(providerPanel) {
 }
 
 function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
+  const flowStartedAt =
+    Date.now()
   try {
+    setFundingChoicesProviderFlowResult({
+      started: true,
+      completed: false,
+      providersDetected: 0,
+      providersDisabled: 0,
+      activeProvidersRemaining: 0,
+      saveClicked: false,
+      panelClosedAfterSave: false,
+      verificationResult: 'started',
+      elapsedMs: 0,
+    })
     setFundingChoicesProviderLabelCoordinateInvocationState('invoked')
     setFundingChoicesProviderLabelCoordinateExecutionStep('before_enter_trace')
     setFundingChoicesNetworkPhase('provider_state_change')
@@ -20133,11 +20220,22 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         found: 0,
         scanned: 0,
       })
+      setFundingChoicesProviderFlowResult({
+        started: true,
+        completed: false,
+        providersDetected: 0,
+        providersDisabled: 0,
+        activeProvidersRemaining: 0,
+        saveClicked: false,
+        panelClosedAfterSave: false,
+        verificationResult: 'provider_panel_not_verified',
+        elapsedMs: Date.now() - flowStartedAt,
+      })
       return false
     }
 
     const startedAt =
-      Date.now()
+      flowStartedAt
     const providerInputs =
       getBoundedFundingChoicesProviderToggleInputs(providerPanel, startedAt)
         .filter((input) =>
@@ -20159,6 +20257,10 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
     lastFundingChoicesProviderInspectedCount = providerInputs.length
     lastFundingChoicesProviderActiveFoundCount = activeInputs.length
     lastFundingChoicesProviderTimeBudgetExceeded = false
+    const initialActiveLegitimateInterestCount =
+      activeInputs
+        .filter(isFundingChoicesProviderLegitimateInterestInput)
+        .length
 
     if (FUNDING_CHOICES_PROVIDER_OWNER_DIAGNOSTIC_ONLY) {
       setFundingChoicesProviderLabelCoordinateInvocationState('blocked_by_feature_flag')
@@ -20180,15 +20282,23 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
           ? 'read-only-diagnostic'
           : ''
 
+      setFundingChoicesProviderFlowResult({
+        started: true,
+        completed: false,
+        providersDetected: initialActiveLegitimateInterestCount,
+        providersDisabled: 0,
+        activeProvidersRemaining: initialActiveLegitimateInterestCount,
+        saveClicked: false,
+        panelClosedAfterSave: false,
+        verificationResult: 'provider_owner_diagnostic_only',
+        elapsedMs: Date.now() - flowStartedAt,
+      })
+
       return false
     }
 
     const targetDataIds = []
     const targetLabels = []
-    const initialActiveLegitimateInterestCount =
-      activeInputs
-        .filter(isFundingChoicesProviderLegitimateInterestInput)
-        .length
     let attemptedCount = 0
     let successfulCount = 0
     let currentActiveCount = initialActiveLegitimateInterestCount
@@ -20318,25 +20428,6 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         String(visibleActiveDataIds[0] || '').slice(0, 80)
       const targetProviderPanel =
         getVisibleFundingChoicesProviderPreferencesPanel(root)
-      const targetRawMatches =
-        targetProviderPanel
-          ? safeQuerySelectorAll(
-              document,
-              FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS
-            )
-          : []
-      const targetMappedInputs =
-        uniqueElements(
-          targetRawMatches
-            .map(getFundingChoicesProviderToggleInput)
-            .filter(Boolean)
-        )
-      const targetInPanelInputs =
-        targetProviderPanel
-          ? targetMappedInputs.filter((input) =>
-              isFundingChoicesProviderToggleInPanel(input, targetProviderPanel)
-            )
-          : []
       const targetProviderInputs =
         targetProviderPanel &&
         isFundingChoicesProviderPreferencesVisuallyVerified(targetProviderPanel)
@@ -20345,141 +20436,8 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
                 isFundingChoicesProviderToggleVisible(input, targetProviderPanel)
               )
           : []
-      const targetTraceBoundedInputs =
-        targetInPanelInputs
-          .slice(0, MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT)
-      const targetTraceVisibleInputs =
-        targetProviderPanel
-          ? targetTraceBoundedInputs.filter((input) =>
-              isFundingChoicesProviderToggleVisible(input, targetProviderPanel)
-            )
-          : []
       const requestedDataIdForComparison =
         firstTargetDataIdRequested
-      const targetDomCollectionDataIdsBeforeLimit =
-        targetInPanelInputs.map((input) =>
-          input?.getAttribute?.('data-id') || ''
-        )
-      const targetDomCollectionDataIdsAfterLimit =
-        targetTraceBoundedInputs.map((input) =>
-          input?.getAttribute?.('data-id') || ''
-        )
-      setFundingChoicesProviderDomResolutionCollectionTrace({
-        requestedDataId: requestedDataIdForComparison,
-        collectionLengthBeforeLimit: targetInPanelInputs.length,
-        collectionLengthAfterLimit: targetTraceBoundedInputs.length,
-        limitValue: MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT,
-        collectionDataIdsBeforeLimit: targetDomCollectionDataIdsBeforeLimit,
-        collectionDataIdsAfterLimit: targetDomCollectionDataIdsAfterLimit,
-        candidate32PresentBeforeLimit:
-          targetDomCollectionDataIdsBeforeLimit.includes('32'),
-        candidate32PresentAfterLimit:
-          targetDomCollectionDataIdsAfterLimit.includes('32'),
-        candidate36PresentBeforeLimit:
-          targetDomCollectionDataIdsBeforeLimit.includes('36'),
-        candidate36PresentAfterLimit:
-          targetDomCollectionDataIdsAfterLimit.includes('36'),
-      })
-      const targetComparisonEntries =
-        visibleActiveEntries
-      setFundingChoicesProviderComparisonInputTrace({
-        requestedDataId: requestedDataIdForComparison,
-        sourceCollectionLength: targetComparisonEntries.length,
-        sourceCollectionDataIds:
-          targetComparisonEntries.map((entry) =>
-            entry?.dataId || ''
-          ),
-        lastVisibleActiveEntriesDataIds:
-          (Array.isArray(lastFundingChoicesProviderVisibleActiveEntries)
-            ? lastFundingChoicesProviderVisibleActiveEntries
-            : [])
-            .map((entry) =>
-              entry?.dataId || ''
-            ),
-        lastProviderGuardCountEntriesDataIds:
-          (Array.isArray(lastFundingChoicesProviderGuardCountEntries)
-            ? lastFundingChoicesProviderGuardCountEntries
-            : [])
-            .map((entry) =>
-              entry?.dataId || ''
-            ),
-        collectionNameUsedByComparisonStage: 'lastFundingChoicesProviderVisibleActiveEntries',
-      })
-      setFundingChoicesProviderDataIdComparisonTrace({
-        requestedDataId: requestedDataIdForComparison,
-        requestedDataIdType: typeof requestedDataIdForComparison,
-        comparisons: targetComparisonEntries.map((entry) => {
-          const candidateDatasetId =
-            entry?.dataId
-          const candidateAttributeDataId =
-            entry?.dataId
-          const candidateInputId =
-            ''
-          const normalizedCandidateDataId =
-            String(candidateAttributeDataId || '').slice(0, 80)
-
-          return {
-            candidateDatasetId,
-            candidateDatasetIdType: typeof candidateDatasetId,
-            candidateAttributeDataId,
-            candidateAttributeDataIdType: typeof candidateAttributeDataId,
-            candidateInputId,
-            candidateInputIdType: typeof candidateInputId,
-            normalizedCandidateDataId,
-            normalizedCandidateDataIdType: typeof normalizedCandidateDataId,
-            equalityComparisonResult:
-              normalizedCandidateDataId === requestedDataIdForComparison,
-            strictEqualityComparisonResult:
-              candidateAttributeDataId === requestedDataIdForComparison,
-            comparisonTypes:
-              `normalized:${typeof normalizedCandidateDataId},requested:${typeof requestedDataIdForComparison},attribute:${typeof candidateAttributeDataId},dataset:${typeof candidateDatasetId},inputId:${typeof candidateInputId}`,
-          }
-        }),
-      })
-      const targetIdCounts =
-        getFundingChoicesProviderSelectorTraceIdCounts(targetTraceVisibleInputs)
-      const targetFilterDataId =
-        '23'
-      const rawTraceCandidates =
-        targetRawMatches
-          .map((candidate) =>
-            getFundingChoicesProviderFilterTraceCandidate(candidate, targetProviderPanel)
-          )
-          .filter((candidate) =>
-            candidate.dataId === targetFilterDataId
-          )
-      const mappedTraceCandidates =
-        targetMappedInputs
-          .map((candidate) =>
-            getFundingChoicesProviderFilterTraceCandidate(candidate, targetProviderPanel)
-          )
-          .filter((candidate) =>
-            candidate.dataId === targetFilterDataId
-          )
-      const inPanelTraceCandidates =
-        targetInPanelInputs
-          .map((candidate) =>
-            getFundingChoicesProviderFilterTraceCandidate(candidate, targetProviderPanel)
-          )
-          .filter((candidate) =>
-            candidate.dataId === targetFilterDataId
-          )
-      const boundedTraceCandidates =
-        targetTraceBoundedInputs
-          .map((candidate) =>
-            getFundingChoicesProviderFilterTraceCandidate(candidate, targetProviderPanel)
-          )
-          .filter((candidate) =>
-            candidate.dataId === targetFilterDataId
-          )
-      const visibleTraceCandidates =
-        targetTraceVisibleInputs
-          .map((candidate) =>
-            getFundingChoicesProviderFilterTraceCandidate(candidate, targetProviderPanel)
-          )
-          .filter((candidate) =>
-            candidate.dataId === targetFilterDataId
-          )
       const normalizedRequestedFilterDataId =
         String(firstTargetDataIdRequested || '').slice(0, 80)
       const refreshedVisibleActiveEntryDataIds =
@@ -20491,160 +20449,6 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
               String(entry?.dataId || '').slice(0, 80)
             )
         )
-      const requestedTraceCandidates =
-        visibleTraceCandidates
-          .filter((candidate) => {
-            const normalizedCandidateDataId =
-              String(candidate?.dataId || '').slice(0, 80)
-
-            return (
-              normalizedCandidateDataId === normalizedRequestedFilterDataId &&
-              refreshedVisibleActiveEntryDataIds.has(normalizedCandidateDataId)
-            )
-          })
-      const requestedTraceCandidateKeys =
-        new Set(
-          requestedTraceCandidates.map(getFundingChoicesProviderFilterTraceKey)
-        )
-      setFundingChoicesProviderFinalDataIdFilterLogicTrace(
-        visibleTraceCandidates.map((candidate) => {
-          const normalizedCandidateDataId =
-            String(candidate?.dataId || '').slice(0, 80)
-          const equalityResult =
-            normalizedCandidateDataId === normalizedRequestedFilterDataId
-          const membershipResult =
-            refreshedVisibleActiveEntryDataIds.has(normalizedCandidateDataId)
-          const callbackReturnValue =
-            equalityResult && membershipResult
-          const candidateKept =
-            requestedTraceCandidateKeys.has(
-              getFundingChoicesProviderFilterTraceKey(candidate)
-            )
-          let candidateRemovedReason =
-            ''
-
-          if (candidateKept) {
-            candidateRemovedReason = 'kept'
-          } else if (!callbackReturnValue) {
-            candidateRemovedReason =
-              equalityResult
-                ? 'refreshed_visible_entry_membership_false'
-                : 'callback_returned_false'
-          } else {
-            candidateRemovedReason =
-              'callback_true_but_candidate_not_in_requested_source_collection'
-          }
-
-          return {
-            requestedDataId: firstTargetDataIdRequested || '',
-            candidateDataId: candidate?.dataId || '',
-            normalizedRequestedDataId: normalizedRequestedFilterDataId,
-            normalizedCandidateDataId,
-            equalityResult,
-            callbackReturnValue,
-            candidateKept,
-            candidateRemovedReason,
-          }
-        })
-      )
-      const removedFilterCandidates = [
-        ...getFundingChoicesProviderRemovedFilterCandidates(
-          rawTraceCandidates,
-          mappedTraceCandidates,
-          'removed_by_provider_toggle_input_mapping_or_deduplication'
-        ),
-        ...getFundingChoicesProviderRemovedFilterCandidates(
-          mappedTraceCandidates,
-          inPanelTraceCandidates,
-          'removed_by_inside_reacquired_visible_dialog_filter'
-        ),
-        ...getFundingChoicesProviderRemovedFilterCandidates(
-          inPanelTraceCandidates,
-          boundedTraceCandidates,
-          'removed_by_provider_inspect_limit'
-        ),
-        ...getFundingChoicesProviderRemovedFilterCandidates(
-          boundedTraceCandidates,
-          visibleTraceCandidates,
-          'removed_by_visible_in_reacquired_dialog_filter'
-        ),
-        ...getFundingChoicesProviderRemovedFilterCandidates(
-          visibleTraceCandidates,
-          requestedTraceCandidates,
-          `removed_by_final_requested_data_id_filter:${firstTargetDataIdRequested || 'none'}`
-        ),
-      ]
-
-      setFundingChoicesProviderTargetFilterTrace({
-        dataId: targetFilterDataId,
-        candidateCountBeforeFiltering: rawTraceCandidates.length,
-        finalSurvivingCandidateCount: requestedTraceCandidates.length,
-        filterStages: [
-          {
-            filterName: 'raw selector candidates with data-id=23',
-            countAfterFilter: rawTraceCandidates.length,
-          },
-          {
-            filterName: 'mapped provider inputs and deduped',
-            countAfterFilter: mappedTraceCandidates.length,
-          },
-          {
-            filterName: 'inside reacquired visible dialog',
-            countAfterFilter: inPanelTraceCandidates.length,
-          },
-          {
-            filterName: 'bounded to provider inspect limit',
-            countAfterFilter: boundedTraceCandidates.length,
-          },
-          {
-            filterName: 'visible in reacquired dialog',
-            countAfterFilter: visibleTraceCandidates.length,
-          },
-          {
-            filterName: `final requested data-id=${firstTargetDataIdRequested || 'none'}`,
-            countAfterFilter: requestedTraceCandidates.length,
-          },
-        ],
-        removedCandidates: removedFilterCandidates,
-      })
-
-      setFundingChoicesProviderTargetLookupSelectorTrace({
-        selectorString: FUNDING_CHOICES_PROVIDER_TOGGLE_SELECTORS,
-        totalMatchesInVisibleDialog: targetTraceVisibleInputs.length,
-        matchesWithDataId23: targetIdCounts['23'],
-        matchesWithDataId28: targetIdCounts['28'],
-        matchesWithDataId32: targetIdCounts['32'],
-        matchesWithDataId36: targetIdCounts['36'],
-        filteringStagesApplied: [
-          {
-            name: 'raw document selector matches',
-            count: targetRawMatches.length,
-          },
-          {
-            name: 'mapped provider toggle inputs',
-            count: targetMappedInputs.length,
-          },
-          {
-            name: 'inside reacquired visible dialog',
-            count: targetInPanelInputs.length,
-          },
-          {
-            name: 'bounded to provider inspect limit',
-            count: Math.min(
-              targetInPanelInputs.length,
-              MAX_FUNDING_CHOICES_PROVIDER_TOGGLE_INSPECT
-            ),
-          },
-          {
-            name: 'visible in reacquired dialog',
-            count: targetTraceVisibleInputs.length,
-          },
-          {
-            name: `data-id=${firstTargetDataIdRequested || 'none'}`,
-            count: requestedTraceCandidates.length,
-          },
-        ],
-      })
 
       setFundingChoicesProviderActiveStateMethodFromInputs(targetProviderInputs)
       lastFundingChoicesProviderPreferenceOpened = Boolean(targetProviderPanel)
@@ -20658,7 +20462,7 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       )
 
       const targetInputCandidates =
-        targetTraceVisibleInputs.filter((candidateInput) => {
+        targetProviderInputs.filter((candidateInput) => {
           const normalizedCandidateDataId =
             String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80)
 
@@ -20667,157 +20471,12 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
             refreshedVisibleActiveEntryDataIds.has(normalizedCandidateDataId)
           )
         })
-      const targetInputCandidateDataIds =
-        targetInputCandidates.map((candidateInput) =>
-          candidateInput?.getAttribute?.('data-id') || ''
-        )
-      setFundingChoicesProviderDomCandidateSourceTrace({
-        requestedDataId: requestedDataIdForComparison,
-        collectionName: 'targetTraceVisibleInputs filtered by requested data-id and refreshed visible entries',
-        collectionLength: targetInputCandidates.length,
-        collectionDataIds: targetInputCandidateDataIds,
-        containsRequestedDataId:
-          Boolean(
-            requestedDataIdForComparison &&
-              targetInputCandidateDataIds.includes(requestedDataIdForComparison)
-          ),
-        first10DataIds: targetInputCandidateDataIds.slice(0, 10),
-        last10DataIds: targetInputCandidateDataIds.slice(-10),
-        sourceBuiltFromSelector: true,
-        sourceBuiltFromVisibleInputs: true,
-        sourceBuiltFromVisibleActiveEntries: true,
-      })
-      const initialLifecycleCandidate =
-        targetInputCandidates[0] || null
       const input =
         targetInputCandidates.find((candidateInput) =>
           Boolean(getFundingChoicesProviderLegitimateInterestLabel(candidateInput))
         ) ||
         targetInputCandidates[0] ||
         null
-      const lifecycleReacquiredPanel =
-        getVisibleFundingChoicesProviderPreferencesPanel(root)
-      const lifecycleReacquiredCandidates =
-        lifecycleReacquiredPanel &&
-        requestedDataIdForComparison
-          ? getBoundedFundingChoicesProviderToggleInputs(
-              lifecycleReacquiredPanel,
-              startedAt
-            ).filter((candidateInput) =>
-              String(candidateInput?.getAttribute?.('data-id') || '').slice(0, 80) ===
-                requestedDataIdForComparison
-            )
-          : []
-      const lifecycleReacquiredCandidate =
-        lifecycleReacquiredCandidates[0] || null
-      let lifecycleFinalFailureReason =
-        ''
-
-      if (!requestedDataIdForComparison) {
-        lifecycleFinalFailureReason = 'requested_data_id_missing'
-      } else if (!initialLifecycleCandidate) {
-        lifecycleFinalFailureReason = 'initial_candidate_missing'
-      } else if (!initialLifecycleCandidate.isConnected) {
-        lifecycleFinalFailureReason = 'initial_candidate_disconnected'
-      } else if (!lifecycleReacquiredCandidate) {
-        lifecycleFinalFailureReason = 'reacquired_candidate_missing'
-      } else if (initialLifecycleCandidate !== lifecycleReacquiredCandidate) {
-        lifecycleFinalFailureReason = 'reacquired_candidate_different_reference'
-      } else if (!input) {
-        lifecycleFinalFailureReason = 'final_selected_candidate_missing'
-      } else {
-        lifecycleFinalFailureReason = 'none'
-      }
-
-      setFundingChoicesProviderDomReferenceLifecycleTrace({
-        requestedDataId: requestedDataIdForComparison,
-        candidateFoundInitially: Boolean(initialLifecycleCandidate),
-        candidateConnectedInitially:
-          Boolean(initialLifecycleCandidate?.isConnected),
-        candidateConnectedAtFinalResolution:
-          Boolean(initialLifecycleCandidate?.isConnected),
-        candidateSameReferenceAtFinalResolution:
-          Boolean(
-            initialLifecycleCandidate &&
-              lifecycleReacquiredCandidate &&
-              initialLifecycleCandidate === lifecycleReacquiredCandidate
-          ),
-        candidateReacquiredByDataId: Boolean(lifecycleReacquiredCandidate),
-        candidateReacquiredConnected:
-          Boolean(lifecycleReacquiredCandidate?.isConnected),
-        candidateReacquiredVisible:
-          Boolean(
-            lifecycleReacquiredPanel &&
-              lifecycleReacquiredCandidate &&
-              isFundingChoicesProviderToggleVisible(
-                lifecycleReacquiredCandidate,
-                lifecycleReacquiredPanel
-              )
-          ),
-        candidateReacquiredInsideVisibleDialog:
-          Boolean(
-            lifecycleReacquiredPanel &&
-              lifecycleReacquiredCandidate &&
-              isFundingChoicesProviderToggleInPanel(
-                lifecycleReacquiredCandidate,
-                lifecycleReacquiredPanel
-              )
-          ),
-        finalFailureReason: lifecycleFinalFailureReason,
-      })
-      setFundingChoicesProviderDomTargetResolutionTrace({
-        requestedDataId: requestedDataIdForComparison,
-        matchingCandidatesCount: targetInputCandidates.length,
-        matchingCandidateDataIds:
-          targetInputCandidates.map((candidateInput) =>
-            candidateInput?.getAttribute?.('data-id') || ''
-          ),
-        candidateTagNames:
-          targetInputCandidates.map((candidateInput) =>
-            candidateInput?.tagName || ''
-          ),
-        candidateClasses:
-          targetInputCandidates.map((candidateInput) =>
-            candidateInput?.className || ''
-          ),
-        candidateConnected:
-          targetInputCandidates.map((candidateInput) =>
-            Boolean(candidateInput?.isConnected)
-          ),
-        candidateVisible:
-          targetInputCandidates.map((candidateInput) =>
-            Boolean(
-              targetProviderPanel &&
-                isFundingChoicesProviderToggleVisible(candidateInput, targetProviderPanel)
-            )
-          ),
-        candidateInsideVisibleDialog:
-          targetInputCandidates.map((candidateInput) =>
-            Boolean(
-              targetProviderPanel &&
-                isFundingChoicesProviderToggleInPanel(candidateInput, targetProviderPanel)
-            )
-          ),
-        candidateRejectedReason:
-          targetInputCandidates.map((candidateInput) => {
-            if (candidateInput === input) return ''
-            if (!candidateInput?.isConnected) return 'candidate_disconnected'
-            if (
-              !targetProviderPanel ||
-              !isFundingChoicesProviderToggleInPanel(candidateInput, targetProviderPanel)
-            ) {
-              return 'candidate_outside_visible_dialog'
-            }
-            if (!isFundingChoicesProviderToggleVisible(candidateInput, targetProviderPanel)) {
-              return 'candidate_not_visible'
-            }
-            if (!getFundingChoicesProviderLegitimateInterestLabel(candidateInput)) {
-              return 'legitimate_interest_label_missing'
-            }
-            return 'not_selected'
-          }),
-        finalSelectedCandidateExists: Boolean(input),
-      })
       const label =
         getFundingChoicesProviderLegitimateInterestLabel(input)
       const slider =
@@ -21238,6 +20897,49 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         root,
         lastFundingChoicesProviderSaveTest
       )
+    const finalActiveProvidersRemaining =
+      Number.isFinite(
+        Number(
+          lastFundingChoicesProviderPersistenceAudit
+            ?.activeLegitimateInterestCount
+        )
+      )
+        ? Math.max(
+            0,
+            Number(
+              lastFundingChoicesProviderPersistenceAudit
+                ?.activeLegitimateInterestCount
+            ) || 0
+          )
+        : Math.max(0, Number(currentActiveCount) || 0)
+    const saveClicked =
+      Boolean(lastFundingChoicesProviderSaveTest?.saveButtonClicked)
+    const panelClosedAfterSave =
+      Boolean(
+        saveClicked &&
+          !lastFundingChoicesProviderSaveTest?.panelStillVisibleAfterClick
+      )
+    const verificationResult =
+      String(
+        lastFundingChoicesProviderPersistenceAudit?.auditResult ||
+          lastFundingChoicesProviderSaveTest?.saveVerificationResult ||
+          stopReason ||
+          'not_verified'
+      )
+    setFundingChoicesProviderFlowResult({
+      started: true,
+      completed:
+        finalActiveProvidersRemaining === 0 &&
+        saveClicked &&
+        verificationResult === 'all_disabled',
+      providersDetected: initialActiveLegitimateInterestCount,
+      providersDisabled: successfulCount,
+      activeProvidersRemaining: finalActiveProvidersRemaining,
+      saveClicked,
+      panelClosedAfterSave,
+      verificationResult,
+      elapsedMs: Date.now() - startedAt,
+    })
 
     if (attemptedCount === 0 && !firstToggleRecorded) {
       setFundingChoicesProviderSingleToggleTestDiagnostic({
@@ -21301,6 +21003,27 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
       sourceCodeBranchName: 'provider_phase_exception',
     })
     recordFundingChoicesProviderLabelCoordinateError(error)
+    setFundingChoicesProviderFlowResult({
+      started: true,
+      completed: false,
+      providersDetected:
+        lastFundingChoicesProviderFullToggleTest?.startingCount ??
+        lastFundingChoicesActiveProviderToggleCount,
+      providersDisabled:
+        lastFundingChoicesProviderFullToggleTest?.successfulCount,
+      activeProvidersRemaining:
+        lastFundingChoicesProviderFullToggleTest?.endingCount ??
+        lastFundingChoicesActiveProviderToggleCount,
+      saveClicked:
+        Boolean(lastFundingChoicesProviderSaveTest?.saveButtonClicked),
+      panelClosedAfterSave:
+        Boolean(
+          lastFundingChoicesProviderSaveTest?.saveButtonClicked &&
+            !lastFundingChoicesProviderSaveTest?.panelStillVisibleAfterClick
+        ),
+      verificationResult: 'unexpected_exception',
+      elapsedMs: Date.now() - flowStartedAt,
+    })
     return false
   }
 }
@@ -22327,23 +22050,44 @@ function collectFundingChoicesControlDiagnostics(root) {
         getFundingChoicesControlDiagnostic(control, root)
       )
   const providerFirstActiveToggleDiagnostic =
-    getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+      : null
   const providerClickTargetHierarchy =
-    getFundingChoicesProviderClickTargetHierarchy(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderClickTargetHierarchy(root)
+      : null
   const providerVisualStateDiagnostics =
-    getFundingChoicesProviderVisualStateDiagnostics(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderVisualStateDiagnostics(root)
+      : null
   const providerCountComparison =
-    getFundingChoicesProviderCountComparison(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderCountComparison(root)
+      : null
   const providerInputComparisonDiagnostics =
-    collectFundingChoicesProviderInputComparisonDiagnostics(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? collectFundingChoicesProviderInputComparisonDiagnostics(root)
+      : {
+          providerPanelVisibleInputs: null,
+          providerDocumentWideInputs: null,
+        }
   const providerConsentBreakdownDiagnostic =
-    getFundingChoicesProviderConsentBreakdownDiagnostic(root)
-  const providerCountComputationDiagnostic =
-    getFundingChoicesProviderCountComputationDiagnostics(root)
-  lastFundingChoicesProviderCountSources =
-    providerCountComputationDiagnostic.providerCountSources
-  lastFundingChoicesProviderFirstThreeActiveEvaluations =
-    providerCountComputationDiagnostic.providerFirstThreeActiveEvaluations
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderConsentBreakdownDiagnostic(root)
+      : {
+          legitimateInterestPressed: null,
+          consentPressed: null,
+          providerCountBreakdown: null,
+        }
+  if (ENABLE_FC_PROVIDER_VERBOSE_TRACES) {
+    const providerCountComputationDiagnostic =
+      getFundingChoicesProviderCountComputationDiagnostics(root)
+    lastFundingChoicesProviderCountSources =
+      providerCountComputationDiagnostic.providerCountSources
+    lastFundingChoicesProviderFirstThreeActiveEvaluations =
+      providerCountComputationDiagnostic.providerFirstThreeActiveEvaluations
+  }
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
@@ -22397,6 +22141,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderMultiToggleTest,
     providerFullToggleTest:
       lastFundingChoicesProviderFullToggleTest,
+    providerFlowResult:
+      lastFundingChoicesProviderFlowResult,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
     providerPostToggleSaveDiagnostics:
@@ -22632,23 +22378,44 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
       .map(getFundingChoicesLightweightControlDiagnostic)
   const providerFirstActiveToggleDiagnostic =
-    getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderFirstActiveToggleDiagnostic(root)
+      : null
   const providerClickTargetHierarchy =
-    getFundingChoicesProviderClickTargetHierarchy(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderClickTargetHierarchy(root)
+      : null
   const providerVisualStateDiagnostics =
-    getFundingChoicesProviderVisualStateDiagnostics(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderVisualStateDiagnostics(root)
+      : null
   const providerCountComparison =
-    getFundingChoicesProviderCountComparison(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderCountComparison(root)
+      : null
   const providerInputComparisonDiagnostics =
-    collectFundingChoicesProviderInputComparisonDiagnostics(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? collectFundingChoicesProviderInputComparisonDiagnostics(root)
+      : {
+          providerPanelVisibleInputs: null,
+          providerDocumentWideInputs: null,
+        }
   const providerConsentBreakdownDiagnostic =
-    getFundingChoicesProviderConsentBreakdownDiagnostic(root)
-  const providerCountComputationDiagnostic =
-    getFundingChoicesProviderCountComputationDiagnostics(root)
-  lastFundingChoicesProviderCountSources =
-    providerCountComputationDiagnostic.providerCountSources
-  lastFundingChoicesProviderFirstThreeActiveEvaluations =
-    providerCountComputationDiagnostic.providerFirstThreeActiveEvaluations
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? getFundingChoicesProviderConsentBreakdownDiagnostic(root)
+      : {
+          legitimateInterestPressed: null,
+          consentPressed: null,
+          providerCountBreakdown: null,
+        }
+  if (ENABLE_FC_PROVIDER_VERBOSE_TRACES) {
+    const providerCountComputationDiagnostic =
+      getFundingChoicesProviderCountComputationDiagnostics(root)
+    lastFundingChoicesProviderCountSources =
+      providerCountComputationDiagnostic.providerCountSources
+    lastFundingChoicesProviderFirstThreeActiveEvaluations =
+      providerCountComputationDiagnostic.providerFirstThreeActiveEvaluations
+  }
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
@@ -22702,6 +22469,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderMultiToggleTest,
     providerFullToggleTest:
       lastFundingChoicesProviderFullToggleTest,
+    providerFlowResult:
+      lastFundingChoicesProviderFlowResult,
     providerFullToggleStopTrace:
       lastFundingChoicesProviderFullToggleStopTrace,
     providerPostToggleSaveDiagnostics:
@@ -24580,6 +24349,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderSingleToggleTestExportedToPopup = false
     lastFundingChoicesProviderMultiToggleTest = null
     lastFundingChoicesProviderFullToggleTest = null
+    lastFundingChoicesProviderFlowResult = null
     lastFundingChoicesProviderFullToggleStopTrace = null
     lastFundingChoicesProviderPostToggleSaveDiagnostics = null
     lastFundingChoicesProviderSaveTest = null
