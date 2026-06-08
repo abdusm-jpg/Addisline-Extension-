@@ -4944,6 +4944,7 @@ function formatFundingChoicesControls(summary) {
       `mainClickedCount: ${Math.max(0, Number(summary.mainClickedCount) || 0)}`,
       `mainToggleMethod: ${String(summary.mainToggleMethod || 'none').slice(0, 40)}`,
       `mainPurposeToggleAuditCount: ${Array.isArray(summary.mainPurposeToggleAudit) ? summary.mainPurposeToggleAudit.length : 0}`,
+      `mainPurposeInteractionTraceCount: ${Array.isArray(summary.mainPurposeInteractionTrace) ? summary.mainPurposeInteractionTrace.length : 0}`,
       `providerPreferenceOpened: ${Boolean(summary.providerPreferenceOpened)}`,
       `providerToggleCount: ${Math.max(0, Number(summary.providerToggleCount) || 0)}`,
       `activeProviderToggleCount: ${Math.max(0, Number(summary.activeProviderToggleCount) || 0)}`,
@@ -5404,6 +5405,49 @@ function formatFundingChoicesControls(summary) {
         `activeImmediatelyAfter:${Boolean(entry.activeImmediatelyAfter)}`,
         `activeAfterRefresh:${Boolean(entry.activeAfterRefresh)}`,
         `finalState:${String(entry.finalState || 'unknown').slice(0, 80)}`,
+        `failure:${String(entry.failureReason || 'none').slice(0, 100)}`,
+      ].join(' | '))
+    })
+  }
+
+  const mainPurposeInteractionTrace =
+    Array.isArray(summary.mainPurposeInteractionTrace)
+      ? summary.mainPurposeInteractionTrace
+          .filter((entry) =>
+            entry && typeof entry === 'object'
+          )
+          .slice(0, 8)
+      : []
+
+  if (mainPurposeInteractionTrace.length > 0) {
+    lines.push('mainPurposeInteractionTrace:')
+    mainPurposeInteractionTrace.forEach((entry, index) => {
+      const checked =
+        entry.inputCheckedBeforeAfter || {}
+      const aria =
+        entry.ariaPressedBeforeAfter || {}
+      const active =
+        entry.activeStateBeforeAfter || {}
+      const sliderPosition =
+        entry.sliderPositionBeforeAfter || {}
+      const beforePosition =
+        sliderPosition.before || {}
+      const immediatePosition =
+        sliderPosition.immediatelyAfter || {}
+      const afterPosition =
+        sliderPosition.afterRefresh || {}
+      const clickable =
+        entry.nearestClickableAncestor || {}
+
+      lines.push([
+        `${index + 1}. id:${String(entry.purposeId || 'none').slice(0, 80)}`,
+        `target:${String(entry.clickTargetUsed || 'none').slice(0, 80)}`,
+        `checked:${Boolean(checked.before)}>${Boolean(checked.immediatelyAfter)}>${Boolean(checked.afterRefresh)}`,
+        `aria:${String(aria.before || 'none').slice(0, 12)}>${String(aria.immediatelyAfter || 'none').slice(0, 12)}>${String(aria.afterRefresh || 'none').slice(0, 12)}`,
+        `active:${String(active.before || 'unknown').slice(0, 16)}>${String(active.immediatelyAfter || 'unknown').slice(0, 16)}>${String(active.afterRefresh || 'unknown').slice(0, 16)}`,
+        `slider:${String(beforePosition.inferredState || 'unknown').slice(0, 12)}>${String(immediatePosition.inferredState || 'unknown').slice(0, 12)}>${String(afterPosition.inferredState || 'unknown').slice(0, 12)}`,
+        `transform:${String(beforePosition.transform || 'none').slice(0, 40)}>${String(immediatePosition.transform || 'none').slice(0, 40)}>${String(afterPosition.transform || 'none').slice(0, 40)}`,
+        `clickable:${String(clickable.tag || 'none').slice(0, 20)}.${String(clickable.class || 'none').slice(0, 60)}`,
         `failure:${String(entry.failureReason || 'none').slice(0, 100)}`,
       ].join(' | '))
     })

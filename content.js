@@ -82,6 +82,7 @@ let lastFundingChoicesControlDiagnostics = null
 let lastFundingChoicesClickedSliderKeys = []
 let lastFundingChoicesPreferenceToggleActions = []
 let lastFundingChoicesMainPurposeToggleAudit = []
+let lastFundingChoicesMainPurposeInteractionTrace = []
 let lastFundingChoicesMainRequiredActiveBefore = 0
 let lastFundingChoicesMainRequiredActiveAfter = 0
 let lastFundingChoicesMainClickedCount = 0
@@ -4172,6 +4173,10 @@ function recordCurrentSiteDiagnostic({
             mainPurposeToggleAudit:
               sanitizeFundingChoicesMainPurposeToggleAudit(
                 fundingChoicesControlDiagnostics.mainPurposeToggleAudit
+              ),
+            mainPurposeInteractionTrace:
+              sanitizeFundingChoicesMainPurposeInteractionTrace(
+                fundingChoicesControlDiagnostics.mainPurposeInteractionTrace
               ),
             providerPreferenceOpened:
               Boolean(fundingChoicesControlDiagnostics.providerPreferenceOpened),
@@ -11809,6 +11814,185 @@ function setFundingChoicesMainPurposeToggleAudit(entries) {
       }))
 }
 
+function getFundingChoicesMainPurposeTraceElement(element) {
+  const style =
+    safeGetComputedStyle(element)
+
+  return {
+    tag:
+      String(element?.tagName || '').toLowerCase().slice(0, 40),
+    id:
+      String(element?.id || element?.getAttribute?.('id') || '').slice(0, 80),
+    class:
+      getClassNameText(element).slice(0, 160),
+    role:
+      String(element?.getAttribute?.('role') || '').slice(0, 60),
+    tabindex:
+      String(element?.getAttribute?.('tabindex') || '').slice(0, 40),
+    ariaLabel:
+      normalizeMatchText(element?.getAttribute?.('aria-label') || '').slice(0, 120),
+    cursor:
+      String(style?.cursor || '').slice(0, 40),
+    pointerEvents:
+      String(style?.pointerEvents || '').slice(0, 40),
+  }
+}
+
+function getFundingChoicesMainPurposeNearestClickableAncestor(input) {
+  return input
+    ? findFundingChoicesProviderAncestor(input, (element) =>
+        Boolean(
+          element !== input &&
+            (
+              safeMatches(element, 'button, a, label, [role="button"], [role="switch"], [role="checkbox"], [tabindex]') ||
+              typeof element.onclick === 'function' ||
+              safeGetComputedStyle(element)?.cursor === 'pointer'
+            )
+        )
+      )
+    : null
+}
+
+function getFundingChoicesMainPurposeSliderTrace(input, root) {
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  const slider =
+    safeClosest(input, '.fc-preference-slider')
+  const sliderEl =
+    slider && root?.contains?.(slider)
+      ? safeQuerySelectorAll(slider, '.fc-slider-el')[0] || null
+      : null
+  const row =
+    safeClosest(
+      input,
+      '.fc-preference-container, .fc-preference-slider-container, .fc-preference, li, [role="listitem"]'
+    )
+  const nearestClickableAncestor =
+    getFundingChoicesMainPurposeNearestClickableAncestor(input)
+  const sliderElStyle =
+    safeGetComputedStyle(sliderEl)
+
+  return {
+    inputElement:
+      getFundingChoicesMainPurposeTraceElement(input),
+    labelElement:
+      getFundingChoicesMainPurposeTraceElement(label),
+    sliderElement:
+      getFundingChoicesMainPurposeTraceElement(sliderEl || slider),
+    rowContainer:
+      getFundingChoicesMainPurposeTraceElement(row),
+    nearestClickableAncestor:
+      getFundingChoicesMainPurposeTraceElement(nearestClickableAncestor),
+    checked:
+      Boolean(input?.checked),
+    ariaPressed:
+      String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
+    activeState:
+      getFundingChoicesPreferenceToggleState(input),
+    sliderClass:
+      getClassNameText(sliderEl || slider).slice(0, 160),
+    sliderPosition: {
+      ...getFundingChoicesProviderSliderPositionDiagnostic(slider, sliderEl),
+      transform:
+        String(sliderElStyle?.transform || '').slice(0, 120),
+      left:
+        String(sliderElStyle?.left || '').slice(0, 40),
+      right:
+        String(sliderElStyle?.right || '').slice(0, 40),
+      marginLeft:
+        String(sliderElStyle?.marginLeft || '').slice(0, 40),
+    },
+  }
+}
+
+function getFundingChoicesMainPurposeInteractionTraceEntry(
+  input,
+  root,
+  before,
+  immediate,
+  after,
+  clickTargetUsed,
+  failureReason
+) {
+  return {
+    purposeId:
+      getFundingChoicesMainPurposeId(input),
+    purposeLabel:
+      getFundingChoicesPreferenceToggleLabel(input, root),
+    clickTargetUsed:
+      getFundingChoicesMainPurposeClickTargetLabel(clickTargetUsed),
+    inputElement:
+      before?.inputElement || {},
+    labelElement:
+      before?.labelElement || {},
+    sliderElement:
+      before?.sliderElement || {},
+    rowContainer:
+      before?.rowContainer || {},
+    nearestClickableAncestor:
+      before?.nearestClickableAncestor || {},
+    inputCheckedBeforeAfter: {
+      before:
+        Boolean(before?.checked),
+      immediatelyAfter:
+        Boolean(immediate?.checked),
+      afterRefresh:
+        Boolean(after?.checked),
+    },
+    ariaPressedBeforeAfter: {
+      before:
+        String(before?.ariaPressed || '').slice(0, 40),
+      immediatelyAfter:
+        String(immediate?.ariaPressed || '').slice(0, 40),
+      afterRefresh:
+        String(after?.ariaPressed || '').slice(0, 40),
+    },
+    sliderClassBeforeAfter: {
+      before:
+        String(before?.sliderClass || '').slice(0, 160),
+      immediatelyAfter:
+        String(immediate?.sliderClass || '').slice(0, 160),
+      afterRefresh:
+        String(after?.sliderClass || '').slice(0, 160),
+    },
+    sliderPositionBeforeAfter: {
+      before:
+        before?.sliderPosition || null,
+      immediatelyAfter:
+        immediate?.sliderPosition || null,
+      afterRefresh:
+        after?.sliderPosition || null,
+    },
+    activeStateBeforeAfter: {
+      before:
+        String(before?.activeState || 'unknown').slice(0, 40),
+      immediatelyAfter:
+        String(immediate?.activeState || 'unknown').slice(0, 40),
+      afterRefresh:
+        String(after?.activeState || 'unknown').slice(0, 40),
+    },
+    failureReason:
+      String(failureReason || '').slice(0, 120),
+  }
+}
+
+function setFundingChoicesMainPurposeInteractionTrace(entries) {
+  lastFundingChoicesMainPurposeInteractionTrace =
+    (Array.isArray(entries) ? entries : [])
+      .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+      .map((entry) => ({
+        ...entry,
+        purposeId:
+          String(entry?.purposeId || '').slice(0, 120),
+        purposeLabel:
+          normalizeMatchText(entry?.purposeLabel || '').slice(0, 180),
+        clickTargetUsed:
+          getFundingChoicesMainPurposeClickTargetLabel(entry?.clickTargetUsed),
+        failureReason:
+          String(entry?.failureReason || '').slice(0, 120),
+      }))
+}
+
 function isFundingChoicesPreferenceCategoryToggle(input, root) {
   return textHasAny(
     getFundingChoicesPreferenceToggleLabel(input, root),
@@ -14162,9 +14346,11 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
   const mainClickedKeys =
     new Set()
   const mainPurposeToggleAuditEntries = []
+  const mainPurposeInteractionTraceEntries = []
 
   if (scope !== 'provider') {
     setFundingChoicesMainPurposeToggleAudit([])
+    setFundingChoicesMainPurposeInteractionTrace([])
   }
 
   if (scope !== 'provider') {
@@ -14222,6 +14408,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
             failureReason: '',
           }
         : null
+    const mainPurposeTraceBefore =
+      scope !== 'provider'
+        ? getFundingChoicesMainPurposeSliderTrace(input, root)
+        : null
+    let mainPurposeTraceImmediatelyAfter =
+      mainPurposeTraceBefore
 
     if (!actionDiagnostics.has(input)) {
       if (scope === 'provider') {
@@ -14236,6 +14428,18 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         mainPurposeAuditEntry.failureReason = 'site_not_enabled'
         mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
         setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+        mainPurposeInteractionTraceEntries.push(
+          getFundingChoicesMainPurposeInteractionTraceEntry(
+            input,
+            root,
+            mainPurposeTraceBefore,
+            mainPurposeTraceImmediatelyAfter,
+            mainPurposeTraceImmediatelyAfter,
+            mainPurposeAuditEntry.clickTargetUsed,
+            mainPurposeAuditEntry.failureReason
+          )
+        )
+        setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
       }
       break
     }
@@ -14246,6 +14450,18 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         mainPurposeAuditEntry.failureReason = 'outside_fc_root'
         mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
         setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+        mainPurposeInteractionTraceEntries.push(
+          getFundingChoicesMainPurposeInteractionTraceEntry(
+            input,
+            root,
+            mainPurposeTraceBefore,
+            mainPurposeTraceImmediatelyAfter,
+            mainPurposeTraceImmediatelyAfter,
+            mainPurposeAuditEntry.clickTargetUsed,
+            mainPurposeAuditEntry.failureReason
+          )
+        )
+        setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
       }
       continue
     }
@@ -14260,6 +14476,18 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         mainPurposeAuditEntry.failureReason = 'disabled'
         mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
         setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+        mainPurposeInteractionTraceEntries.push(
+          getFundingChoicesMainPurposeInteractionTraceEntry(
+            input,
+            root,
+            mainPurposeTraceBefore,
+            mainPurposeTraceImmediatelyAfter,
+            mainPurposeTraceImmediatelyAfter,
+            mainPurposeAuditEntry.clickTargetUsed,
+            mainPurposeAuditEntry.failureReason
+          )
+        )
+        setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
       }
       continue
     }
@@ -14325,6 +14553,18 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           mainPurposeAuditEntry.failureReason = 'click_target_not_found'
           mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
           setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+          mainPurposeInteractionTraceEntries.push(
+            getFundingChoicesMainPurposeInteractionTraceEntry(
+              input,
+              root,
+              mainPurposeTraceBefore,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeAuditEntry.clickTargetUsed,
+              mainPurposeAuditEntry.failureReason
+            )
+          )
+          setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
         }
         continue
       }
@@ -14369,6 +14609,8 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
             actionDiagnostic.clickTarget
           mainPurposeAuditEntry.activeImmediatelyAfter =
             getFundingChoicesPreferenceToggleState(currentAfter) === 'enabled'
+          mainPurposeTraceImmediatelyAfter =
+            getFundingChoicesMainPurposeSliderTrace(currentAfter, root)
         }
 
         if (getFundingChoicesPreferenceToggleState(currentAfter) !== 'enabled') {
@@ -14420,6 +14662,8 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     }
 
     if (mainPurposeAuditEntry) {
+      const mainPurposeTraceAfterRefresh =
+        getFundingChoicesMainPurposeSliderTrace(currentInput, root)
       mainPurposeAuditEntry.clickTargetUsed =
         actionDiagnostic.clickTarget || mainPurposeAuditEntry.clickTargetUsed || 'none'
       mainPurposeAuditEntry.activeAfterRefresh =
@@ -14443,6 +14687,18 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           : ''
       mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
       setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
+      mainPurposeInteractionTraceEntries.push(
+        getFundingChoicesMainPurposeInteractionTraceEntry(
+          input,
+          root,
+          mainPurposeTraceBefore,
+          mainPurposeTraceImmediatelyAfter,
+          mainPurposeTraceAfterRefresh,
+          mainPurposeAuditEntry.clickTargetUsed,
+          mainPurposeAuditEntry.failureReason
+        )
+      )
+      setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
     }
   }
 
@@ -19493,6 +19749,41 @@ function sanitizeFundingChoicesMainPurposeToggleAudit(entries) {
     }))
 }
 
+function sanitizeFundingChoicesMainPurposeInteractionTrace(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .slice(0, MAX_FUNDING_CHOICES_CONTROL_DIAGNOSTICS)
+    .map((entry) => ({
+      purposeId:
+        String(entry?.purposeId || '').slice(0, 120),
+      purposeLabel:
+        normalizeMatchText(entry?.purposeLabel || '').slice(0, 180),
+      clickTargetUsed:
+        String(entry?.clickTargetUsed || 'none').slice(0, 120),
+      inputCheckedBeforeAfter:
+        entry?.inputCheckedBeforeAfter || null,
+      ariaPressedBeforeAfter:
+        entry?.ariaPressedBeforeAfter || null,
+      sliderClassBeforeAfter:
+        entry?.sliderClassBeforeAfter || null,
+      sliderPositionBeforeAfter:
+        entry?.sliderPositionBeforeAfter || null,
+      activeStateBeforeAfter:
+        entry?.activeStateBeforeAfter || null,
+      nearestClickableAncestor:
+        entry?.nearestClickableAncestor || null,
+      inputElement:
+        entry?.inputElement || null,
+      labelElement:
+        entry?.labelElement || null,
+      sliderElement:
+        entry?.sliderElement || null,
+      rowContainer:
+        entry?.rowContainer || null,
+      failureReason:
+        String(entry?.failureReason || '').slice(0, 120),
+    }))
+}
+
 function sanitizeFundingChoicesProviderFlowResult(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -22272,6 +22563,8 @@ function collectFundingChoicesControlDiagnostics(root) {
     mainToggleMethod: lastFundingChoicesMainToggleMethod,
     mainPurposeToggleAudit:
       lastFundingChoicesMainPurposeToggleAudit,
+    mainPurposeInteractionTrace:
+      lastFundingChoicesMainPurposeInteractionTrace,
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -22602,6 +22895,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     mainToggleMethod: lastFundingChoicesMainToggleMethod,
     mainPurposeToggleAudit:
       lastFundingChoicesMainPurposeToggleAudit,
+    mainPurposeInteractionTrace:
+      lastFundingChoicesMainPurposeInteractionTrace,
     providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
     providerToggleCount: lastFundingChoicesProviderToggleCount,
     activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -23554,6 +23849,8 @@ function recordFundingChoicesProviderPreferencesVisibleEntry(
         mainToggleMethod: lastFundingChoicesMainToggleMethod,
         mainPurposeToggleAudit:
           lastFundingChoicesMainPurposeToggleAudit,
+        mainPurposeInteractionTrace:
+          lastFundingChoicesMainPurposeInteractionTrace,
         providerPreferenceOpened: lastFundingChoicesProviderPreferenceOpened,
         providerToggleCount: lastFundingChoicesProviderToggleCount,
         activeProviderToggleCount: lastFundingChoicesActiveProviderToggleCount,
@@ -24489,6 +24786,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesClickedSliderKeys = []
     lastFundingChoicesPreferenceToggleActions = []
     lastFundingChoicesMainPurposeToggleAudit = []
+    lastFundingChoicesMainPurposeInteractionTrace = []
     lastFundingChoicesMainRequiredActiveBefore = 0
     lastFundingChoicesMainRequiredActiveAfter = 0
     lastFundingChoicesMainClickedCount = 0
