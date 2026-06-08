@@ -3520,6 +3520,34 @@ function formatProviderSaveTest(summary) {
   ].join(' ')
 }
 
+function formatProviderPersistenceAudit(summary) {
+  const audit =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!audit) return 'providerPersistenceAudit: none'
+
+  const dataIds =
+    Array.isArray(audit.activeLegitimateInterestDataIds)
+      ? audit.activeLegitimateInterestDataIds
+      : []
+  const labels =
+    Array.isArray(audit.activeLegitimateInterestLabels)
+      ? audit.activeLegitimateInterestLabels
+      : []
+
+  return [
+    'providerPersistenceAudit:',
+    `providerPanelReopened:${Boolean(audit.providerPanelReopened)}`,
+    `totalProviderEntriesScanned:${Math.max(0, Number(audit.totalProviderEntriesScanned) || 0)}`,
+    `activeLegitimateInterestCount:${Math.max(0, Number(audit.activeLegitimateInterestCount) || 0)}`,
+    `activeLegitimateInterestDataIds:${dataIds.map((dataId) => String(dataId || 'none').slice(0, 80)).join('|') || 'none'}`,
+    `activeLegitimateInterestLabels:${labels.map((label) => String(label || 'none').slice(0, 120)).join('|') || 'none'}`,
+    `auditResult:${String(audit.auditResult || 'none').slice(0, 80)}`,
+  ].join(' ')
+}
+
 function formatProviderFullToggleStopTrace(summary) {
   const trace =
     summary && typeof summary === 'object'
@@ -4166,6 +4194,7 @@ function formatProviderCountDiagnosticsCopySection(diagnostic) {
       summary.providerPostToggleSaveDiagnostics
     ),
     formatProviderSaveTest(summary.providerSaveTest),
+    formatProviderPersistenceAudit(summary.providerPersistenceAudit),
     formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
     formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
     formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),
@@ -4545,6 +4574,7 @@ function formatFundingChoicesControls(summary) {
         summary.providerPostToggleSaveDiagnostics
       ),
       formatProviderSaveTest(summary.providerSaveTest),
+      formatProviderPersistenceAudit(summary.providerPersistenceAudit),
       formatProviderFullToggleStopTrace(summary.providerFullToggleStopTrace),
       formatProviderBudgetGuardTrace(summary.providerBudgetGuardTrace),
       formatProviderRemainingCountTrace(summary.providerRemainingCountTrace),

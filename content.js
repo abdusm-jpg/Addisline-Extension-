@@ -111,6 +111,7 @@ let lastFundingChoicesProviderFullToggleTest = null
 let lastFundingChoicesProviderFullToggleStopTrace = null
 let lastFundingChoicesProviderPostToggleSaveDiagnostics = null
 let lastFundingChoicesProviderSaveTest = null
+let lastFundingChoicesProviderPersistenceAudit = null
 let lastFundingChoicesProviderBudgetGuardTrace = null
 let lastFundingChoicesProviderRemainingCountTrace = null
 let lastFundingChoicesProviderActiveAfterTrace = null
@@ -4228,6 +4229,10 @@ function recordCurrentSiteDiagnostic({
             providerSaveTest:
               sanitizeFundingChoicesProviderSaveTest(
                 fundingChoicesControlDiagnostics.providerSaveTest
+              ),
+            providerPersistenceAudit:
+              sanitizeFundingChoicesProviderPersistenceAudit(
+                fundingChoicesControlDiagnostics.providerPersistenceAudit
               ),
             providerBudgetGuardTrace:
               sanitizeFundingChoicesProviderBudgetGuardTrace(
@@ -9923,6 +9928,63 @@ function runFundingChoicesProviderSaveTest(root, providerToggleCompleted) {
   }
 }
 
+function runFundingChoicesProviderPersistenceAudit(root, saveTest) {
+  const saveButtonClicked =
+    Boolean(saveTest?.saveButtonClicked)
+  let providerPanel =
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(document) ||
+    getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+
+  if (saveButtonClicked && !providerPanel) {
+    const reopenResult =
+      performFundingChoicesProviderPersistenceReopen(document, null)
+
+    if (reopenResult.clicked) {
+      waitForFundingChoicesProviderMicroDelay(250)
+    }
+
+    providerPanel =
+      getVerifiedVisibleFundingChoicesProviderPreferencesPanel(document) ||
+      getVerifiedVisibleFundingChoicesProviderPreferencesPanel(root)
+  }
+
+  const providerPanelReopened =
+    Boolean(providerPanel)
+  const visibleInputs =
+    providerPanel
+      ? getBoundedFundingChoicesProviderToggleInputs(providerPanel, Date.now())
+          .filter((input) =>
+            isFundingChoicesProviderToggleVisible(input, providerPanel)
+          )
+      : []
+  const legitimateInterestInputs =
+    visibleInputs.filter(isFundingChoicesProviderLegitimateInterestInput)
+  const activeLegitimateInterestInputs =
+    legitimateInterestInputs.filter(isFundingChoicesProviderActiveToggle)
+  const activeLegitimateInterestDataIds =
+    activeLegitimateInterestInputs.map((input) =>
+      String(input?.getAttribute?.('data-id') || '').slice(0, 80)
+    )
+  const activeLegitimateInterestLabels =
+    activeLegitimateInterestInputs.map((input) =>
+      getFundingChoicesPreferenceToggleLabel(input, providerPanel)
+    )
+
+  return {
+    providerPanelReopened,
+    totalProviderEntriesScanned:
+      legitimateInterestInputs.length,
+    activeLegitimateInterestCount:
+      activeLegitimateInterestInputs.length,
+    activeLegitimateInterestDataIds,
+    activeLegitimateInterestLabels,
+    auditResult:
+      activeLegitimateInterestInputs.length === 0
+        ? 'all_disabled'
+        : 'active_providers_remain',
+  }
+}
+
 function resetFundingChoicesProviderSaveBackDiagnostics() {
   lastFundingChoicesProviderSaveBackFound = false
   lastFundingChoicesProviderSaveBackClicked = false
@@ -13373,6 +13435,8 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
       lastFundingChoicesProviderPostToggleSaveDiagnostics,
     providerSaveTest:
       lastFundingChoicesProviderSaveTest,
+    providerPersistenceAudit:
+      lastFundingChoicesProviderPersistenceAudit,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
@@ -19666,6 +19730,37 @@ function sanitizeFundingChoicesProviderSaveTest(summary) {
   }
 }
 
+function sanitizeFundingChoicesProviderPersistenceAudit(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    providerPanelReopened:
+      Boolean(summary.providerPanelReopened),
+    totalProviderEntriesScanned:
+      Math.max(0, Number(summary.totalProviderEntriesScanned) || 0),
+    activeLegitimateInterestCount:
+      Math.max(0, Number(summary.activeLegitimateInterestCount) || 0),
+    activeLegitimateInterestDataIds:
+      (Array.isArray(summary.activeLegitimateInterestDataIds)
+        ? summary.activeLegitimateInterestDataIds
+        : [])
+        .slice(0, 80)
+        .map((dataId) =>
+          String(dataId || '').slice(0, 80)
+        ),
+    activeLegitimateInterestLabels:
+      (Array.isArray(summary.activeLegitimateInterestLabels)
+        ? summary.activeLegitimateInterestLabels
+        : [])
+        .slice(0, 80)
+        .map((label) =>
+          String(label || '').slice(0, 160)
+        ),
+    auditResult:
+      String(summary.auditResult || '').slice(0, 80),
+  }
+}
+
 function sanitizeFundingChoicesProviderSingleToggleTestExportState(summary) {
   if (!summary || typeof summary !== 'object') return null
 
@@ -21070,6 +21165,11 @@ function handleFundingChoicesVisibleProviderTogglesPhase1(root) {
         currentActiveCount <= 0 ||
           stopReason === 'active_provider_count_zero'
       )
+    lastFundingChoicesProviderPersistenceAudit =
+      runFundingChoicesProviderPersistenceAudit(
+        root,
+        lastFundingChoicesProviderSaveTest
+      )
 
     if (attemptedCount === 0 && !firstToggleRecorded) {
       setFundingChoicesProviderSingleToggleTestDiagnostic({
@@ -22235,6 +22335,8 @@ function collectFundingChoicesControlDiagnostics(root) {
       lastFundingChoicesProviderPostToggleSaveDiagnostics,
     providerSaveTest:
       lastFundingChoicesProviderSaveTest,
+    providerPersistenceAudit:
+      lastFundingChoicesProviderPersistenceAudit,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
@@ -22536,6 +22638,8 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
       lastFundingChoicesProviderPostToggleSaveDiagnostics,
     providerSaveTest:
       lastFundingChoicesProviderSaveTest,
+    providerPersistenceAudit:
+      lastFundingChoicesProviderPersistenceAudit,
     providerBudgetGuardTrace:
       lastFundingChoicesProviderBudgetGuardTrace,
     providerRemainingCountTrace:
@@ -24407,6 +24511,7 @@ function completeFundingChoicesManageOptionsFlow(root, openedControl) {
     lastFundingChoicesProviderFullToggleStopTrace = null
     lastFundingChoicesProviderPostToggleSaveDiagnostics = null
     lastFundingChoicesProviderSaveTest = null
+    lastFundingChoicesProviderPersistenceAudit = null
     lastFundingChoicesProviderBudgetGuardTrace = null
     lastFundingChoicesProviderRemainingCountTrace = null
     lastFundingChoicesProviderActiveAfterTrace = null
