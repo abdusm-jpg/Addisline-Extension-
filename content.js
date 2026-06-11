@@ -14042,32 +14042,53 @@ function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
       providerFlow ||
       lastFundingChoicesProviderFlowResult ||
       null
+    const providerFullToggle =
+      diagnostics.providerFullToggleTest ||
+      lastFundingChoicesProviderFullToggleTest ||
+      null
+    const providerSave =
+      diagnostics.providerSaveTest ||
+      lastFundingChoicesProviderSaveTest ||
+      null
+    const providerPersistenceAudit =
+      diagnostics.providerPersistenceAudit ||
+      lastFundingChoicesProviderPersistenceAudit ||
+      null
+    const mainPurposeToggleAudit =
+      diagnostics.mainPurposeToggleAudit ||
+      lastFundingChoicesMainPurposeToggleAudit ||
+      []
 
     diagnostics.providerFlowResult =
       productionProviderFlow
     diagnostics.providerFullToggleResult =
       getFundingChoicesProviderFullToggleResult(
-        diagnostics.providerFullToggleTest
+        providerFullToggle
       )
     diagnostics.providerSaveResult =
-      getFundingChoicesProviderSaveResult(diagnostics.providerSaveTest)
+      getFundingChoicesProviderSaveResult(providerSave)
     diagnostics.mainPurposeToggleAuditSummary =
       getFundingChoicesMainPurposeToggleAuditSummary(
-        diagnostics.mainPurposeToggleAudit
+        mainPurposeToggleAudit
       )
     diagnostics.finalVerificationResult =
       String(
         providerFlow?.finalVerificationResult ||
           productionProviderFlow?.finalVerificationResult ||
           productionProviderFlow?.verificationResult ||
-          diagnostics.providerPersistenceAudit?.auditResult ||
-          diagnostics.providerSaveTest?.saveVerificationResult ||
+          providerPersistenceAudit?.auditResult ||
+          providerSave?.saveVerificationResult ||
           ''
       ).slice(0, 120)
     diagnostics.elapsedMs =
-      Math.max(0, Number(productionProviderFlow?.elapsedMs) || 0)
+      Math.max(
+        0,
+        Number(productionProviderFlow?.elapsedMs) ||
+          Number(lastDiagnosticDecisionTrace?.elapsedMs) ||
+          0
+      )
     diagnostics.providerVisibleFinalVerification =
-      diagnostics.providerPersistenceAudit || null
+      providerPersistenceAudit
   }
 
   if (

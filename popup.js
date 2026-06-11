@@ -1377,7 +1377,7 @@ function formatProviderSaveResult(summary) {
   ].join(' ')
 }
 
-function formatFundingChoicesCompactSummary(summary) {
+function formatFundingChoicesCompactSummary(summary, diagnostic = null) {
   if (!summary || typeof summary !== 'object') {
     return 'fundingChoicesProductionSummary:none'
   }
@@ -1404,6 +1404,7 @@ function formatFundingChoicesCompactSummary(summary) {
       0,
       Number(summary.elapsedMs) ||
         Number(summary.providerFlowResult?.elapsedMs) ||
+        Number(diagnostic?.decisionTrace?.elapsedMs) ||
         0
     )
 
@@ -1463,7 +1464,8 @@ function updateDiagnosticDebugVisibility() {
 function buildFullFundingChoicesCopySection(diagnostic) {
   if (!diagnosticDebugExpanded) {
     return formatFundingChoicesCompactSummary(
-      diagnostic?.fundingChoicesControlDiagnostics
+      diagnostic?.fundingChoicesControlDiagnostics,
+      diagnostic
     )
   }
 
@@ -5821,7 +5823,8 @@ function renderCurrentSiteDiagnostic(diagnostic) {
       )
     currentSiteDiagnosticFundingChoices.innerText =
       formatFundingChoicesCompactSummary(
-        diagnostic.fundingChoicesControlDiagnostics
+        diagnostic.fundingChoicesControlDiagnostics,
+        diagnostic
       )
   } else {
     currentSiteDiagnosticControls.innerText =
