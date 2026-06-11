@@ -1393,10 +1393,10 @@ function formatFundingChoicesCompactSummary(summary, diagnostic = null) {
   const finalVerificationResult =
     String(
       summary.finalVerificationResult ||
+        summary.providerPersistenceAudit?.auditResult ||
+        saveResult?.saveVerificationResult ||
         summary.providerFlowResult?.finalVerificationResult ||
         summary.providerFlowResult?.verificationResult ||
-        saveResult?.saveVerificationResult ||
-        summary.providerPersistenceAudit?.auditResult ||
         'none'
     ).slice(0, 120)
   const elapsedMs =

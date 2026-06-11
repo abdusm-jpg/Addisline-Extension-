@@ -4896,6 +4896,12 @@ function recordCurrentSiteDiagnostic({
     lastUpdatedAt: now,
   }
 
+  diagnostic.fundingChoicesControlDiagnostics =
+    stripFundingChoicesVerboseProviderDiagnostics(
+      diagnostic.fundingChoicesControlDiagnostics,
+      diagnostic
+    )
+
   safeStorageSet({
     [CURRENT_SITE_DIAGNOSTIC_KEY]: diagnostic,
   })
@@ -14031,7 +14037,7 @@ function getFundingChoicesProviderSaveResult(summary) {
   }
 }
 
-function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
+function stripFundingChoicesVerboseProviderDiagnostics(diagnostics, diagnosticContext = null) {
   if (diagnostics && typeof diagnostics === 'object') {
     const providerFlow =
       diagnostics.providerFlowResult &&
@@ -14073,17 +14079,18 @@ function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
       )
     diagnostics.finalVerificationResult =
       String(
-        providerFlow?.finalVerificationResult ||
+        providerPersistenceAudit?.auditResult ||
+          providerSave?.saveVerificationResult ||
+          providerFlow?.finalVerificationResult ||
           productionProviderFlow?.finalVerificationResult ||
           productionProviderFlow?.verificationResult ||
-          providerPersistenceAudit?.auditResult ||
-          providerSave?.saveVerificationResult ||
           ''
       ).slice(0, 120)
     diagnostics.elapsedMs =
       Math.max(
         0,
         Number(productionProviderFlow?.elapsedMs) ||
+          Number(diagnosticContext?.decisionTrace?.elapsedMs) ||
           Number(lastDiagnosticDecisionTrace?.elapsedMs) ||
           0
       )
@@ -23200,9 +23207,7 @@ function collectFundingChoicesControlDiagnostics(root) {
     controls,
   }
 
-  return stripFundingChoicesVerboseProviderDiagnostics(
-    lastFundingChoicesControlDiagnostics
-  )
+  return lastFundingChoicesControlDiagnostics
 }
 
 function getFundingChoicesLightweightControlDiagnostic(control) {
@@ -23536,9 +23541,7 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
     controls,
   }
 
-  return stripFundingChoicesVerboseProviderDiagnostics(
-    lastFundingChoicesControlDiagnostics
-  )
+  return lastFundingChoicesControlDiagnostics
 }
 
 function recordFundingChoicesSkipped(root, reason, blockedReason = '') {
