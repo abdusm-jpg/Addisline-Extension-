@@ -12596,6 +12596,27 @@ function getFundingChoicesPreferenceClickTargets(input, root) {
   })
 }
 
+function getFundingChoicesMainPreferenceClickTargets(input, root) {
+  if (!input || !root?.contains?.(input)) return []
+
+  const label =
+    safeClosest(input, 'label.fc-preference-slider-container')
+  const wrapper =
+    safeClosest(input, '.fc-preference-slider')
+  const slider =
+    wrapper && root.contains(wrapper)
+      ? safeQuerySelectorAll(wrapper, '.fc-slider-el')[0] || null
+      : null
+
+  return [
+    { element: input, type: 'input' },
+    { element: label, type: 'label' },
+    { element: slider, type: 'slider' },
+  ].filter(({ element }) =>
+    element && root.contains(element)
+  )
+}
+
 function dispatchFundingChoicesCoordinateClick(
   element,
   root,
@@ -14678,7 +14699,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       const clickTargets =
         lastFundingChoicesMainToggleMethod === 'input'
           ? [{ element: input, type: 'input' }]
-          : getFundingChoicesPreferenceClickTargets(input, root)
+          : getFundingChoicesMainPreferenceClickTargets(input, root)
 
       if (clickTargets.length === 0) {
         actionDiagnostic.skippedReason = 'click_target_not_found'
@@ -14702,17 +14723,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         continue
       }
 
-      for (const { element, type, coordinate } of clickTargets) {
+      for (const { element, type } of clickTargets) {
         if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
           break
         }
 
-        const clicked =
-          coordinate
-            ? dispatchFundingChoicesCoordinateClick(element, root)
-            : dispatchFundingChoicesPreferenceToggleClick(element, root)
-
-        if (!clicked) {
+        if (!dispatchFundingChoicesPreferenceToggleClick(element, root)) {
           continue
         }
 
