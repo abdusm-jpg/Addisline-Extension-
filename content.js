@@ -11896,7 +11896,7 @@ function getFundingChoicesMainPurposeSliderTrace(input, root) {
     ariaPressed:
       String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
     activeState:
-      getFundingChoicesPreferenceToggleState(input),
+      getFundingChoicesMainPreferenceToggleState(input),
     sliderClass:
       getClassNameText(sliderEl || slider).slice(0, 160),
     sliderPosition: {
@@ -12022,6 +12022,24 @@ function isFundingChoicesMainLegitimateInterestToggle(input, root) {
   )
 }
 
+function isFundingChoicesMainLegitimateInterestPurposeInput(input) {
+  const classText =
+    String(input?.getAttribute?.('class') || input?.className || '')
+      .toLowerCase()
+  const classTokens =
+    classText
+      .split(/\s+/)
+      .filter(Boolean)
+
+  return Boolean(
+    classTokens.includes('fc-preference-legitimate-interest') &&
+      (
+        classTokens.includes('purpose') ||
+        classTokens.includes('publisher-purpose')
+      )
+  )
+}
+
 function getFundingChoicesPreferenceToggleState(input) {
   const ariaPressed =
     normalizeMatchText(input?.getAttribute?.('aria-pressed') || '')
@@ -12037,6 +12055,17 @@ function getFundingChoicesPreferenceToggleState(input) {
   }
 
   return 'unknown'
+}
+
+function getFundingChoicesMainPreferenceToggleState(input) {
+  if (
+    isFundingChoicesMainLegitimateInterestPurposeInput(input) &&
+    input?.checked === false
+  ) {
+    return 'disabled'
+  }
+
+  return getFundingChoicesPreferenceToggleState(input)
 }
 
 function getFundingChoicesProviderAriaPressedToggleState(input) {
@@ -14323,7 +14352,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     scope === 'provider'
       ? inputs.filter(isFundingChoicesProviderActiveToggle)
       : inputs.filter((input) =>
-          getFundingChoicesPreferenceToggleState(input) === 'enabled'
+          getFundingChoicesMainPreferenceToggleState(input) === 'enabled'
         )
   if (scope === 'provider') {
     setFundingChoicesProviderActiveStateMethodFromInputs(inputs)
@@ -14371,7 +14400,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         if (
           scope === 'provider'
             ? !isFundingChoicesProviderActiveToggle(input)
-            : getFundingChoicesPreferenceToggleState(input) !== 'enabled'
+            : getFundingChoicesMainPreferenceToggleState(input) !== 'enabled'
         ) {
           diagnostic.skippedReason = 'inactive'
         }
@@ -14552,12 +14581,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
             purposeLabel:
               getFundingChoicesPreferenceToggleLabel(input, root),
             activeBefore:
-              getFundingChoicesPreferenceToggleState(input) === 'enabled',
+              getFundingChoicesMainPreferenceToggleState(input) === 'enabled',
             clickTargetUsed: '',
             activeImmediatelyAfter:
-              getFundingChoicesPreferenceToggleState(input) === 'enabled',
+              getFundingChoicesMainPreferenceToggleState(input) === 'enabled',
             activeAfterRefresh:
-              getFundingChoicesPreferenceToggleState(input) === 'enabled',
+              getFundingChoicesMainPreferenceToggleState(input) === 'enabled',
             finalState: 'not_attempted',
             failureReason: '',
           }
@@ -14724,7 +14753,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       }
 
       for (const { element, type } of clickTargets) {
-        if (getFundingChoicesPreferenceToggleState(input) !== 'enabled') {
+        if (getFundingChoicesMainPreferenceToggleState(input) !== 'enabled') {
           break
         }
 
@@ -14762,12 +14791,12 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           mainPurposeAuditEntry.clickTargetUsed =
             actionDiagnostic.clickTarget
           mainPurposeAuditEntry.activeImmediatelyAfter =
-            getFundingChoicesPreferenceToggleState(currentAfter) === 'enabled'
+            getFundingChoicesMainPreferenceToggleState(currentAfter) === 'enabled'
           mainPurposeTraceImmediatelyAfter =
             getFundingChoicesMainPurposeSliderTrace(currentAfter, root)
         }
 
-        if (getFundingChoicesPreferenceToggleState(currentAfter) !== 'enabled') {
+        if (getFundingChoicesMainPreferenceToggleState(currentAfter) !== 'enabled') {
           disabledCount += 1
           break
         }
@@ -14792,7 +14821,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
       (
         scope === 'provider'
           ? isFundingChoicesProviderActiveToggle(currentInput)
-          : getFundingChoicesPreferenceToggleState(currentInput) === 'enabled'
+          : getFundingChoicesMainPreferenceToggleState(currentInput) === 'enabled'
       )
     actionDiagnostic.stillActive =
       actionDiagnostic.activeAfter
@@ -14906,7 +14935,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           root
         )
           .filter((input) =>
-            getFundingChoicesPreferenceToggleState(input) === 'enabled'
+            getFundingChoicesMainPreferenceToggleState(input) === 'enabled'
           )
   const remainingActiveKeys =
     new Set(
