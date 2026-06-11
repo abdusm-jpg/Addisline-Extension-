@@ -12947,6 +12947,23 @@ function setFundingChoicesProviderFlowResult(summary = {}) {
   }
 }
 
+function getFundingChoicesProviderFullToggleResult(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    startingCount:
+      Math.max(0, Number(summary.startingCount) || 0),
+    endingCount:
+      Math.max(0, Number(summary.endingCount) || 0),
+    attemptedCount:
+      Math.max(0, Number(summary.attemptedCount) || 0),
+    successfulCount:
+      Math.max(0, Number(summary.successfulCount) || 0),
+    stopReason:
+      String(summary.stopReason || '').slice(0, 80),
+  }
+}
+
 function getFundingChoicesProviderFullToggleNextCandidate(root, startedAt) {
   const providerPanel =
     getVisibleFundingChoicesProviderPreferencesPanel(root)
@@ -13689,20 +13706,22 @@ function collectFundingChoicesProviderActiveInputsCurrentScan() {
     count:
       activeInputs.length,
     samples:
-      activeInputs.slice(0, 3).map((input) => ({
-        dataId:
-          String(input?.getAttribute?.('data-id') || '').slice(0, 80),
-        id:
-          getFundingChoicesProviderDiagnosticId(input),
-        checked:
-          Boolean(input?.checked),
-        ariaPressed:
-          String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
-        class:
-          getFundingChoicesProviderDiagnosticClass(input),
-        connected:
-          Boolean(input?.isConnected),
-      })),
+      ENABLE_FC_PROVIDER_VERBOSE_TRACES
+        ? activeInputs.slice(0, 3).map((input) => ({
+            dataId:
+              String(input?.getAttribute?.('data-id') || '').slice(0, 80),
+            id:
+              getFundingChoicesProviderDiagnosticId(input),
+            checked:
+              Boolean(input?.checked),
+            ariaPressed:
+              String(input?.getAttribute?.('aria-pressed') || '').slice(0, 40),
+            class:
+              getFundingChoicesProviderDiagnosticClass(input),
+            connected:
+              Boolean(input?.isConnected),
+          }))
+        : [],
   }
 }
 
@@ -13975,14 +13994,78 @@ function getFundingChoicesProviderPhaseDiagnosticFields() {
   }
 }
 
+function getFundingChoicesMainPurposeToggleAuditSummary(entries) {
+  const safeEntries =
+    Array.isArray(entries)
+      ? entries.filter((entry) => entry && typeof entry === 'object')
+      : []
+
+  return {
+    count:
+      safeEntries.length,
+    disabledCount:
+      safeEntries.filter((entry) => entry.finalState === 'disabled').length,
+    activeCount:
+      safeEntries.filter((entry) => entry.finalState === 'active').length,
+    inputRemovedAfterClickCount:
+      safeEntries.filter((entry) => entry.finalState === 'input_removed_after_click').length,
+    failureCount:
+      safeEntries.filter((entry) => Boolean(entry.failureReason)).length,
+  }
+}
+
+function getFundingChoicesProviderSaveResult(summary) {
+  if (!summary || typeof summary !== 'object') return null
+
+  return {
+    saveButtonClicked:
+      Boolean(summary.saveButtonClicked),
+    confirmButtonClicked:
+      Boolean(summary.confirmButtonClicked),
+    saveVerificationResult:
+      String(summary.saveVerificationResult || '').slice(0, 120),
+    panelClosedAfterSave:
+      Boolean(summary.panelClosedAfterSave),
+    elapsedMs:
+      Math.max(0, Number(summary.elapsedMs) || 0),
+  }
+}
+
 function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
   if (diagnostics && typeof diagnostics === 'object') {
-    diagnostics.providerFlowResult =
-      diagnostics.providerFlowResult ||
+    const providerFlow =
+      diagnostics.providerFlowResult &&
+      typeof diagnostics.providerFlowResult === 'object'
+        ? diagnostics.providerFlowResult
+        : null
+    const productionProviderFlow =
+      providerFlow ||
       lastFundingChoicesProviderFlowResult ||
       null
+
+    diagnostics.providerFlowResult =
+      productionProviderFlow
     diagnostics.providerFullToggleResult =
-      diagnostics.providerFullToggleTest || null
+      getFundingChoicesProviderFullToggleResult(
+        diagnostics.providerFullToggleTest
+      )
+    diagnostics.providerSaveResult =
+      getFundingChoicesProviderSaveResult(diagnostics.providerSaveTest)
+    diagnostics.mainPurposeToggleAuditSummary =
+      getFundingChoicesMainPurposeToggleAuditSummary(
+        diagnostics.mainPurposeToggleAudit
+      )
+    diagnostics.finalVerificationResult =
+      String(
+        providerFlow?.finalVerificationResult ||
+          productionProviderFlow?.finalVerificationResult ||
+          productionProviderFlow?.verificationResult ||
+          diagnostics.providerPersistenceAudit?.auditResult ||
+          diagnostics.providerSaveTest?.saveVerificationResult ||
+          ''
+      ).slice(0, 120)
+    diagnostics.elapsedMs =
+      Math.max(0, Number(productionProviderFlow?.elapsedMs) || 0)
     diagnostics.providerVisibleFinalVerification =
       diagnostics.providerPersistenceAudit || null
   }
@@ -14030,8 +14113,34 @@ function stripFundingChoicesVerboseProviderDiagnostics(diagnostics) {
     'providerClickTargetHierarchy',
     'providerVisualStateDiagnostics',
     'providerCountComparison',
+    'mainPurposeInteractionTrace',
+    'providerActiveInputsCurrentScan',
+    'providerFlowResult',
+    'providerFullToggleTest',
+    'providerPostToggleSaveDiagnostics',
+    'providerSaveTest',
+    'providerPersistenceAudit',
+    'providerVisibleFinalVerification',
+    'fundingChoicesGlobalState',
+    'preferenceToggleActions',
   ].forEach((key) => {
     delete diagnostics[key]
+  })
+
+  const productionDiagnosticKeys =
+    new Set([
+      'collectedAt',
+      'mainPurposeToggleAuditSummary',
+      'providerFullToggleResult',
+      'providerSaveResult',
+      'finalVerificationResult',
+      'elapsedMs',
+    ])
+
+  Object.keys(diagnostics).forEach((key) => {
+    if (!productionDiagnosticKeys.has(key)) {
+      delete diagnostics[key]
+    }
   })
 
   return diagnostics
@@ -14530,6 +14639,8 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
     new Set()
   const mainPurposeToggleAuditEntries = []
   const mainPurposeInteractionTraceEntries = []
+  const collectMainPurposeInteractionTrace =
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
 
   if (scope !== 'provider') {
     setFundingChoicesMainPurposeToggleAudit([])
@@ -14592,7 +14703,7 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           }
         : null
     const mainPurposeTraceBefore =
-      scope !== 'provider'
+      scope !== 'provider' && collectMainPurposeInteractionTrace
         ? getFundingChoicesMainPurposeSliderTrace(input, root)
         : null
     let mainPurposeTraceImmediatelyAfter =
@@ -14611,18 +14722,20 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         mainPurposeAuditEntry.failureReason = 'site_not_enabled'
         mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
         setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
-        mainPurposeInteractionTraceEntries.push(
-          getFundingChoicesMainPurposeInteractionTraceEntry(
-            input,
-            root,
-            mainPurposeTraceBefore,
-            mainPurposeTraceImmediatelyAfter,
-            mainPurposeTraceImmediatelyAfter,
-            mainPurposeAuditEntry.clickTargetUsed,
-            mainPurposeAuditEntry.failureReason
+        if (collectMainPurposeInteractionTrace) {
+          mainPurposeInteractionTraceEntries.push(
+            getFundingChoicesMainPurposeInteractionTraceEntry(
+              input,
+              root,
+              mainPurposeTraceBefore,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeAuditEntry.clickTargetUsed,
+              mainPurposeAuditEntry.failureReason
+            )
           )
-        )
-        setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+          setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+        }
       }
       break
     }
@@ -14633,18 +14746,20 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         mainPurposeAuditEntry.failureReason = 'outside_fc_root'
         mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
         setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
-        mainPurposeInteractionTraceEntries.push(
-          getFundingChoicesMainPurposeInteractionTraceEntry(
-            input,
-            root,
-            mainPurposeTraceBefore,
-            mainPurposeTraceImmediatelyAfter,
-            mainPurposeTraceImmediatelyAfter,
-            mainPurposeAuditEntry.clickTargetUsed,
-            mainPurposeAuditEntry.failureReason
+        if (collectMainPurposeInteractionTrace) {
+          mainPurposeInteractionTraceEntries.push(
+            getFundingChoicesMainPurposeInteractionTraceEntry(
+              input,
+              root,
+              mainPurposeTraceBefore,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeAuditEntry.clickTargetUsed,
+              mainPurposeAuditEntry.failureReason
+            )
           )
-        )
-        setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+          setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+        }
       }
       continue
     }
@@ -14659,18 +14774,20 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
         mainPurposeAuditEntry.failureReason = 'disabled'
         mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
         setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
-        mainPurposeInteractionTraceEntries.push(
-          getFundingChoicesMainPurposeInteractionTraceEntry(
-            input,
-            root,
-            mainPurposeTraceBefore,
-            mainPurposeTraceImmediatelyAfter,
-            mainPurposeTraceImmediatelyAfter,
-            mainPurposeAuditEntry.clickTargetUsed,
-            mainPurposeAuditEntry.failureReason
+        if (collectMainPurposeInteractionTrace) {
+          mainPurposeInteractionTraceEntries.push(
+            getFundingChoicesMainPurposeInteractionTraceEntry(
+              input,
+              root,
+              mainPurposeTraceBefore,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeTraceImmediatelyAfter,
+              mainPurposeAuditEntry.clickTargetUsed,
+              mainPurposeAuditEntry.failureReason
+            )
           )
-        )
-        setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+          setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+        }
       }
       continue
     }
@@ -14736,18 +14853,20 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           mainPurposeAuditEntry.failureReason = 'click_target_not_found'
           mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
           setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
-          mainPurposeInteractionTraceEntries.push(
-            getFundingChoicesMainPurposeInteractionTraceEntry(
-              input,
-              root,
-              mainPurposeTraceBefore,
-              mainPurposeTraceImmediatelyAfter,
-              mainPurposeTraceImmediatelyAfter,
-              mainPurposeAuditEntry.clickTargetUsed,
-              mainPurposeAuditEntry.failureReason
+          if (collectMainPurposeInteractionTrace) {
+            mainPurposeInteractionTraceEntries.push(
+              getFundingChoicesMainPurposeInteractionTraceEntry(
+                input,
+                root,
+                mainPurposeTraceBefore,
+                mainPurposeTraceImmediatelyAfter,
+                mainPurposeTraceImmediatelyAfter,
+                mainPurposeAuditEntry.clickTargetUsed,
+                mainPurposeAuditEntry.failureReason
+              )
             )
-          )
-          setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+            setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+          }
         }
         continue
       }
@@ -14792,8 +14911,10 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
             actionDiagnostic.clickTarget
           mainPurposeAuditEntry.activeImmediatelyAfter =
             getFundingChoicesMainPreferenceToggleState(currentAfter) === 'enabled'
-          mainPurposeTraceImmediatelyAfter =
-            getFundingChoicesMainPurposeSliderTrace(currentAfter, root)
+          if (collectMainPurposeInteractionTrace) {
+            mainPurposeTraceImmediatelyAfter =
+              getFundingChoicesMainPurposeSliderTrace(currentAfter, root)
+          }
         }
 
         if (getFundingChoicesMainPreferenceToggleState(currentAfter) !== 'enabled') {
@@ -14846,7 +14967,9 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
 
     if (mainPurposeAuditEntry) {
       const mainPurposeTraceAfterRefresh =
-        getFundingChoicesMainPurposeSliderTrace(currentInput, root)
+        collectMainPurposeInteractionTrace
+          ? getFundingChoicesMainPurposeSliderTrace(currentInput, root)
+          : null
       mainPurposeAuditEntry.clickTargetUsed =
         actionDiagnostic.clickTarget || mainPurposeAuditEntry.clickTargetUsed || 'none'
       mainPurposeAuditEntry.activeAfterRefresh =
@@ -14870,18 +14993,20 @@ function handleFundingChoicesPreferenceCategoryToggles(root, options = {}) {
           : ''
       mainPurposeToggleAuditEntries.push(mainPurposeAuditEntry)
       setFundingChoicesMainPurposeToggleAudit(mainPurposeToggleAuditEntries)
-      mainPurposeInteractionTraceEntries.push(
-        getFundingChoicesMainPurposeInteractionTraceEntry(
-          input,
-          root,
-          mainPurposeTraceBefore,
-          mainPurposeTraceImmediatelyAfter,
-          mainPurposeTraceAfterRefresh,
-          mainPurposeAuditEntry.clickTargetUsed,
-          mainPurposeAuditEntry.failureReason
+      if (collectMainPurposeInteractionTrace) {
+        mainPurposeInteractionTraceEntries.push(
+          getFundingChoicesMainPurposeInteractionTraceEntry(
+            input,
+            root,
+            mainPurposeTraceBefore,
+            mainPurposeTraceImmediatelyAfter,
+            mainPurposeTraceAfterRefresh,
+            mainPurposeAuditEntry.clickTargetUsed,
+            mainPurposeAuditEntry.failureReason
+          )
         )
-      )
-      setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+        setFundingChoicesMainPurposeInteractionTrace(mainPurposeInteractionTraceEntries)
+      }
     }
   }
 
@@ -22837,7 +22962,9 @@ function collectFundingChoicesControlDiagnostics(root) {
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
-    collectFundingChoicesGlobalStateDiagnostics(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? collectFundingChoicesGlobalStateDiagnostics(root)
+      : null
   lastFundingChoicesProviderSingleToggleTestAttached =
     Boolean(lastFundingChoicesProviderSingleToggleTest)
 
@@ -23169,7 +23296,9 @@ function collectFundingChoicesLightweightControlDiagnostics(root) {
   const providerSaveCandidateDiagnostics =
     getFundingChoicesProviderSaveCandidateDiagnostics(root)
   const fundingChoicesGlobalStateDiagnostic =
-    collectFundingChoicesGlobalStateDiagnostics(root)
+    ENABLE_FC_PROVIDER_VERBOSE_TRACES
+      ? collectFundingChoicesGlobalStateDiagnostics(root)
+      : null
   lastFundingChoicesProviderSingleToggleTestAttached =
     Boolean(lastFundingChoicesProviderSingleToggleTest)
 

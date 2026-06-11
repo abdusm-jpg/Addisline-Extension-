@@ -1012,17 +1012,32 @@ function getProviderFlowStatus(summary) {
   const auditResult =
     String(summary.providerPersistenceAudit?.auditResult || '')
   const saveResult =
-    String(summary.providerSaveTest?.saveVerificationResult || '')
+    String(
+      summary.providerSaveResult?.saveVerificationResult ||
+        summary.providerSaveTest?.saveVerificationResult ||
+        ''
+    )
   const providerFlow =
     summary.providerFlowResult &&
     typeof summary.providerFlowResult === 'object'
       ? summary.providerFlowResult
       : null
   const fullToggle =
-    summary.providerFullToggleTest &&
-    typeof summary.providerFullToggleTest === 'object'
-      ? summary.providerFullToggleTest
-      : null
+    summary.providerFullToggleResult &&
+    typeof summary.providerFullToggleResult === 'object'
+      ? summary.providerFullToggleResult
+      : summary.providerFullToggleTest &&
+        typeof summary.providerFullToggleTest === 'object'
+        ? summary.providerFullToggleTest
+        : null
+  const saveTest =
+    summary.providerSaveResult &&
+    typeof summary.providerSaveResult === 'object'
+      ? summary.providerSaveResult
+      : summary.providerSaveTest &&
+        typeof summary.providerSaveTest === 'object'
+        ? summary.providerSaveTest
+        : null
 
   if (providerFlow?.completed) return 'saved_and_verified'
   if (providerFlow?.started && providerFlow.saveClicked) {
@@ -1035,7 +1050,7 @@ function getProviderFlowStatus(summary) {
   }
   if (auditResult === 'all_disabled') return 'saved_and_verified'
   if (auditResult === 'active_providers_remain') return 'saved_active_remain'
-  if (summary.providerSaveTest?.saveButtonClicked) return `save_${saveResult || 'clicked'}`
+  if (saveTest?.saveButtonClicked) return `save_${saveResult || 'clicked'}`
   if (fullToggle && Number(fullToggle.endingCount) === 0) return 'providers_disabled'
   if (fullToggle && Number(fullToggle.successfulCount) > 0) return 'partial_provider_disable'
   if (summary.providerPreferenceOpened) return 'provider_panel_seen'
@@ -1050,20 +1065,26 @@ function getDiagnosticSummary(diagnostic) {
       ? diagnostic.fundingChoicesControlDiagnostics
       : {}
   const fullToggle =
-    summary.providerFullToggleTest &&
-    typeof summary.providerFullToggleTest === 'object'
-      ? summary.providerFullToggleTest
-      : {}
+    summary.providerFullToggleResult &&
+    typeof summary.providerFullToggleResult === 'object'
+      ? summary.providerFullToggleResult
+      : summary.providerFullToggleTest &&
+        typeof summary.providerFullToggleTest === 'object'
+        ? summary.providerFullToggleTest
+        : {}
   const providerFlow =
     summary.providerFlowResult &&
     typeof summary.providerFlowResult === 'object'
       ? summary.providerFlowResult
       : {}
   const saveTest =
-    summary.providerSaveTest &&
-    typeof summary.providerSaveTest === 'object'
-      ? summary.providerSaveTest
-      : {}
+    summary.providerSaveResult &&
+    typeof summary.providerSaveResult === 'object'
+      ? summary.providerSaveResult
+      : summary.providerSaveTest &&
+        typeof summary.providerSaveTest === 'object'
+        ? summary.providerSaveTest
+        : {}
   const audit =
     summary.providerPersistenceAudit &&
     typeof summary.providerPersistenceAudit === 'object'
@@ -1103,7 +1124,14 @@ function getDiagnosticSummary(diagnostic) {
     saveVerificationResult:
       String(saveTest.saveVerificationResult || providerFlow.verificationResult || 'none'),
     finalVerificationResult:
-      String(providerFlow.verificationResult || audit.auditResult || summary.providerPersistenceReason || 'none'),
+      String(
+        summary.finalVerificationResult ||
+          providerFlow.finalVerificationResult ||
+          providerFlow.verificationResult ||
+          audit.auditResult ||
+          summary.providerPersistenceReason ||
+          'none'
+      ),
     lastError:
       String(diagnostic?.lastError || diagnostic?.error || diagnostic?.blockedReason || 'none'),
   }
@@ -1140,15 +1168,21 @@ function getProtectionSummary(diagnostic) {
       ? summary.providerFlowResult
       : {}
   const fullToggle =
-    summary.providerFullToggleTest &&
-    typeof summary.providerFullToggleTest === 'object'
-      ? summary.providerFullToggleTest
-      : {}
+    summary.providerFullToggleResult &&
+    typeof summary.providerFullToggleResult === 'object'
+      ? summary.providerFullToggleResult
+      : summary.providerFullToggleTest &&
+        typeof summary.providerFullToggleTest === 'object'
+        ? summary.providerFullToggleTest
+        : {}
   const saveTest =
-    summary.providerSaveTest &&
-    typeof summary.providerSaveTest === 'object'
-      ? summary.providerSaveTest
-      : {}
+    summary.providerSaveResult &&
+    typeof summary.providerSaveResult === 'object'
+      ? summary.providerSaveResult
+      : summary.providerSaveTest &&
+        typeof summary.providerSaveTest === 'object'
+        ? summary.providerSaveTest
+        : {}
   const audit =
     summary.providerPersistenceAudit &&
     typeof summary.providerPersistenceAudit === 'object'
@@ -1203,7 +1237,8 @@ function getProtectionSummary(diagnostic) {
     )
   const finalVerificationResult =
     String(
-      providerFlow.finalVerificationResult ||
+      summary.finalVerificationResult ||
+        providerFlow.finalVerificationResult ||
         providerFlow.verificationResult ||
         audit.auditResult ||
         saveTest.saveVerificationResult ||
@@ -1236,7 +1271,12 @@ function getProtectionSummary(diagnostic) {
     preferencesSaved,
     finalVerificationResult,
     elapsedMs:
-      Math.max(0, Number(providerFlow.elapsedMs) || 0),
+      Math.max(
+        0,
+        Number(summary.elapsedMs) ||
+          Number(providerFlow.elapsedMs) ||
+          0
+      ),
   }
 
   result.statusLabel =
@@ -1262,16 +1302,117 @@ function formatProtectionSummary(summary) {
   ].join('\n')
 }
 
-function formatFundingChoicesCompactSummary(summary) {
-  if (!summary || typeof summary !== 'object') {
-    return 'providerFlowResult:none'
+function getMainPurposeToggleAuditSummary(summary) {
+  const existing =
+    summary?.mainPurposeToggleAuditSummary &&
+    typeof summary.mainPurposeToggleAuditSummary === 'object'
+      ? summary.mainPurposeToggleAuditSummary
+      : null
+  const entries =
+    Array.isArray(summary?.mainPurposeToggleAudit)
+      ? summary.mainPurposeToggleAudit
+      : []
+
+  if (existing) return existing
+
+  return {
+    count:
+      entries.length,
+    disabledCount:
+      entries.filter((entry) => entry?.finalState === 'disabled').length,
+    activeCount:
+      entries.filter((entry) => entry?.finalState === 'active').length,
+    inputRemovedAfterClickCount:
+      entries.filter((entry) => entry?.finalState === 'input_removed_after_click').length,
+    failureCount:
+      entries.filter((entry) => Boolean(entry?.failureReason)).length,
   }
+}
+
+function formatMainPurposeToggleAuditSummary(summary) {
+  const audit =
+    getMainPurposeToggleAuditSummary(summary)
 
   return [
-    formatProviderFlowResult(summary.providerFlowResult),
-    formatProviderSaveTest(summary.providerSaveTest),
-    formatProviderPersistenceAudit(summary.providerPersistenceAudit),
-    formatProviderCountSummary(summary),
+    'mainPurposeToggleAudit:',
+    `count:${Math.max(0, Number(audit.count) || 0)}`,
+    `disabled:${Math.max(0, Number(audit.disabledCount) || 0)}`,
+    `active:${Math.max(0, Number(audit.activeCount) || 0)}`,
+    `removed:${Math.max(0, Number(audit.inputRemovedAfterClickCount) || 0)}`,
+    `failures:${Math.max(0, Number(audit.failureCount) || 0)}`,
+  ].join(' ')
+}
+
+function formatProviderFullToggleResult(summary) {
+  const result =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!result) return 'providerFullToggleResult:none'
+
+  return [
+    'providerFullToggleResult:',
+    `startingCount:${Math.max(0, Number(result.startingCount) || 0)}`,
+    `endingCount:${Math.max(0, Number(result.endingCount) || 0)}`,
+    `attemptedCount:${Math.max(0, Number(result.attemptedCount) || 0)}`,
+    `successfulCount:${Math.max(0, Number(result.successfulCount) || 0)}`,
+    `stopReason:${String(result.stopReason || 'none').slice(0, 80)}`,
+  ].join(' ')
+}
+
+function formatProviderSaveResult(summary) {
+  const result =
+    summary && typeof summary === 'object'
+      ? summary
+      : null
+
+  if (!result) return 'providerSaveResult:none'
+
+  return [
+    'providerSaveResult:',
+    `saveButtonClicked:${Boolean(result.saveButtonClicked)}`,
+    `saveVerificationResult:${String(result.saveVerificationResult || 'none').slice(0, 120)}`,
+    `panelClosedAfterSave:${Boolean(result.panelClosedAfterSave)}`,
+  ].join(' ')
+}
+
+function formatFundingChoicesCompactSummary(summary) {
+  if (!summary || typeof summary !== 'object') {
+    return 'fundingChoicesProductionSummary:none'
+  }
+
+  const fullToggle =
+    summary.providerFullToggleResult ||
+    summary.providerFullToggleTest ||
+    null
+  const saveResult =
+    summary.providerSaveResult ||
+    summary.providerSaveTest ||
+    null
+  const finalVerificationResult =
+    String(
+      summary.finalVerificationResult ||
+        summary.providerFlowResult?.finalVerificationResult ||
+        summary.providerFlowResult?.verificationResult ||
+        saveResult?.saveVerificationResult ||
+        summary.providerPersistenceAudit?.auditResult ||
+        'none'
+    ).slice(0, 120)
+  const elapsedMs =
+    Math.max(
+      0,
+      Number(summary.elapsedMs) ||
+        Number(summary.providerFlowResult?.elapsedMs) ||
+        0
+    )
+
+  return [
+    formatMainPurposeToggleAuditSummary(summary),
+    formatProviderFullToggleResult(fullToggle),
+    formatProviderSaveResult(saveResult),
+    `finalVerificationResult:${finalVerificationResult}`,
+    `elapsedMs:${elapsedMs}`,
   ].join('\n')
 }
 
@@ -1320,6 +1461,12 @@ function updateDiagnosticDebugVisibility() {
 }
 
 function buildFullFundingChoicesCopySection(diagnostic) {
+  if (!diagnosticDebugExpanded) {
+    return formatFundingChoicesCompactSummary(
+      diagnostic?.fundingChoicesControlDiagnostics
+    )
+  }
+
   return formatFundingChoicesControls(
     diagnostic?.fundingChoicesControlDiagnostics
   )
@@ -1363,93 +1510,98 @@ function buildDiagnosticCopyReport() {
       ),
     ],
     [
-      'Provider state ownership probe',
-      formatProviderStateOwnershipCopySection(
-        latestCurrentSiteDiagnostic
-      ),
-    ],
-    [
-      'Provider count diagnostics',
-      formatProviderCountDiagnosticsCopySection(
-        latestCurrentSiteDiagnostic
-      ),
-    ],
-    [
-      'Funding Choices global state',
-      formatFundingChoicesGlobalStateCopySection(
-        latestCurrentSiteDiagnostic
-      ),
-    ],
-    [
-      'Funding Choices controls',
+      'Funding Choices summary',
       buildFullFundingChoicesCopySection(
         latestCurrentSiteDiagnostic
       ),
     ],
-    [
-      'Detected controls summary',
-      getBoundedElementText(currentSiteDiagnosticControls),
-    ],
-    [
-      'Reject candidates',
-      formatCurrentSiteRejectCandidates(
-        latestCurrentSiteDiagnostic?.rejectCandidateDiagnostics
-      ),
-    ],
-    [
-      'Direct controls summary',
-      formatCurrentSiteDirectControls(
-        latestCurrentSiteDiagnostic?.directClickableDiagnostics
-      ),
-    ],
-    [
-      'Cookie text matches summary',
-      formatCurrentSiteCookieTextMatches(
-        latestCurrentSiteDiagnostic?.cookieTextScopeDiagnostics
-      ),
-    ],
-    [
-      'DOM scope',
-      formatCurrentSiteDomScope(
-        latestCurrentSiteDiagnostic?.domScopeDiagnostics
-      ),
-    ],
-    [
-      'Bottom banner',
-      formatCurrentSiteBottomBanner(
-        latestCurrentSiteDiagnostic?.bottomBannerDiagnostics
-      ),
-    ],
-    [
-      'Experimental bottom probe',
-      formatExperimentalBottomProbe(
-        latestCurrentSiteDiagnostic?.experimentalBottomBannerProbe
-      ),
-    ],
-    [
-      'Iframe access',
-      formatCurrentSiteIframeAccess(
-        latestCurrentSiteDiagnostic?.iframeAccessibilityDiagnostics
-      ),
-    ],
-    [
-      'Late snapshot',
-      formatCurrentSiteLateSnapshot(
-        latestCurrentSiteDiagnostic?.lateDiagnosticSnapshot
-      ),
-    ],
-    [
-      'Decision trace',
-      [
-        formatCurrentSiteDecisionTrace(latestCurrentSiteDiagnostic?.decisionTrace),
-        formatScanLifecycleTimeoutTrace(
-          latestCurrentSiteDiagnostic?.scanLifecycleTimeoutTrace
-        ),
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    ],
   ]
+
+  if (diagnosticDebugExpanded) {
+    sections.push(
+      [
+        'Provider state ownership probe',
+        formatProviderStateOwnershipCopySection(
+          latestCurrentSiteDiagnostic
+        ),
+      ],
+      [
+        'Provider count diagnostics',
+        formatProviderCountDiagnosticsCopySection(
+          latestCurrentSiteDiagnostic
+        ),
+      ],
+      [
+        'Funding Choices global state',
+        formatFundingChoicesGlobalStateCopySection(
+          latestCurrentSiteDiagnostic
+        ),
+      ],
+      [
+        'Detected controls summary',
+        getBoundedElementText(currentSiteDiagnosticControls),
+      ],
+      [
+        'Reject candidates',
+        formatCurrentSiteRejectCandidates(
+          latestCurrentSiteDiagnostic?.rejectCandidateDiagnostics
+        ),
+      ],
+      [
+        'Direct controls summary',
+        formatCurrentSiteDirectControls(
+          latestCurrentSiteDiagnostic?.directClickableDiagnostics
+        ),
+      ],
+      [
+        'Cookie text matches summary',
+        formatCurrentSiteCookieTextMatches(
+          latestCurrentSiteDiagnostic?.cookieTextScopeDiagnostics
+        ),
+      ],
+      [
+        'DOM scope',
+        formatCurrentSiteDomScope(
+          latestCurrentSiteDiagnostic?.domScopeDiagnostics
+        ),
+      ],
+      [
+        'Bottom banner',
+        formatCurrentSiteBottomBanner(
+          latestCurrentSiteDiagnostic?.bottomBannerDiagnostics
+        ),
+      ],
+      [
+        'Experimental bottom probe',
+        formatExperimentalBottomProbe(
+          latestCurrentSiteDiagnostic?.experimentalBottomBannerProbe
+        ),
+      ],
+      [
+        'Iframe access',
+        formatCurrentSiteIframeAccess(
+          latestCurrentSiteDiagnostic?.iframeAccessibilityDiagnostics
+        ),
+      ],
+      [
+        'Late snapshot',
+        formatCurrentSiteLateSnapshot(
+          latestCurrentSiteDiagnostic?.lateDiagnosticSnapshot
+        ),
+      ],
+      [
+        'Decision trace',
+        [
+          formatCurrentSiteDecisionTrace(latestCurrentSiteDiagnostic?.decisionTrace),
+          formatScanLifecycleTimeoutTrace(
+            latestCurrentSiteDiagnostic?.scanLifecycleTimeoutTrace
+          ),
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      ],
+    )
+  }
 
   const report = sections
     .map(([label, value]) => `${label}:\n${value}`)
