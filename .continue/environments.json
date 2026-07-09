@@ -1,0 +1,7 @@
+[
+  {
+    "install": "echo 'No dependencies required for this browser extension'",
+    "start": "echo 'Load this extension in Chrome/Edge: 1. Open chrome://extensions/ 2. Enable Developer mode 3. Click \"Load unpacked\" 4. Select this directory'",
+    "resourceSize": "small"
+  }
+]
